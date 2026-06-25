@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Política de SLA para gestão operacional de vulnerabilidades",
+    "updated_by": "security-team",
+    "updated_at": "2026-06-15T00:00:00Z"
+  },
+  "defaults": {
+    "critical": 15,
+    "high": 30,
+    "medium": 60,
+    "low": 90
+  },
+  "kev": {
+    "critical": 7,
+    "high": 15,
+    "medium": 30,
+    "low": 60
+  },
+  "internet_facing": {
+    "critical": 7,
+    "high": 15,
+    "medium": 30,
+    "low": 60
+  },
+  "dmz": {
+    "critical": 10,
+    "high": 20,
+    "medium": 45,
+    "low": 75
+  },
+  "critical_asset": {
+    "critical": 7,
+    "high": 15,
+    "medium": 30,
+    "low": 60
+  },
+  "high_asset": {
+    "critical": 10,
+    "high": 20,
+    "medium": 45,
+    "low": 75
+  },
+  "sensitive_service": {
+    "critical": 7,
+    "high": 15,
+    "medium": 30,
+    "low": 60
+  },
+  "near_due_threshold_days": 5,
+  "persistent_threshold_days": 30,
+  "recurring_threshold_count": 3,
+  "business_days_only": false
+}
