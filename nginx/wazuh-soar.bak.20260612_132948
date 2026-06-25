@@ -1,0 +1,117 @@
+# =============================================================================
+# Nginx - Configuração para HMG Wazuh SOAR Brain (Painel de Vulnerabilidades)
+# =============================================================================
+#
+# INSTRUÇÕES DE INSTALAÇÃO:
+#   1. Copiar este arquivo para /etc/nginx/sites-available/wazuh-soar
+#   2. Criar symlink: ln -s /etc/nginx/sites-available/wazuh-soar /etc/nginx/sites-enabled/
+#   3. Criar diretório: mkdir -p /var/www/wazuh-soar/{data,reports}
+#   4. Ajustar permissões: chown -R root:www-data /var/www/wazuh-soar
+#   5. Testar config: nginx -t
+#   6. Recarregar: systemctl reload nginx
+#
+# AUTENTICAÇÃO BÁSICA (opcional):
+#   htpasswd -c /etc/nginx/.htpasswd_soar operador
+#
+# CERTIFICADO SSL (recomendado):
+#   Usar certificado autoassinado ou Let's Encrypt conforme política local.
+#   Exemplo com certbot: certbot --nginx -d soar.hmg.local
+#
+# =============================================================================
+
+server {
+    # Porta separada para isolamento do Wazuh Dashboard (443 padrão)
+    listen 8443 ssl;
+    server_name soar.hmg.local;
+
+    # --- SSL/TLS ---
+    # Substituir pelos caminhos reais dos certificados do ambiente
+    ssl_certificate     /etc/ssl/certs/wazuh-soar.crt;
+    ssl_certificate_key /etc/ssl/private/wazuh-soar.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # --- Diretório raiz ---
+    root /var/www/wazuh-soar;
+    index index.html;
+
+    # --- Segurança: Bloquear listagem de diretórios ---
+    autoindex off;
+
+    # --- Segurança: Headers de proteção ---
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
+
+    # --- Autenticação Básica (descomentar para habilitar) ---
+    # auth_basic "HMG SOAR - Acesso Restrito";
+    # auth_basic_user_file /etc/nginx/.htpasswd_soar;
+
+    # --- Restrição por IP (descomentar e ajustar conforme rede interna) ---
+    # allow 10.0.0.0/8;
+    # allow 172.16.0.0/12;
+    # allow 192.168.0.0/16;
+    # deny all;
+
+    # --- Cache desabilitado para index.html (sempre atualizado) ---
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+
+    # --- Cache desabilitado para JSON (dados sempre frescos) ---
+    location /data/ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+
+    # --- Relatórios históricos (cache longo, são imutáveis) ---
+    location /reports/ {
+        add_header Cache-Control "public, max-age=86400";
+    }
+
+    # --- Bloquear acesso a arquivos ocultos ---
+    location ~ /\. {
+        deny all;
+        return 404;
+    }
+
+    # --- Somente GET/HEAD (leitura) ---
+    if ($request_method !~ ^(GET|HEAD)$) {
+        return 405;
+    }
+
+    # --- Logs ---
+    access_log /var/log/nginx/wazuh-soar-access.log;
+    error_log  /var/log/nginx/wazuh-soar-error.log warn;
+}
+
+# =============================================================================
+# ALTERNATIVA: Servir como sub-rota do servidor principal (porta 443)
+# Descomentar o bloco abaixo e comentar o server{} acima se preferir.
+# =============================================================================
+#
+# server {
+#     listen 443 ssl;
+#     server_name wazuh.hmg.local;
+#
+#     # ... (certificados SSL existentes do Wazuh) ...
+#
+#     location /soar/ {
+#         alias /var/www/wazuh-soar/;
+#         autoindex off;
+#
+#         # Autenticação
+#         # auth_basic "HMG SOAR";
+#         # auth_basic_user_file /etc/nginx/.htpasswd_soar;
+#
+#         location = /soar/index.html {
+#             add_header Cache-Control "no-cache, no-store, must-revalidate";
+#         }
+#     }
+# }

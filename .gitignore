@@ -1,0 +1,17 @@
+﻿# Runtime / generated
+var-www-wazuh-soar/
+output/
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local env / credentials
+.env
+credentials.env
+*.secret
+*.key
+*.pem

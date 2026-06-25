@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Política de priorização de plano de tratativa operacional",
+    "updated_by": "security-team",
+    "updated_at": "2026-06-16T00:00:00Z"
+  },
+  "defaults": {
+    "planning_windows_days": [7, 15, 30],
+    "quick_win_max_assets": 2,
+    "quick_win_max_packages": 2,
+    "high_effort_threshold_assets": 5,
+    "owner_unknown_label": "unknown",
+    "max_plan_items": 200,
+    "max_top_items_per_section": 20
+  },
+  "priority_weights": {
+    "critical": 40,
+    "high": 25,
+    "medium": 10,
+    "low": 2,
+    "kev": 30,
+    "epss_high": 15,
+    "sla_overdue": 35,
+    "sla_due_soon": 20,
+    "internet_facing": 25,
+    "dmz": 15,
+    "critical_asset": 25,
+    "high_asset": 15,
+    "trend_worsening": 20,
+    "recurring": 10,
+    "persistent": 10,
+    "accepted_valid": -30,
+    "false_positive_valid": -100,
+    "expired_acceptance": 30
+  },
+  "effort_rules": {
+    "single_asset_single_package": "low",
+    "few_assets_same_package": "medium",
+    "many_assets_or_core_component": "high",
+    "kernel_or_os_update": "high",
+    "windows_cumulative_update": "high"
+  },
+  "treatment_buckets": {
+    "now": {
+      "label": "Tratar agora",
+      "min_score": 80
+    },
+    "next_7_days": {
+      "label": "Próximos 7 dias",
+      "min_score": 65
+    },
+    "next_15_days": {
+      "label": "Próximos 15 dias",
+      "min_score": 50
+    },
+    "next_30_days": {
+      "label": "Próximos 30 dias",
+      "min_score": 30
+    },
+    "monitor": {
+      "label": "Monitorar",
+      "min_score": 0
+    }
+  }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Timer para relatório HMG Wazuh SOAR Brain (a cada 6 horas)
+
+[Timer]
+# Executar a cada 6 horas: 00:00, 06:00, 12:00, 18:00
+OnCalendar=*-*-* 00/6:00:00
+
+# Se o servidor estava desligado no horário, executar ao ligar
+Persistent=true
+
+# Espalhar execuções em até 5 minutos para evitar pico
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
