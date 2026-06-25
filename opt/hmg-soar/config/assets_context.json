@@ -1,0 +1,92 @@
+{
+    "metadata": {
+        "version": "1.0",
+        "description": "Mapa de criticidade e contexto de ativos para priorização de risco",
+        "updated_by": "admasc",
+        "updated_at": "2026-06-15T16:19:01.929713+00:00"
+    },
+    "defaults": {
+        "criticality": "unknown",
+        "environment": "unknown",
+        "exposure": "unknown",
+        "asset_type": "unknown",
+        "business_owner": "unknown",
+        "technical_owner": "unknown",
+        "tags": []
+    },
+    "agents": {
+        "003": {
+            "asset_name": "asc-linux-02",
+            "criticality": "medium",
+            "environment": "hmg",
+            "exposure": "internal",
+            "asset_type": "linux_server",
+            "business_owner": "Segurança da Informação",
+            "technical_owner": "Infraestrutura",
+            "tags": [
+                "linux",
+                "wazuh-agent",
+                "homologacao"
+            ]
+        },
+        "PRDC03": {
+            "asset_name": "prdc-teste",
+            "criticality": "critical",
+            "environment": "hmg",
+            "exposure": "internal",
+            "asset_type": "domain_controller",
+            "business_owner": "Infraestrutura",
+            "technical_owner": "Active Directory",
+            "tags": [
+                "windows",
+                "ad",
+                "domain-controller"
+            ]
+        },
+        "001": {
+            "asset_name": "windows-server-sscapps",
+            "criticality": "medium",
+            "environment": "hmg",
+            "exposure": "internal",
+            "asset_type": "application_server",
+            "business_owner": "Segurança da Informação",
+            "technical_owner": "Infraestrutura",
+            "tags": [
+                "windows",
+                "application-server",
+                "wazuh-agent",
+                "homologacao"
+            ]
+        },
+        "004": {
+            "asset_name": "linux-server-asc-linux-01",
+            "criticality": "medium",
+            "environment": "hmg",
+            "exposure": "internal",
+            "asset_type": "linux_server",
+            "business_owner": "Segurança da Informação",
+            "technical_owner": "Infraestrutura",
+            "tags": [
+                "linux",
+                "wazuh-agent",
+                "homologacao"
+            ]
+        },
+        "005": {
+            "asset_name": "linux-siemapps",
+            "criticality": "high",
+            "environment": "hmg",
+            "exposure": "internal",
+            "asset_type": "siem",
+            "business_owner": "Segurança da Informação",
+            "technical_owner": "SOC / SIEM",
+            "tags": [
+                "linux",
+                "siem",
+                "security-monitoring",
+                "wazuh-agent",
+                "homologacao"
+            ]
+        }
+    }
+}

@@ -1,0 +1,16 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Mapa declarativo de exceções, aceite de risco e falsos positivos - baseline HMG",
+    "updated_by": "security-team",
+    "updated_at": "2026-06-16T00:00:00Z"
+  },
+  "defaults": {
+    "max_acceptance_days": 180,
+    "require_expiration": true,
+    "require_approver": true,
+    "require_reason": true,
+    "expired_action": "flag_only"
+  },
+  "rules": []
+}

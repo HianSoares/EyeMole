@@ -1,0 +1,30 @@
+[Unit]
+Description=HMG Wazuh SOAR Brain - Geração de Relatório de Vulnerabilidades
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hmg-soar
+Group=www-data
+WorkingDirectory=/opt/hmg-soar
+EnvironmentFile=/etc/hmg-soar/credentials.env
+
+# IMPORTANTE: --mode audit garante que NUNCA haverá correção automática
+ExecStart=/usr/bin/python3 /opt/hmg-soar/analyserV1.py \
+    --all-agents \
+    --mode audit \
+    --output /opt/hmg-soar/output/relatorio_wazuh.csv \
+    --pdf /opt/hmg-soar/output/relatorio_wazuh.pdf \
+    --html /opt/hmg-soar/output/relatorio_wazuh.html \
+    --web-output-dir /var/www/wazuh-soar \
+    --web-group www-data
+
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/www/wazuh-soar /opt/hmg-soar/.hmg_cache /opt/hmg-soar/output
+
+[Install]
+WantedBy=multi-user.target

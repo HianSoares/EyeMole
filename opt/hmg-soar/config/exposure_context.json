@@ -1,0 +1,116 @@
+{
+    "metadata": {
+        "version": "1.0",
+        "description": "Mapa de exposição e superfície de ataque para priorização de risco",
+        "updated_by": "admasc",
+        "updated_at": "2026-06-15T16:50:09.300499+00:00"
+    },
+    "defaults": {
+        "exposure_level": "unknown",
+        "network_zone": "unknown",
+        "internet_facing": false,
+        "dmz": false,
+        "has_public_ip": false,
+        "has_public_dns": false,
+        "source": "manual",
+        "confidence": "low",
+        "open_services": [],
+        "external_identifiers": [],
+        "notes": ""
+    },
+    "agents": {
+        "001": {
+            "asset_name": "windows-server-sscapps",
+            "exposure_level": "internal",
+            "network_zone": "lan",
+            "internet_facing": false,
+            "dmz": false,
+            "has_public_ip": false,
+            "has_public_dns": false,
+            "source": "manual",
+            "confidence": "medium",
+            "open_services": [
+                {
+                    "port": 3389,
+                    "protocol": "tcp",
+                    "service": "rdp",
+                    "exposure": "internal",
+                    "critical": true,
+                    "notes": "Acesso administrativo interno"
+                }
+            ],
+            "external_identifiers": [],
+            "notes": "Servidor interno de aplicação em HMG"
+        },
+        "005": {
+            "asset_name": "linux-siemapps",
+            "exposure_level": "internal",
+            "network_zone": "security",
+            "internet_facing": false,
+            "dmz": false,
+            "has_public_ip": false,
+            "has_public_dns": false,
+            "source": "manual",
+            "confidence": "medium",
+            "open_services": [
+                {
+                    "port": 443,
+                    "protocol": "tcp",
+                    "service": "https",
+                    "exposure": "internal",
+                    "critical": true,
+                    "notes": "Interface web interna"
+                }
+            ],
+            "external_identifiers": [],
+            "notes": "Servidor associado a aplicações de SIEM"
+        },
+        "003": {
+            "asset_name": "linux-server-asc-linux-02",
+            "exposure_level": "internal",
+            "network_zone": "server_vlan",
+            "internet_facing": false,
+            "dmz": false,
+            "has_public_ip": false,
+            "has_public_dns": false,
+            "source": "manual",
+            "confidence": "medium",
+            "open_services": [
+                {
+                    "port": 22,
+                    "protocol": "tcp",
+                    "service": "ssh",
+                    "exposure": "internal",
+                    "critical": true,
+                    "notes": "Acesso administrativo interno"
+                }
+            ],
+            "external_identifiers": [],
+            "notes": "Servidor Linux interno em HMG"
+        },
+        "004": {
+            "asset_name": "linux-server-asc-linux-01",
+            "exposure_level": "internal",
+            "network_zone": "server_vlan",
+            "internet_facing": false,
+            "dmz": false,
+            "has_public_ip": false,
+            "has_public_dns": false,
+            "source": "manual",
+            "confidence": "medium",
+            "open_services": [
+                {
+                    "port": 22,
+                    "protocol": "tcp",
+                    "service": "ssh",
+                    "exposure": "internal",
+                    "critical": true,
+                    "notes": "Acesso administrativo interno"
+                }
+            ],
+            "external_identifiers": [],
+            "notes": "Servidor Linux interno em HMG"
+        }
+    },
+    "external_assets": []
+}

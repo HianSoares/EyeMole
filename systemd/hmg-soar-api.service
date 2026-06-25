@@ -1,0 +1,38 @@
+[Unit]
+Description=HMG Wazuh SOAR Brain - API Local (Fase 1)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=hmg-soar-api
+Group=hmg-soar-api
+
+WorkingDirectory=/opt/hmg-soar
+ExecStart=/usr/bin/python3 /opt/hmg-soar/soar_api.py
+
+# Restart em caso de falha
+Restart=on-failure
+RestartSec=5
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hmg-soar-api
+
+# Hardening
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hmg-soar/audit
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

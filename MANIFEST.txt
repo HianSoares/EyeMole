@@ -1,0 +1,23 @@
+HMG Wazuh SOAR Brain - pacote essencial seguro
+Gerado em: 2026-06-23T13:59:30-03:00
+Servidor: wazuh-manager-hmg
+
+Conteúdo:
+/tmp/hmg-soar-essentials-safe-20260623_135930/MANIFEST.txt
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-dashboard-proxy
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-dashboard-proxy.bak-soar-api-20260612_155940
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-reports
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-reports.bak.20260612_134216
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-soar
+/tmp/hmg-soar-essentials-safe-20260623_135930/nginx/wazuh-soar.bak.20260612_132948
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/analyserV1.py
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/config/assets_context.json
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/config/exposure_context.json
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/config/risk_acceptance.json
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/config/sla_policy.json
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/config/treatment_policy.json
+/tmp/hmg-soar-essentials-safe-20260623_135930/opt/hmg-soar/soar_api.py
+/tmp/hmg-soar-essentials-safe-20260623_135930/systemd/hmg-soar-api.service
+/tmp/hmg-soar-essentials-safe-20260623_135930/systemd/hmg-soar-report.service
+/tmp/hmg-soar-essentials-safe-20260623_135930/systemd/hmg-soar-report.timer
+/tmp/hmg-soar-essentials-safe-20260623_135930/var-www-wazuh-soar/index.html
