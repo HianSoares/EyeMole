@@ -63,33 +63,44 @@ fi
 }
 
 create_user_and_dirs() {
-log "Preparando usuário, grupo e diretórios..."
+  log "Preparando usuário, grupo e diretórios..."
 
-if ! getent group "${WEB_GROUP}" >/dev/null 2>&1; then
-groupadd --system "${WEB_GROUP}"
-fi
+  if ! getent group "${WEB_GROUP}" >/dev/null 2>&1; then
+    groupadd --system "${WEB_GROUP}"
+  fi
 
-if ! id "${APP_USER}" >/dev/null 2>&1; then
-useradd
---system
---home-dir "${APP_DIR}"
---shell /usr/sbin/nologin
---gid "${WEB_GROUP}"
-"${APP_USER}"
-fi
+  if ! id "${APP_USER}" >/dev/null 2>&1; then
+    useradd \
+      --system \
+      --home-dir "${APP_DIR}" \
+      --shell /usr/sbin/nologin \
+      --gid "${WEB_GROUP}" \
+      "${APP_USER}"
+  fi
 
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/config"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/assets"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/output"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/.hmg_cache"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/config"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/assets"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/output"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/.hmg_cache"
 
-install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/assets"
-install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/data"
-install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/reports"
+  # Diretório exigido pelo sandbox/ReadWritePaths do systemd da API.
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/audit"
+  touch "${APP_DIR}/audit/actions.log"
+  chown "${APP_USER}:${WEB_GROUP}" "${APP_DIR}/audit/actions.log"
+  chmod 0640 "${APP_DIR}/audit/actions.log"
 
-install -d -o root -g root -m 0755 "${ETC_DIR}"
+  install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/assets"
+  install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/data"
+  install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/reports"
+
+  # Arquivo usado pela API para registrar ações exibidas em Status & Auditoria.
+  touch "${WEB_DIR}/data/audit_actions.jsonl"
+  chown "${APP_USER}:${WEB_GROUP}" "${WEB_DIR}/data/audit_actions.jsonl"
+  chmod 0660 "${WEB_DIR}/data/audit_actions.jsonl"
+
+  install -d -o root -g root -m 0755 "${ETC_DIR}"
 }
 
 install_app_files() {
