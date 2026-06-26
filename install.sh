@@ -70,11 +70,11 @@ groupadd --system "${WEB_GROUP}"
 fi
 
 if ! id "${APP_USER}" >/dev/null 2>&1; then
-useradd 
---system 
---home-dir "${APP_DIR}" 
---shell /usr/sbin/nologin 
---gid "${WEB_GROUP}" 
+useradd
+--system
+--home-dir "${APP_DIR}"
+--shell /usr/sbin/nologin
+--gid "${WEB_GROUP}"
 "${APP_USER}"
 fi
 
@@ -122,6 +122,10 @@ log "Validando sintaxe Python..."
 
 runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/analyserV1.py"
 
+if [[ -f "${APP_DIR}/context_bootstrap.py" ]]; then
+runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/context_bootstrap.py"
+fi
+
 if [[ -f "${APP_DIR}/preview_dashboard.py" ]]; then
 runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/preview_dashboard.py"
 fi
@@ -129,6 +133,49 @@ fi
 if [[ -f "${APP_DIR}/preview_server.py" ]]; then
 runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/preview_server.py"
 fi
+}
+
+install_safe_wrappers() {
+  log "Instalando wrappers seguros para a API..."
+
+  # Wrapper 1: run-analysis
+  cat > "/usr/local/sbin/hmg-soar-run-analysis" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+systemctl start hmg-soar-report.service
+EOF
+
+  # Wrapper 2: status
+  cat > "/usr/local/sbin/hmg-soar-status" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+ACTIVE_STATE=$(systemctl show hmg-soar-report.service -p ActiveState --value || echo "unknown")
+SUB_STATE=$(systemctl show hmg-soar-report.service -p SubState --value || echo "unknown")
+IS_ACTIVE="false"
+if [[ "${ACTIVE_STATE}" == "active" || "${ACTIVE_STATE}" == "activating" ]]; then
+  IS_ACTIVE="true"
+fi
+cat <<OUT
+{
+  "report_service_active": ${IS_ACTIVE},
+  "active_state": "${ACTIVE_STATE}",
+  "sub_state": "${SUB_STATE}"
+}
+OUT
+EOF
+
+  chmod 0700 "/usr/local/sbin/hmg-soar-run-analysis" "/usr/local/sbin/hmg-soar-status"
+  chown root:root "/usr/local/sbin/hmg-soar-run-analysis" "/usr/local/sbin/hmg-soar-status"
+
+  # Sudoers rule
+  log "Instalando regra sudoers para a API..."
+  cat > "/etc/sudoers.d/hmg-soar-api" <<'EOF'
+hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-run-analysis
+hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-status
+EOF
+
+  chmod 0440 "/etc/sudoers.d/hmg-soar-api"
+  chown root:root "/etc/sudoers.d/hmg-soar-api"
 }
 
 install_systemd() {
@@ -150,10 +197,24 @@ install_systemd() {
     warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
   fi
 
+  API_SERVICE_FILE="hmg-soar-api.service"
+  if [[ -f "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" ]]; then
+    install -o root -g root -m 0644 \
+      "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" \
+      "/etc/systemd/system/${API_SERVICE_FILE}"
+  else
+    warn "Service API não encontrado no repo: systemd/${API_SERVICE_FILE}"
+  fi
+
   systemctl daemon-reload
 
   if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
     systemctl enable "${TIMER_FILE}" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f "/etc/systemd/system/${API_SERVICE_FILE}" ]]; then
+    systemctl enable "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
+    systemctl start "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
   fi
 }
 
@@ -229,6 +290,7 @@ location /soar-api/ {
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Remote-User \$remote_user;
 }
 NGINX_EYEMOLE_SNIPPET
 
@@ -298,22 +360,27 @@ systemctl reload nginx
 }
 
 run_report_once_if_possible() {
-if [[ ! -f "/etc/systemd/system/${SERVICE_FILE}" ]]; then
-warn "Service systemd não instalado. Pulando execução."
-return 0
-fi
+  if [[ ! -f "/etc/systemd/system/${SERVICE_FILE}" ]]; then
+    warn "Service systemd não instalado. Pulando execução."
+    return 0
+  fi
 
-if [[ ! -f "${ETC_DIR}/credentials.env" ]]; then
-warn "Arquivo ${ETC_DIR}/credentials.env não encontrado."
-warn "Instalação concluída, mas o relatório real não será executado até configurar credenciais."
-return 0
-fi
+  if [[ -f "${ETC_DIR}/credentials.env" ]]; then
+    log "Executando serviço real uma vez para publicar o dashboard..."
+    systemctl restart "${SERVICE_FILE}" || true
+  else
+    warn "Arquivo ${ETC_DIR}/credentials.env não encontrado. Gerando bootstrap inicial offline."
+  fi
 
-log "Executando serviço real uma vez para publicar o dashboard..."
-systemctl restart "${SERVICE_FILE}"
+  log "Executando bootstrap de contexto (context_bootstrap.py)..."
+  python3 "${APP_DIR}/context_bootstrap.py" --auto || true
 
-log "Últimas linhas do serviço:"
-journalctl -u "${SERVICE_FILE}" -n 40 --no-pager || true
+  if [[ -f "${ETC_DIR}/credentials.env" ]]; then
+    log "Executando novamente hmg-soar-report.service após o bootstrap..."
+    systemctl restart "${SERVICE_FILE}" || true
+    log "Últimas linhas do serviço:"
+    journalctl -u "${SERVICE_FILE}" -n 40 --no-pager || true
+  fi
 }
 
 final_message() {
@@ -341,20 +408,29 @@ install_package_if_missing nginx nginx
 
 mkdir -p "${BACKUP_DIR}"
 
-backup_path "${APP_DIR}"
-backup_path "${WEB_DIR}"
-backup_path "${HTPASSWD_FILE}"
-backup_path "${SNIPPET_FILE}"
+  need_root
 
-create_user_and_dirs
-install_app_files
-validate_python
-install_systemd
-install_nginx_snippet
-inject_nginx_include
-reload_nginx
-run_report_once_if_possible
-final_message
+  install_package_if_missing python3 python3
+  install_package_if_missing rsync rsync
+  install_package_if_missing nginx nginx
+
+  mkdir -p "${BACKUP_DIR}"
+
+  backup_path "${APP_DIR}"
+  backup_path "${WEB_DIR}"
+  backup_path "${HTPASSWD_FILE}"
+  backup_path "${SNIPPET_FILE}"
+
+  create_user_and_dirs
+  install_app_files
+  validate_python
+  install_safe_wrappers
+  install_systemd
+  install_nginx_snippet
+  inject_nginx_include
+  reload_nginx
+  run_report_once_if_possible
+  final_message
 }
 
 main "$@"

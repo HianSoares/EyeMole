@@ -156,7 +156,7 @@ def load_assets_context() -> dict:
                 return data
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao ler arquivo de contexto em {p}: {e}")
-    
+
     logger.info("[-] Arquivo de contexto de ativos não encontrado ou ilegível. Usando defaults.")
     return {}
 
@@ -174,47 +174,47 @@ def get_asset_context(assets_data: dict, agent_id: str, agent_name: str) -> dict
         "technical_owner": "unknown",
         "tags": []
     }
-    
+
     if not assets_data:
         # Normalizar defaults antes de retornar
         for key in ["criticality", "environment", "exposure", "asset_type"]:
             if key in defaults and isinstance(defaults[key], str):
                 defaults[key] = defaults[key].lower().strip()
         return defaults.copy()
-        
+
     json_defaults = assets_data.get("defaults", {})
     for k, v in json_defaults.items():
         if k in defaults:
             defaults[k] = v
-            
+
     # Normalizar defaults de ativos
     for key in ["criticality", "environment", "exposure", "asset_type"]:
         if key in defaults and isinstance(defaults[key], str):
             defaults[key] = defaults[key].lower().strip()
-            
+
     agents_map = assets_data.get("agents", {})
-    
+
     # 1. Busca por agent_id exato
     if agent_id and agent_id in agents_map:
         return _merge_asset_context(agents_map[agent_id], defaults)
-        
+
     # 2. Busca por agent_name exato
     if agent_name and agent_name in agents_map:
         return _merge_asset_context(agents_map[agent_name], defaults)
-        
+
     # 3. Busca por hostname exato ou correspondência parcial
     agent_id_lower = str(agent_id).lower() if agent_id else ""
     agent_name_lower = str(agent_name).lower() if agent_name else ""
-    
+
     for key, val in agents_map.items():
         key_lower = str(key).lower()
         asset_name_lower = str(val.get("asset_name", "")).lower()
-        
+
         if (agent_id_lower and key_lower == agent_id_lower) or \
            (agent_name_lower and key_lower == agent_name_lower) or \
            (agent_name_lower and asset_name_lower == agent_name_lower):
             return _merge_asset_context(val, defaults)
-            
+
     return defaults.copy()
 
 def _merge_asset_context(asset_info: dict, defaults: dict) -> dict:
@@ -354,7 +354,7 @@ def load_exposure_context() -> dict:
                 return data
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao ler arquivo de contexto de exposição em {p}: {e}")
-    
+
     logger.info("[-] Arquivo de contexto de exposição não encontrado ou ilegível. Usando defaults.")
     return {}
 
@@ -376,47 +376,47 @@ def get_exposure_context(exposure_data: dict, agent_id: str, agent_name: str) ->
         "external_identifiers": [],
         "notes": ""
     }
-    
+
     if not exposure_data:
         # Normalizar defaults antes de retornar
         for key in ["exposure_level", "network_zone", "confidence"]:
             if key in defaults and isinstance(defaults[key], str):
                 defaults[key] = defaults[key].lower().strip()
         return defaults.copy()
-        
+
     json_defaults = exposure_data.get("defaults", {})
     for k, v in json_defaults.items():
         if k in defaults:
             defaults[k] = v
-            
+
     # Normalizar defaults de exposição
     for key in ["exposure_level", "network_zone", "confidence"]:
         if key in defaults and isinstance(defaults[key], str):
             defaults[key] = defaults[key].lower().strip()
-            
+
     agents_map = exposure_data.get("agents", {})
-    
+
     # 1. Busca por agent_id exato
     if agent_id and agent_id in agents_map:
         return _merge_exposure_context(agents_map[agent_id], defaults)
-        
+
     # 2. Busca por agent_name exato
     if agent_name and agent_name in agents_map:
         return _merge_exposure_context(agents_map[agent_name], defaults)
-        
+
     # 3. Busca por hostname exato ou correspondência parcial
     agent_id_lower = str(agent_id).lower() if agent_id else ""
     agent_name_lower = str(agent_name).lower() if agent_name else ""
-    
+
     for key, val in agents_map.items():
         key_lower = str(key).lower()
         asset_name_lower = str(val.get("asset_name", "")).lower()
-        
+
         if (agent_id_lower and key_lower == agent_id_lower) or \
            (agent_name_lower and key_lower == agent_name_lower) or \
            (agent_name_lower and asset_name_lower == agent_name_lower):
             return _merge_exposure_context(val, defaults)
-            
+
     return defaults.copy()
 
 # Caminhos da Gestão de Exceções / Risk Acceptance (Fase 3E)
@@ -442,7 +442,7 @@ def load_risk_acceptance() -> dict:
                 return data
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao ler arquivo de risk acceptance em {p}: {e}")
-    
+
     logger.info("[-] Arquivo de risk acceptance não encontrado ou ilegível. Usando defaults vazios.")
     return {}
 
@@ -454,7 +454,7 @@ def validate_risk_acceptance_rules(data: dict) -> Tuple[List[dict], List[dict], 
     valid_rules = []
     invalid_rules = []
     alerts = []
-    
+
     if not data or "rules" not in data:
         return valid_rules, invalid_rules, alerts
 
@@ -469,7 +469,7 @@ def validate_risk_acceptance_rules(data: dict) -> Tuple[List[dict], List[dict], 
     for idx, rule in enumerate(data.get("rules", [])):
         rule_copy = dict(rule)
         rule_id = rule_copy.get("id")
-        
+
         # 1. Validar ID
         if not rule_id:
             msg = f"Regra no índice {idx} sem campo 'id' obrigatório."
@@ -478,7 +478,7 @@ def validate_risk_acceptance_rules(data: dict) -> Tuple[List[dict], List[dict], 
             rule_copy["status"] = "invalid"
             invalid_rules.append(rule_copy)
             continue
-            
+
         if rule_id in seen_ids:
             msg = f"Regra '{rule_id}' com ID duplicado."
             alerts.append({"level": "warning", "title": "Regra Inválida", "message": msg})
@@ -586,7 +586,7 @@ def validate_risk_acceptance_rules(data: dict) -> Tuple[List[dict], List[dict], 
                 valid_until_dt = valid_until_dt.replace(tzinfo=timezone.utc)
             if ref_dt.tzinfo is None:
                 ref_dt = ref_dt.replace(tzinfo=timezone.utc)
-                
+
             delta_days = (valid_until_dt - ref_dt).days
             if delta_days > max_acceptance_days:
                 msg = f"Regra '{rule_id}' possui validade de {delta_days} dias, ultrapassando o limite máximo de {max_acceptance_days} dias."
@@ -636,21 +636,21 @@ def find_matching_acceptance_rule(
 ) -> Tuple[Optional[dict], str, bool]:
     """Procura a regra de exceção mais específica aplicável."""
     matched_rules = []
-    
+
     for rule in valid_rules:
         if not rule.get("enabled", True):
             continue
-            
+
         match_criteria = rule.get("match", {})
         is_match = True
-        
+
         for key, val in match_criteria.items():
             if val is None:
                 is_match = False
                 break
-                
+
             val_str = str(val).lower().strip()
-            
+
             if key == "cve":
                 if str(cve).lower().strip() != val_str:
                     is_match = False
@@ -709,15 +709,15 @@ def find_matching_acceptance_rule(
             else:
                 is_match = False
                 break
-                
+
         if is_match:
             matched_rules.append(rule)
-            
+
     if not matched_rules:
         return None, "none", False
 
     now_dt = datetime.now(timezone.utc)
-    
+
     def sorting_key(rule_data):
         spec = calculate_rule_specificity(rule_data)
         valid_until_str = rule_data.get("valid_until")
@@ -731,18 +731,18 @@ def find_matching_acceptance_rule(
                 diff_ms = abs((dt - now_dt).total_seconds())
             except Exception:
                 pass
-        
+
         idx = -1
         try:
             idx = valid_rules.index(rule_data)
         except ValueError:
             pass
-            
+
         return (-spec, diff_ms, idx)
 
     matched_rules.sort(key=sorting_key)
     best_rule = matched_rules[0]
-    
+
     valid_until_str = best_rule.get("valid_until")
     expired = False
     if valid_until_str:
@@ -755,7 +755,7 @@ def find_matching_acceptance_rule(
                 expired = True
         except Exception:
             pass
-            
+
     rule_status = best_rule.get("status", "none")
     if expired:
         return best_rule, "expired", True
@@ -799,7 +799,7 @@ def add_days(start_date_iso: str, days: int, business_days_only: bool = False) -
         dt = datetime.fromisoformat(clean_iso)
     except Exception:
         dt = datetime.now()
-        
+
     if not business_days_only:
         res_dt = dt + timedelta(days=days)
     else:
@@ -820,7 +820,7 @@ def calculate_days_difference(start_date_iso: str, end_date_iso: str, business_d
         s_dt = datetime.fromisoformat(s_clean)
     except Exception:
         s_dt = datetime.now()
-        
+
     try:
         e_clean = end_date_iso.replace("Z", "")
         if "." in e_clean:
@@ -828,10 +828,10 @@ def calculate_days_difference(start_date_iso: str, end_date_iso: str, business_d
         e_dt = datetime.fromisoformat(e_clean)
     except Exception:
         e_dt = datetime.now()
-        
+
     s_date = s_dt.date()
     e_date = e_dt.date()
-    
+
     if not business_days_only:
         return (e_date - s_date).days
     else:
@@ -840,7 +840,7 @@ def calculate_days_difference(start_date_iso: str, end_date_iso: str, business_d
         is_negative = s_date > e_date
         if is_negative:
             s_date, e_date = e_date, s_date
-        
+
         work_days = 0
         curr = s_date
         while curr < e_date:
@@ -854,25 +854,25 @@ def calculate_sla_days(severity: str, is_kev: bool, asset_ctx: dict, expo_ctx: d
     sev = str(severity).lower().strip()
     if sev not in ["critical", "high", "medium", "low"]:
         sev = "medium"
-        
+
     defaults = sla_policy.get("defaults", {"critical": 15, "high": 30, "medium": 60, "low": 90})
     sla_candidates = [defaults.get(sev, 60)]
-    
+
     if is_kev:
         kev_policy = sla_policy.get("kev", {})
         if sev in kev_policy:
             sla_candidates.append(kev_policy[sev])
-            
+
     if expo_ctx.get("internet_facing", False):
         if_policy = sla_policy.get("internet_facing", {})
         if sev in if_policy:
             sla_candidates.append(if_policy[sev])
-            
+
     if expo_ctx.get("dmz", False):
         dmz_policy = sla_policy.get("dmz", {})
         if sev in dmz_policy:
             sla_candidates.append(dmz_policy[sev])
-            
+
     asset_crit = str(asset_ctx.get("criticality", "")).lower().strip()
     if asset_crit == "critical":
         ca_policy = sla_policy.get("critical_asset", {})
@@ -882,7 +882,7 @@ def calculate_sla_days(severity: str, is_kev: bool, asset_ctx: dict, expo_ctx: d
         ha_policy = sla_policy.get("high_asset", {})
         if sev in ha_policy:
             sla_candidates.append(ha_policy[sev])
-            
+
     # Verificar serviços sensíveis
     sensitive_list = {"rdp", "ssh", "vpn", "database", "smb", "ldap", "winrm", "admin_ui", "kibana", "wazuh", "qradar", "cyberark"}
     has_sensitive_svc = False
@@ -891,12 +891,12 @@ def calculate_sla_days(severity: str, is_kev: bool, asset_ctx: dict, expo_ctx: d
         if svc_name in sensitive_list:
             has_sensitive_svc = True
             break
-            
+
     if has_sensitive_svc:
         ss_policy = sla_policy.get("sensitive_service", {})
         if sev in ss_policy:
             sla_candidates.append(ss_policy[sev])
-            
+
     return min(sla_candidates)
 
 def calculate_sla_operational_score(
@@ -919,12 +919,12 @@ def calculate_sla_operational_score(
             score += 10.0
     elif sla_status == "due_soon":
         score += 8.0
-        
+
     if persistent:
         score += 10.0
     if recurring:
         score += 5.0
-        
+
     return score
 
 def calculate_agent_risk_modifiers(agent_id: str, agent_name: str, assets_data: dict, exposure_data: dict) -> Tuple[float, dict, float, dict, List[str]]:
@@ -935,22 +935,22 @@ def calculate_agent_risk_modifiers(agent_id: str, agent_name: str, assets_data: 
     expo = ctx_info.get("exposure", "unknown")
     env = ctx_info.get("environment", "unknown")
     atype = ctx_info.get("asset_type", "unknown")
-    
+
     crit_val = WEIGHT_CRITICALITY.get(crit, WEIGHT_CRITICALITY["unknown"])
     expo_val = WEIGHT_EXPOSURE.get(expo, WEIGHT_EXPOSURE["unknown"])
     env_val = WEIGHT_ENVIRONMENT.get(env, WEIGHT_ENVIRONMENT["unknown"])
     atype_val = WEIGHT_ASSET_TYPE.get(atype, WEIGHT_ASSET_TYPE["unknown"])
-    
+
     asset_score = crit_val + expo_val + env_val + atype_val
-    
+
     # 2. Exposure Context Score (Fase 3C)
     expo_ctx = get_exposure_context(exposure_data, agent_id, agent_name)
     expo_level = expo_ctx.get("exposure_level", "unknown")
     net_zone = expo_ctx.get("network_zone", "unknown")
-    
+
     level_weight = WEIGHT_EXPOSURE_LEVEL.get(expo_level, WEIGHT_EXPOSURE_LEVEL["unknown"])
     zone_weight = WEIGHT_NETWORK_ZONE.get(net_zone, WEIGHT_NETWORK_ZONE["unknown"])
-    
+
     flags_weight = 0
     if expo_ctx.get("internet_facing", False):
         flags_weight += 15
@@ -962,7 +962,7 @@ def calculate_agent_risk_modifiers(agent_id: str, agent_name: str, assets_data: 
         flags_weight += 8
     if expo_level == "unknown":
         flags_weight += 5
-        
+
     services_sum = 0
     for svc in expo_ctx.get("open_services", []):
         svc_name = svc.get("service", "").lower()
@@ -971,38 +971,38 @@ def calculate_agent_risk_modifiers(agent_id: str, agent_name: str, assets_data: 
             svc_expo = "internet" if expo_ctx.get("internet_facing", False) or expo_level in ["internet", "dmz"] else "internal"
         weight = WEIGHT_SERVICES.get((svc_name, svc_expo), 0)
         services_sum += weight
-        
+
     services_weight = min(services_sum, 25)
     exposure_score = level_weight + zone_weight + flags_weight + services_weight
-    
+
     # Gerar motivos contextuais
     reasons = []
     if crit in ["critical", "high", "medium"]:
         reasons.append(f"Ativo {crit.capitalize()}")
     elif crit == "unknown":
         reasons.append("Ativo sem classificação")
-        
+
     if expo_level in ["internet", "dmz"]:
         reasons.append(f"Exposição {expo_level.upper()}")
     elif expo in ["internet", "dmz"]:
         reasons.append(f"Exposição {expo.upper()}")
-        
+
     if env == "production":
         reasons.append("Ambiente Produção")
-        
+
     if atype not in ["unknown", "linux_server", "windows_server", "endpoint"]:
         reasons.append(f"Tipo {atype.upper()}")
-        
+
     if expo_ctx.get("internet_facing", False):
         reasons.append("Exposição Internet")
     if expo_ctx.get("dmz", False):
         reasons.append("Zona DMZ")
-    
+
     if services_sum > 0:
         critical_declared = [s.get("service", "").upper() for s in expo_ctx.get("open_services", []) if s.get("critical")]
         if critical_declared:
             reasons.append(f"Serviço {critical_declared[0]} exposto")
-            
+
     return asset_score, ctx_info, exposure_score, expo_ctx, reasons
 
 SCRIPT_NAME = "HMG Wazuh SOAR Brain"
@@ -1414,14 +1414,14 @@ def generate_risk_intelligence(
         sla_policy = load_sla_policy()
         risk_acceptance_data = load_risk_acceptance()
         valid_rules, invalid_rules, validation_alerts = validate_risk_acceptance_rules(risk_acceptance_data)
-        
+
         # 1. Gerar snapshot atual com contexto de ativos e de exposição (não-sensível)
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         snapshot_filename = f"snapshot_{timestamp_str}.json"
         snapshot_path = snapshots_dir / snapshot_filename
         latest_snapshot_path = snapshots_dir / "latest_snapshot.json"
         previous_snapshot_path = snapshots_dir / "previous_snapshot.json"
-        
+
         # Filtrar vulnerabilidades válidas para snapshot
         vulns_data = []
         for r in records:
@@ -1432,12 +1432,12 @@ def generate_risk_intelligence(
             expo_ctx = get_exposure_context(exposure_data, r.agent_id, r.agent_name)
             open_svcs = expo_ctx.get("open_services", [])
             top_svcs = [f"{s.get('service')}/{s.get('exposure')}" for s in open_svcs if s.get('service') and s.get('exposure')]
-            
+
             # Executar o matching da Fase 3E
             matched_rule, acceptance_status, is_expired = find_matching_acceptance_rule(
                 r.cve, r.agent_id, r.agent_name, r.package_name, r.severity, context, expo_ctx, valid_rules
             )
-            
+
             vulns_data.append({
                 "key": key,
                 "agent_id": r.agent_id or "unknown",
@@ -1472,12 +1472,12 @@ def generate_risk_intelligence(
                 "risk_acceptance_valid_until": matched_rule.get("valid_until") if matched_rule else None,
                 "risk_acceptance_ticket": matched_rule.get("ticket") if matched_rule else None,
             })
-            
+
         current_snapshot = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "agent_vulnerabilities": vulns_data
         }
-        
+
         # Se o latest_snapshot.json atual existe, ele vira o previous_snapshot.json
         baseline_available = False
         previous_snapshot_data = None
@@ -1490,19 +1490,19 @@ def generate_risk_intelligence(
                 baseline_available = True
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao rotacionar latest_snapshot para previous_snapshot: {e}")
-                
+
         # Calcular first_seen, occurrences e first_seen_estimated a partir dos snapshots anteriores
         first_seen_map = {}
         occurrences_map = {}
         first_seen_estimated_map = {}
-        
+
         current_timestamp = current_snapshot["timestamp"]
         for v in current_snapshot["agent_vulnerabilities"]:
             v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
             first_seen_map[v_key] = current_timestamp
             occurrences_map[v_key] = 1
             first_seen_estimated_map[v_key] = True
-            
+
         # Analisar snapshots históricos existentes
         snapshot_files = sorted(snapshots_dir.glob("snapshot_*.json"))
         vuln_timestamps = defaultdict(list)
@@ -1520,7 +1520,7 @@ def generate_risk_intelligence(
                     vuln_timestamps[v_key].append(ts)
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao ler snapshot histórico {f.name} para análise de SLA: {e}")
-                
+
         # Atualizar mapas para as vulns correntes
         for v in current_snapshot["agent_vulnerabilities"]:
             v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
@@ -1532,42 +1532,42 @@ def generate_risk_intelligence(
                 unique_ts = set(ts_list)
                 unique_ts.add(current_timestamp)
                 occurrences_map[v_key] = len(unique_ts)
-                
+
         near_due_threshold = sla_policy.get("near_due_threshold_days", 5)
         persistent_threshold = sla_policy.get("persistent_threshold_days", 30)
         recurring_threshold = sla_policy.get("recurring_threshold_count", 3)
         business_days = bool(sla_policy.get("business_days_only", False))
-        
+
         # Enriquecer vulnerabilidades do snapshot corrente
         for v in current_snapshot["agent_vulnerabilities"]:
             v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
             f_seen = first_seen_map[v_key]
             occ_count = occurrences_map[v_key]
             est_flag = first_seen_estimated_map[v_key]
-            
+
             age_days = calculate_days_difference(f_seen, current_timestamp, business_days)
             if age_days < 0:
                 age_days = 0
-                
+
             v_agent_id = v["agent_id"]
             v_agent_name = v["agent_name"]
             v_asset_ctx = get_asset_context(assets_data, v_agent_id, v_agent_name)
             v_expo_ctx = get_exposure_context(exposure_data, v_agent_id, v_agent_name)
-            
+
             sla_days = calculate_sla_days(v["severity"], v["is_kev"], v_asset_ctx, v_expo_ctx, sla_policy)
             due_date = add_days(f_seen, sla_days, business_days)
             days_to_due = calculate_days_difference(current_timestamp, due_date, business_days)
-            
+
             if days_to_due < 0:
                 sla_status = "overdue"
             elif 0 <= days_to_due <= near_due_threshold:
                 sla_status = "due_soon"
             else:
                 sla_status = "within_sla"
-                
+
             persistent = (age_days >= persistent_threshold)
             recurring = (occ_count >= recurring_threshold)
-            
+
             v["first_seen"] = f_seen
             v["last_seen"] = current_timestamp
             v["age_days"] = age_days
@@ -1579,21 +1579,21 @@ def generate_risk_intelligence(
             v["persistent"] = persistent
             v["recurring"] = recurring
             v["snapshot_occurrences"] = occ_count
-            
+
             v_agent_id = v["agent_id"]
             v_agent_name = v["agent_name"]
             v_asset_ctx = get_asset_context(assets_data, v_agent_id, v_agent_name)
             v_expo_ctx = get_exposure_context(exposure_data, v_agent_id, v_agent_name)
-            
+
             matched_rule, acceptance_status, is_expired = find_matching_acceptance_rule(
                 v["cve"], v_agent_id, v_agent_name, v["package_name"], v["severity"], v_asset_ctx, v_expo_ctx, valid_rules
             )
-            
+
             v["risk_accepted"] = (acceptance_status == "accepted")
             v["acceptance_status"] = acceptance_status
             v["acceptance_reason"] = matched_rule.get("reason") if matched_rule else None
             v["accepted_until"] = matched_rule.get("valid_until") if matched_rule else None
-            
+
             v["risk_acceptance"] = {
                 "status": acceptance_status,
                 "rule_id": matched_rule.get("id") if matched_rule else None,
@@ -1605,11 +1605,11 @@ def generate_risk_intelligence(
                 "ticket": matched_rule.get("ticket") if matched_rule else None,
                 "owner": matched_rule.get("owner") if matched_rule else None
             }
-            
+
         current_snapshot_json = json.dumps(current_snapshot, indent=2, ensure_ascii=False)
         _atomic_write(current_snapshot_json, snapshot_path, web_group)
         _atomic_write(current_snapshot_json, latest_snapshot_path, web_group)
-        
+
         # 2. Calcular Delta
         delta_info = {
             "new_vulnerabilities": 0,
@@ -1626,48 +1626,48 @@ def generate_risk_intelligence(
         resolved_items = []
         worsened_agents = []
         improved_agents = []
-        
+
         if baseline_available and previous_snapshot_data:
             curr_dict = {v["key"]: v for v in current_snapshot["agent_vulnerabilities"]}
             prev_dict = {v["key"]: v for v in previous_snapshot_data.get("agent_vulnerabilities", [])}
-            
+
             curr_keys = set(curr_dict.keys())
             prev_keys = set(prev_dict.keys())
-            
+
             new_keys = curr_keys - prev_keys
             resolved_keys = prev_keys - curr_keys
             persistent_keys = curr_keys & prev_keys
-            
+
             new_items = [curr_dict[k] for k in new_keys]
             resolved_items = [prev_dict[k] for k in resolved_keys]
-            
+
             delta_info["new_vulnerabilities"] = len(new_keys)
             delta_info["resolved_vulnerabilities"] = len(resolved_keys)
             delta_info["persistent_vulnerabilities"] = len(persistent_keys)
-            
+
             delta_info["new_kev"] = sum(1 for v in new_items if v.get("is_kev"))
             delta_info["resolved_kev"] = sum(1 for v in resolved_items if v.get("is_kev"))
             delta_info["new_critical"] = sum(1 for v in new_items if str(v.get("severity")).lower() == "critical")
             delta_info["resolved_critical"] = sum(1 for v in resolved_items if str(v.get("severity")).lower() == "critical")
-            
+
             # Calcular alteração por agente
             curr_agent_counts = defaultdict(int)
             for v in current_snapshot["agent_vulnerabilities"]:
                 curr_agent_counts[v["agent_id"]] += 1
-                
+
             prev_agent_counts = defaultdict(int)
             for v in previous_snapshot_data.get("agent_vulnerabilities", []):
                 prev_agent_counts[v["agent_id"]] += 1
-                
+
             all_agents = set(curr_agent_counts.keys()) | set(prev_agent_counts.keys())
-            
+
             # Mapeamento de id -> nome
             agent_names = {}
             for v in current_snapshot["agent_vulnerabilities"]:
                 agent_names[v["agent_id"]] = v["agent_name"]
             for v in previous_snapshot_data.get("agent_vulnerabilities", []):
                 agent_names[v["agent_id"]] = v["agent_name"]
-                
+
             for aid in all_agents:
                 if aid == "unknown":
                     continue
@@ -1689,7 +1689,7 @@ def generate_risk_intelligence(
                         "previous_count": cnt_p,
                         "current_count": cnt_c
                     })
-                    
+
         risk_delta = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": "ok" if baseline_available else "no_baseline",
@@ -1702,31 +1702,31 @@ def generate_risk_intelligence(
             "worsened_agents": worsened_agents,
             "improved_agents": improved_agents
         }
-        
+
         # 2.1 Coletar todos os agentes vistos nos registros de vulnerabilidade
         unique_agents_seen = {}
         for r in records:
             if not r.agent_id or r.agent_id == "N/A":
                 continue
             unique_agents_seen[r.agent_id] = r.agent_name
-            
+
         # Calcular estatísticas do contexto de ativos
         total_seen = len(unique_agents_seen)
         classified_count = 0
         unclassified_count = 0
-        
+
         crit_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
         expo_counts = {"internet": 0, "dmz": 0, "internal": 0, "isolated": 0, "unknown": 0}
-        
+
         unclassified_assets = []
         agent_risk_scores = defaultdict(float)
         agent_vuln_counts = defaultdict(int)
-        
+
         for aid, aname in unique_agents_seen.items():
             ctx_info = get_asset_context(assets_data, aid, aname)
             crit = ctx_info.get("criticality", "unknown")
             expo = ctx_info.get("exposure", "unknown")
-            
+
             if crit == "unknown":
                 unclassified_count += 1
                 unclassified_assets.append({
@@ -1735,29 +1735,29 @@ def generate_risk_intelligence(
                 })
             else:
                 classified_count += 1
-                
+
             crit_counts[crit] = crit_counts.get(crit, 0) + 1
             expo_counts[expo] = expo_counts.get(expo, 0) + 1
-            
+
         # 3. Calcular Prioridades (Top 10) e Risco por Ativo
         curr_vulns_dict = {
-            generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"]): v 
+            generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"]): v
             for v in current_snapshot["agent_vulnerabilities"]
         }
-        
+
         vuln_groups = defaultdict(list)
         for r in records:
             if not r.cve:
                 continue
             vuln_groups[(r.cve, r.package_name or "unknown_package")].append(r)
-            
+
         priorities = []
         sensitive_packages = {
-            "openssl", "curl", "sudo", "openssh", "openssh-server", "kernel", "linux-image", 
-            "glibc", "libc", "apache", "nginx", "php", "python", "java", "log4j", "docker", 
+            "openssl", "curl", "sudo", "openssh", "openssh-server", "kernel", "linux-image",
+            "glibc", "libc", "apache", "nginx", "php", "python", "java", "log4j", "docker",
             "containerd", "kubernetes"
         }
-        
+
         for (cve, package_name), group_records in vuln_groups.items():
             sample = group_records[0]
             severity = sample.severity or "unknown"
@@ -1765,14 +1765,14 @@ def generate_risk_intelligence(
             epss_score = sample.epss_score
             is_kev = bool(sample.is_kev)
             is_ransomware = bool(sample.is_ransomware)
-            
+
             affected_ids = list(set(r.agent_id for r in group_records if r.agent_id))
             affected_count = len(affected_ids)
-            
+
             # Base técnica
             score_rec = 0.0
             reasons = []
-            
+
             if is_kev:
                 score_rec += 40
                 reasons.append("KEV ativo")
@@ -1782,7 +1782,7 @@ def generate_risk_intelligence(
             elif str(severity).lower() == "high":
                 score_rec += 15
                 reasons.append("Severidade Alta")
-                
+
             if epss_score is not None:
                 if epss_score >= 0.50:
                     score_rec += 30
@@ -1790,16 +1790,16 @@ def generate_risk_intelligence(
                 elif epss_score >= 0.20:
                     score_rec += 20
                     reasons.append("EPSS alto")
-                    
+
             if affected_count > 0:
                 score_rec += min(affected_count * 3, 15)
                 if affected_count > 1:
                     reasons.append(f"Múltiplos agentes ({affected_count})")
-                    
+
             if str(package_name).lower() in sensitive_packages:
                 score_rec += 10
                 reasons.append("Pacote sensível")
-                
+
             # Escolher o agente com a maior pontuação ajustada (Contexto + Exposição + SLA)
             best_agent_id = None
             best_final_score = -1
@@ -1807,26 +1807,26 @@ def generate_risk_intelligence(
             best_expo_ctx = None
             best_contextual_reasons = []
             best_v_enriched = None
-            
+
             for r in group_records:
                 asset_score, asset_ctx, expo_score, expo_ctx, ctx_reasons = calculate_agent_risk_modifiers(
                     r.agent_id, r.agent_name, assets_data, exposure_data
                 )
-                
+
                 v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
                 v_enriched = curr_vulns_dict.get(v_key, {})
-                
+
                 sla_status = v_enriched.get("sla_status", "within_sla")
                 persistent = bool(v_enriched.get("persistent", False))
                 recurring = bool(v_enriched.get("recurring", False))
                 asset_crit = v_enriched.get("criticality", "unknown")
                 is_kev_val = bool(v_enriched.get("is_kev", False))
                 internet_facing = bool(v_enriched.get("internet_facing", False))
-                
+
                 sla_op_score = calculate_sla_operational_score(
                     sla_status, persistent, recurring, asset_crit, is_kev_val, internet_facing
                 )
-                
+
                 # Matching de risk acceptance para ajustar a prioridade operacional
                 cand_rule, cand_a_status, cand_expired = find_matching_acceptance_rule(
                     r.cve, r.agent_id, r.agent_name, r.package_name, r.severity, asset_ctx, expo_ctx, valid_rules
@@ -1845,7 +1845,7 @@ def generate_risk_intelligence(
                     best_asset_ctx = asset_ctx
                     best_expo_ctx = expo_ctx
                     best_v_enriched = v_enriched
-                    
+
                     local_reasons = list(ctx_reasons)
                     if sla_status == "overdue":
                         local_reasons.append(f"SLA vencido há {abs(v_enriched.get('days_to_due', 0))} dias")
@@ -1854,7 +1854,7 @@ def generate_risk_intelligence(
                     if recurring:
                         local_reasons.append(f"recorrente em {v_enriched.get('snapshot_occurrences', 1)} snapshots")
                     best_contextual_reasons = local_reasons
-                    
+
             # Combinar motivos
             all_reasons = reasons + best_contextual_reasons
             seen_reasons = set()
@@ -1864,10 +1864,10 @@ def generate_risk_intelligence(
                     seen_reasons.add(rs)
                     uniq_reasons.append(rs)
             reason_str = " + ".join(uniq_reasons) if uniq_reasons else "Prioridade geral"
-            
+
             open_svcs = best_expo_ctx.get("open_services", [])
             top_svcs = [f"{s.get('service')}/{s.get('exposure')}" for s in open_svcs if s.get('service') and s.get('exposure')]
-            
+
             sla_ctx = {}
             if best_v_enriched:
                 sla_ctx = {
@@ -1882,7 +1882,7 @@ def generate_risk_intelligence(
                     "snapshot_occurrences": best_v_enriched.get("snapshot_occurrences"),
                     "first_seen_estimated": best_v_enriched.get("first_seen_estimated")
                 }
-                
+
             cvss_val = cvss_score or 0.0
             epss_val = epss_score or 0.0
             p_level = "Priority 4"
@@ -1929,7 +1929,7 @@ def generate_risk_intelligence(
                 "priority": p_level,
                 "_cvss": cvss_val
             })
-            
+
         # Enriquecer priorities com a info de risk_acceptance
         for item in priorities:
             cve = item["cve"]
@@ -1946,14 +1946,14 @@ def generate_risk_intelligence(
                 item["risk_acceptance"] = {"status": "none", "expired": False}
 
         priorities.sort(key=lambda x: (-x["priority_score"], -x["_cvss"]))
-        
+
         top_priorities = []
         for idx, item in enumerate(priorities[:10]):
             item_copy = dict(item)
             item_copy["rank"] = idx + 1
             item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
             top_priorities.append(item_clean)
-            
+
         actionable_list = [p for p in priorities if not (p["risk_acceptance"]["status"] in ["accepted", "false_positive", "out_of_scope", "duplicate"] and not p["risk_acceptance"]["expired"])]
         top_actionable_priorities = []
         for idx, item in enumerate(actionable_list[:10]):
@@ -1961,7 +1961,7 @@ def generate_risk_intelligence(
             item_copy["rank"] = idx + 1
             item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
             top_actionable_priorities.append(item_clean)
-            
+
         excluding_accepted_list = [p for p in priorities if not (p["risk_acceptance"]["status"] == "accepted" and not p["risk_acceptance"]["expired"])]
         top_priorities_excluding_accepted = []
         for idx, item in enumerate(excluding_accepted_list[:10]):
@@ -1969,38 +1969,38 @@ def generate_risk_intelligence(
             item_copy["rank"] = idx + 1
             item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
             top_priorities_excluding_accepted.append(item_clean)
-            
+
         accepted_items = []
         for item in priorities:
             if item["risk_acceptance"]["status"] == "accepted" and not item["risk_acceptance"]["expired"]:
                 item_copy = dict(item)
                 item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
                 accepted_items.append(item_clean)
-                
+
         false_positive_items = []
         for item in priorities:
             if item["risk_acceptance"]["status"] == "false_positive" and not item["risk_acceptance"]["expired"]:
                 item_copy = dict(item)
                 item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
                 false_positive_items.append(item_clean)
-                
+
         expired_acceptances_list = []
         for item in priorities:
             if item["risk_acceptance"]["expired"]:
                 item_copy = dict(item)
                 item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
                 expired_acceptances_list.append(item_clean)
-            
+
         # Calcular risco cumulativo para os top ativos por risco (com SLA)
         for r in records:
             if not r.agent_id or r.agent_id == "N/A":
                 continue
             agent_vuln_counts[r.agent_id] += 1
-            
+
             is_kev = bool(r.is_kev)
             sample_severity = r.severity or "unknown"
             epss_val = r.epss_score
-            
+
             score_rec = 0
             if is_kev:
                 score_rec += 40
@@ -2015,11 +2015,11 @@ def generate_risk_intelligence(
                     score_rec += 20
             if str(r.package_name).lower() in sensitive_packages:
                 score_rec += 10
-                
+
             asset_score, asset_ctx, expo_score, expo_ctx, _ = calculate_agent_risk_modifiers(
                 r.agent_id, r.agent_name, assets_data, exposure_data
             )
-            
+
             v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
             v_enriched = curr_vulns_dict.get(v_key, {})
             sla_status = v_enriched.get("sla_status", "within_sla")
@@ -2028,11 +2028,11 @@ def generate_risk_intelligence(
             asset_crit = v_enriched.get("criticality", "unknown")
             is_kev_val = bool(v_enriched.get("is_kev", False))
             internet_facing = bool(v_enriched.get("internet_facing", False))
-            
+
             sla_op_score = calculate_sla_operational_score(
                 sla_status, persistent, recurring, asset_crit, is_kev_val, internet_facing
             )
-            
+
             # Matching de risk acceptance para ajustar score cumulativo do ativo
             m_rule, a_status, exp = find_matching_acceptance_rule(
                 r.cve, r.agent_id, r.agent_name, r.package_name, r.severity, asset_ctx, expo_ctx, valid_rules
@@ -2046,7 +2046,7 @@ def generate_risk_intelligence(
                 rec_score += 10.0
             rec_score = max(0.0, min(100.0, rec_score))
             agent_risk_scores[r.agent_id] += rec_score
-            
+
         top_risky_assets = []
         for aid, score_sum in agent_risk_scores.items():
             ctx_info = get_asset_context(assets_data, aid, unique_agents_seen[aid])
@@ -2060,9 +2060,9 @@ def generate_risk_intelligence(
                 "risk_score": int(score_sum),
                 "vuln_count": agent_vuln_counts[aid]
             })
-            
+
         top_risky_assets.sort(key=lambda x: -x["risk_score"])
-        
+
         # 4. Gerar Alertas Passivos e Detecção de Inconsistências
         alerts = []
         total_vulns = len(current_snapshot["agent_vulnerabilities"])
@@ -2073,7 +2073,7 @@ def generate_risk_intelligence(
         kev_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if v.get("is_kev"))
         epss_high_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if v.get("epss_score") is not None and v.get("epss_score") >= 0.20)
         affected_agents_set = set(v["agent_id"] for v in current_snapshot["agent_vulnerabilities"])
-        
+
         # Alertas de Ativos sem classificação (Fase 3B)
         if unclassified_count > 0:
             alerts.append({
@@ -2081,7 +2081,7 @@ def generate_risk_intelligence(
                 "title": "Ativos sem classificação",
                 "message": f"Existem {unclassified_count} ativo(s) com vulnerabilidades, mas sem criticidade definida no assets_context.json."
             })
-            
+
         if kev_count > 0:
             alerts.append({
                 "level": "critical",
@@ -2094,7 +2094,7 @@ def generate_risk_intelligence(
                 "title": "Nova CVE Crítica",
                 "message": f"Foi identificada {delta_info['new_critical']} nova(s) vulnerabilidade(s) crítica(s) desde o último relatório."
             })
-            
+
         if epss_high_count > 0:
             alerts.append({
                 "level": "warning",
@@ -2119,7 +2119,7 @@ def generate_risk_intelligence(
                 "title": "Sem Baseline de Histórico",
                 "message": "Não foi encontrado snapshot anterior para cálculo de delta comparativo."
             })
-            
+
         for (cve, package_name), group_records in vuln_groups.items():
             uniq_aids = set(r.agent_id for r in group_records if r.agent_id)
             if len(uniq_aids) >= 5:
@@ -2129,7 +2129,7 @@ def generate_risk_intelligence(
                     "message": f"A vulnerabilidade {cve} ({package_name}) afeta {len(uniq_aids)} agentes simultaneamente."
                 })
                 break
-                
+
         if baseline_available and delta_info["new_vulnerabilities"] == 0:
             alerts.append({
                 "level": "info",
@@ -2149,12 +2149,12 @@ def generate_risk_intelligence(
         dmz_count = 0
         internal_count = 0
         unknown_exposure_count = 0
-        
+
         total_declared_services = 0
         critical_services_count = 0
         internet_exposed_services_count = 0
         internal_sensitive_services_count = 0
-        
+
         exposure_alerts = []
         assets_missing_exposure_context = []
         top_exposed_assets = []
@@ -2162,7 +2162,7 @@ def generate_risk_intelligence(
         for aid, aname in unique_agents_seen.items():
             asset_ctx = get_asset_context(assets_data, aid, aname)
             expo_ctx = get_exposure_context(exposure_data, aid, aname)
-            
+
             # Verificar presença na seção de agentes do exposure_context.json
             has_entry = False
             if exposure_data and "agents" in exposure_data:
@@ -2178,7 +2178,7 @@ def generate_risk_intelligence(
                         if key_lower == aid_lower or key_lower == aname_lower or asset_name_lower == aname_lower:
                             has_entry = True
                             break
-                            
+
             if has_entry:
                 with_exposure_context += 1
             else:
@@ -2186,7 +2186,7 @@ def generate_risk_intelligence(
                     "agent_id": aid,
                     "agent_name": aname
                 })
-                
+
             expo_level = expo_ctx.get("exposure_level", "unknown")
             if expo_level == "internet":
                 internet_facing_count += 1
@@ -2196,7 +2196,7 @@ def generate_risk_intelligence(
                 internal_count += 1
             elif expo_level == "unknown":
                 unknown_exposure_count += 1
-                
+
             # Serviços abertos
             open_services = expo_ctx.get("open_services", [])
             total_declared_services += len(open_services)
@@ -2210,10 +2210,10 @@ def generate_risk_intelligence(
                     internet_exposed_services_count += 1
                 elif svc_expo == "internal" and svc.get("critical", False):
                     internal_sensitive_services_count += 1
-                    
+
             # Pontuação de exposição
             _, _, expo_score, _, _ = calculate_agent_risk_modifiers(aid, aname, assets_data, exposure_data)
-            
+
             top_exposed_assets.append({
                 "agent_id": aid,
                 "agent_name": aname,
@@ -2223,7 +2223,7 @@ def generate_risk_intelligence(
                 "dmz": bool(expo_ctx.get("dmz", False)),
                 "exposure_score": int(expo_score)
             })
-            
+
             # --- DETECÇÃO DE INCONSISTÊNCIAS (Cinco Casos da Fase 3C) ---
             # 1. asset_context exposure = internal + exposure_context internet_facing = true
             asset_expo = asset_ctx.get("exposure", "unknown")
@@ -2233,7 +2233,7 @@ def generate_risk_intelligence(
                     "title": "Inconsistência de Exposição",
                     "message": f"Ativo {aid} ({aname}) classificado como interno em assets_context.json, mas marcado como internet-facing em exposure_context.json."
                 })
-                
+
             # 2. asset_context criticality = critical/high + exposure_context exposure_level = unknown
             asset_crit = asset_ctx.get("criticality", "unknown")
             if asset_crit in ["critical", "high"] and expo_level == "unknown":
@@ -2242,7 +2242,7 @@ def generate_risk_intelligence(
                     "title": "Exposição Desconhecida em Ativo Crítico",
                     "message": f"Ativo crítico/alto {aid} ({aname}) sem contexto de exposição definido (exposure_level = unknown)."
                 })
-                
+
             # 4. ativo vulnerável não existe em exposure_context.json
             if not has_entry:
                 exposure_alerts.append({
@@ -2250,14 +2250,14 @@ def generate_risk_intelligence(
                     "title": "Ativo sem Contexto de Exposição",
                     "message": f"Ativo vulnerável {aid} ({aname}) não possui registro em exposure_context.json."
                 })
-                
+
             # 5. ativo de infraestrutura crítica com exposição internet/dmz
             asset_type = asset_ctx.get("asset_type", "unknown")
             critical_types = ["siem", "qradar", "wazuh", "cyberark", "domain_controller", "database"]
             if asset_type in critical_types:
-                is_exposed = (expo_level in ["internet", "dmz"] or 
-                              asset_expo in ["internet", "dmz"] or 
-                              bool(expo_ctx.get("internet_facing", False)) or 
+                is_exposed = (expo_level in ["internet", "dmz"] or
+                              asset_expo in ["internet", "dmz"] or
+                              bool(expo_ctx.get("internet_facing", False)) or
                               bool(expo_ctx.get("dmz", False)))
                 if is_exposed:
                     exposure_alerts.append({
@@ -2270,7 +2270,7 @@ def generate_risk_intelligence(
         external_assets_list = exposure_data.get("external_assets", [])
         total_external_assets = len(external_assets_list)
         external_without_agent = 0
-        
+
         for ext in external_assets_list:
             has_agent = ext.get("has_wazuh_agent", True)
             if not has_agent:
@@ -2288,13 +2288,13 @@ def generate_risk_intelligence(
 
         # Incorporar os alertas de exposição nos alertas do sumário de risco
         alerts.extend(exposure_alerts)
-            
+
         risk_summary_path = web_path / "data" / "risk_summary.json"
         risk_delta_path = web_path / "data" / "risk_delta.json"
         asset_context_summary_path = web_path / "data" / "asset_context_summary.json"
         exposure_context_summary_path = web_path / "data" / "exposure_context_summary.json"
         sla_summary_path = web_path / "data" / "sla_summary.json"
-        
+
         # Encontrar qual arquivo de contexto de ativos foi realmente utilizado
         actual_source = "none"
         for p in [ASSETS_CONTEXT_PATH_PREF, ASSETS_CONTEXT_PATH_FALLBACK]:
@@ -2309,7 +2309,7 @@ def generate_risk_intelligence(
                 actual_exposure_source = str(p)
                 break
         exposure_status = "ok" if actual_exposure_source != "none" else "degraded"
-        
+
         # Encontrar qual arquivo de política de SLA foi realmente utilizado
         actual_sla_source = "none"
         for p in [SLA_POLICY_PATH_PREF, SLA_POLICY_PATH_FALLBACK]:
@@ -2317,7 +2317,7 @@ def generate_risk_intelligence(
                 actual_sla_source = str(p)
                 break
         sla_policy_status = "ok" if actual_sla_source != "none" else "degraded"
-                
+
         # Gerar o asset_context_summary
         asset_context_summary = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -2379,7 +2379,7 @@ def generate_risk_intelligence(
         dmz_affected = 0
         unknown_exposure_affected = 0
         critical_exposed_svcs_affected = 0
-        
+
         for aid, aname in unique_agents_seen.items():
             expo_ctx = get_exposure_context(exposure_data, aid, aname)
             expo_level = expo_ctx.get("exposure_level", "unknown")
@@ -2389,7 +2389,7 @@ def generate_risk_intelligence(
                 dmz_affected += 1
             elif expo_level == "unknown":
                 unknown_exposure_affected += 1
-                
+
             for svc in expo_ctx.get("open_services", []):
                 if svc.get("critical", False):
                     svc_expo = svc.get("exposure", "").lower()
@@ -2397,7 +2397,7 @@ def generate_risk_intelligence(
                         svc_expo = "internet" if expo_ctx.get("internet_facing", False) or expo_level in ["internet", "dmz"] else "internal"
                     if svc_expo == "internet":
                         critical_exposed_svcs_affected += 1
-                        
+
         # Calcular estatísticas da gestão de SLA (Fase 3D)
         total_open = len(current_snapshot["agent_vulnerabilities"])
         overdue_count = 0
@@ -2426,12 +2426,12 @@ def generate_risk_intelligence(
             if sev not in by_severity:
                 sev = "medium"
             status = v["sla_status"]
-            
+
             ra = v.get("risk_acceptance", {})
             ra_status = ra.get("status", "none")
             ra_expired = ra.get("expired", False)
             is_valid_except = (ra_status in ["accepted", "false_positive", "out_of_scope", "duplicate"]) and not ra_expired
-            
+
             if status == "overdue":
                 overdue_count += 1
                 by_severity[sev]["overdue"] += 1
@@ -2444,17 +2444,17 @@ def generate_risk_intelligence(
             else:
                 unknown_sla_count += 1
             by_severity[sev]["total"] += 1
-            
+
             if v["persistent"]:
                 persistent_count += 1
             if v["recurring"]:
                 recurring_count += 1
             age_days_list.append(v["age_days"])
-            
+
             f_seen = v["first_seen"]
             if oldest_first_seen is None or f_seen < oldest_first_seen:
                 oldest_first_seen = f_seen
-                
+
             v_agent_id = v["agent_id"]
             v_agent_name = v["agent_name"]
             v_asset_ctx = get_asset_context(assets_data, v_agent_id, v_agent_name)
@@ -2504,7 +2504,7 @@ def generate_risk_intelligence(
                 "due_soon": stats["due_soon"],
                 "within_sla": stats["within_sla"]
             })
-            
+
         by_asset_list = []
         for aid, stats in by_asset_map.items():
             by_asset_list.append({
@@ -2642,12 +2642,12 @@ def generate_risk_intelligence(
         compensating_controls_count = 0
         actionable_priorities_count = 0
         accepted_expired_count = 0
-        
+
         waiting_change_window_count = 0
         out_of_scope_count = 0
         duplicate_count = 0
         under_review_count = 0
-        
+
         by_status_map = defaultdict(int)
         by_owner_map_ra = defaultdict(int)
         by_approver_map_ra = defaultdict(int)
@@ -2655,23 +2655,23 @@ def generate_risk_intelligence(
         expired_items = []
         matched_items_sample = []
         acceptance_alerts = list(validation_alerts)
-        
+
         for v in current_snapshot["agent_vulnerabilities"]:
             ra = v.get("risk_acceptance", {})
             status = ra.get("status", "none")
             exp = ra.get("expired", False)
-            
+
             if status == "none":
                 continue
-                
+
             rule_id = ra.get("rule_id")
             owner = ra.get("owner", "unknown") or "unknown"
             approver = ra.get("approved_by", "unknown") or "unknown"
-            
+
             by_status_map[status] += 1
             by_owner_map_ra[owner] += 1
             by_approver_map_ra[approver] += 1
-            
+
             matched_items_sample.append({
                 "cve": v["cve"],
                 "agent_id": v["agent_id"],
@@ -2689,7 +2689,7 @@ def generate_risk_intelligence(
                 "ticket": ra.get("ticket"),
                 "owner": owner
             })
-            
+
             if status == "accepted" and not exp:
                 accepted_risks_count += 1
             elif status == "false_positive" and not exp:
@@ -2706,10 +2706,10 @@ def generate_risk_intelligence(
                 duplicate_count += 1
             elif status == "under_review" and not exp:
                 under_review_count += 1
-                
+
             if status == "accepted" and exp:
                 accepted_expired_count += 1
-                
+
             if exp or status == "expired":
                 expired_acceptances_count += 1
                 expired_items.append({
@@ -2743,7 +2743,7 @@ def generate_risk_intelligence(
                         "valid_until": ra.get("valid_until"),
                         "days_to_expiration": days_left
                     })
-                    
+
                 # Alerta se KEV/Critical aceito sob regra válida
                 if (v["is_kev"] or str(v["severity"]).lower() == "critical") and status == "accepted":
                     acceptance_alerts.append({
@@ -2751,7 +2751,7 @@ def generate_risk_intelligence(
                         "title": "Aviso: Risco Crítico Aceito",
                         "message": f"A vulnerabilidade crítica/KEV {v['cve']} foi aceita (regra '{rule_id}') no ativo {v['agent_id']} ({v['agent_name']})."
                     })
-                    
+
         # Calcular total de vulnerabilidades acionáveis (não accepted/FP/out_of_scope/duplicate válidos)
         for v in current_snapshot["agent_vulnerabilities"]:
             ra = v.get("risk_acceptance", {})
@@ -2775,7 +2775,7 @@ def generate_risk_intelligence(
             if p.exists() and p.is_file():
                 actual_acceptance_source = str(p)
                 break
-                
+
         risk_acceptance_summary = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": "ok" if actual_acceptance_source != "none" else "degraded",
@@ -2852,7 +2852,7 @@ def generate_risk_intelligence(
                 "under_review": under_review_count
             }
         }
-        
+
         # Gerar tendência executiva (Fase 3F)
         trend_enrichment = generate_trend_summary(web_dir, web_group)
 
@@ -2913,7 +2913,7 @@ def generate_risk_intelligence(
             "expired_acceptances": expired_acceptances_list,
             "alerts": alerts
         }
-        
+
         if trend_enrichment:
             risk_summary.update(trend_enrichment)
         else:
@@ -2947,7 +2947,7 @@ def generate_risk_intelligence(
                 "quick_wins_count": 0,
                 "change_window_candidates_count": 0
             })
-        
+
         # Escrever arquivos atomicamente
         _atomic_write(json.dumps(risk_summary, indent=2, ensure_ascii=False), risk_summary_path, web_group)
         _atomic_write(json.dumps(risk_delta, indent=2, ensure_ascii=False), risk_delta_path, web_group)
@@ -2956,7 +2956,7 @@ def generate_risk_intelligence(
         _atomic_write(json.dumps(sla_summary, indent=2, ensure_ascii=False), sla_summary_path, web_group)
         risk_acceptance_summary_path = web_path / "data" / "risk_acceptance_summary.json"
         _atomic_write(json.dumps(risk_acceptance_summary, indent=2, ensure_ascii=False), risk_acceptance_summary_path, web_group)
-        
+
         # Reter snapshots
         all_snapshots = sorted(snapshots_dir.glob("snapshot_*.json"), key=lambda x: x.stat().st_mtime)
         if len(all_snapshots) > 30:
@@ -2967,7 +2967,7 @@ def generate_risk_intelligence(
                     logger.info(f"Retenção de snapshots: removido arquivo antigo {f.name}")
                 except Exception as e:
                     logger.warning(f"Falha ao remover snapshot antigo {f.name}: {e}")
-                    
+
     except Exception as e:
         logger.error(f"[ERRO] Falha ao gerar inteligência de risco (Fase 3D): {e}", exc_info=True)
 
@@ -2981,7 +2981,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
         web_path = Path(web_dir)
         snapshots_dir = web_path / "data" / "snapshots"
         trend_summary_path = web_path / "data" / "trend_summary.json"
-        
+
         if not snapshots_dir.exists():
             degraded_summary = {
                 "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -2999,7 +2999,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
 
         # Lista de snapshots ordenados cronologicamente pelo nome do arquivo
         snapshot_files = sorted(snapshots_dir.glob("snapshot_*.json"), key=lambda x: x.name)
-        
+
         if not snapshot_files:
             degraded_summary = {
                 "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -3016,7 +3016,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             return None
 
         snapshots_analyzed = len(snapshot_files)
-        
+
         # Classificação de status de tendência
         if snapshots_analyzed == 1:
             trend_status = "limited_history"
@@ -3026,7 +3026,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             trend_status = "weekly_trend"
         else:
             trend_status = "trend"
-            
+
         series = []
         for sf in snapshot_files:
             try:
@@ -3035,10 +3035,10 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             except Exception as e:
                 logger.warning(f"Falha ao processar snapshot {sf.name} para tendência: {e}")
                 continue
-                
+
             timestamp = snap.get("timestamp", sf.stat().st_mtime)
             vulns = snap.get("agent_vulnerabilities", [])
-            
+
             # Agregadores por snapshot
             total_v = len(vulns)
             crit = 0
@@ -3047,23 +3047,23 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             low = 0
             kev = 0
             epss_high = 0
-            
+
             sla_overdue = 0
             sla_due_soon = 0
             sla_within = 0
             sla_unknown = 0
-            
+
             persistent = 0
             recurring = 0
-            
+
             accepted = 0
             false_positive = 0
             expired_acc = 0
             actionable = 0
-            
+
             agents_set = set()
             pkgs_set = set()
-            
+
             for v in vulns:
                 severity = str(v.get("severity", "unknown")).lower()
                 if severity == "critical":
@@ -3074,12 +3074,12 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                     med += 1
                 elif severity == "low":
                     low += 1
-                    
+
                 if v.get("is_kev"):
                     kev += 1
                 if (v.get("epss_score") or 0.0) >= 0.20:
                     epss_high += 1
-                    
+
                 sla_stat = v.get("sla_status", "unknown")
                 if sla_stat == "overdue":
                     sla_overdue += 1
@@ -3089,33 +3089,33 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                     sla_within += 1
                 else:
                     sla_unknown += 1
-                    
+
                 if v.get("persistent"):
                     persistent += 1
                 if v.get("recurring"):
                     recurring += 1
-                    
+
                 ra = v.get("risk_acceptance", {})
                 ra_status = ra.get("status", "none")
                 ra_expired = ra.get("expired", False)
-                
+
                 if ra_status == "accepted" and not ra_expired:
                     accepted += 1
                 elif ra_status == "false_positive" and not ra_expired:
                     false_positive += 1
-                    
+
                 if ra_expired:
                     expired_acc += 1
-                    
+
                 is_excluded = ra_status in ["accepted", "false_positive", "out_of_scope", "duplicate"]
                 if (not is_excluded) or ra_expired:
                     actionable += 1
-                    
+
                 if v.get("agent_id"):
                     agents_set.add(v["agent_id"])
                 if v.get("package_name"):
                     pkgs_set.add(v["package_name"])
-                    
+
             series.append({
                 "timestamp": timestamp,
                 "total_vulnerabilities": total_v,
@@ -3139,12 +3139,12 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "actionable_priorities": actionable,
                 "_vulns": vulns
             })
-            
+
         if not series:
             return None
-            
+
         last_snap = series[-1]
-        
+
         # Calcular tempo de período
         try:
             first_time_str = series[0]["timestamp"].replace("Z", "+00:00")
@@ -3154,7 +3154,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             period_days = (last_time - first_time).days
         except Exception:
             period_days = 0
-            
+
         if len(series) >= 2:
             prev_snap = series[-2]
             delta = {
@@ -3168,7 +3168,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "sla_due_soon": last_snap["sla_due_soon"] - prev_snap["sla_due_soon"],
                 "actionable_priorities": last_snap["actionable_priorities"] - prev_snap["actionable_priorities"]
             }
-            
+
             # risk_direction
             if delta["critical"] > 0 or delta["kev_count"] > 0 or delta["sla_overdue"] > 0 or delta["actionable_priorities"] > 0:
                 risk_direction = "worsening"
@@ -3176,7 +3176,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 risk_direction = "improving"
             else:
                 risk_direction = "stable"
-                
+
             # executive_health
             expired_delta = last_snap["expired_acceptances"] - prev_snap["expired_acceptances"]
             if delta["critical"] > 0 or delta["kev_count"] > 0 or delta["sla_overdue"] > 0 or expired_delta > 0:
@@ -3215,7 +3215,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "age_days": v.get("age_days", 0),
                 "sla_status": v.get("sla_status", "unknown")
             })
-            
+
         # Evolução por Ativo
         asset_info = {}
         for v in prev_snap.get("_vulns", []):
@@ -3235,7 +3235,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             asset_info[aid]["prev_total"] += 1
             if str(v.get("severity", "")).lower() == "critical":
                 asset_info[aid]["prev_critical"] += 1
-                
+
         for v in last_vulns:
             aid = v["agent_id"]
             if aid not in asset_info:
@@ -3256,19 +3256,19 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             asset_info[aid]["technical_owner"] = v.get("technical_owner", asset_info[aid]["technical_owner"])
             asset_info[aid]["criticality"] = v.get("criticality", asset_info[aid]["criticality"])
             asset_info[aid]["exposure_level"] = v.get("exposure_level", asset_info[aid]["exposure_level"])
-            
+
         asset_trend_list = []
         for aid, info in asset_info.items():
             dt = info["curr_total"] - info["prev_total"]
             dc = info["curr_critical"] - info["prev_critical"]
-            
+
             if dc > 0 or dt > 0:
                 dir_val = "worsening"
             elif dt < 0:
                 dir_val = "improving"
             else:
                 dir_val = "stable"
-                
+
             asset_trend_list.append({
                 "agent_id": aid,
                 "agent_name": info["agent_name"],
@@ -3283,13 +3283,13 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "criticality": info["criticality"] or "unknown",
                 "exposure_level": info["exposure_level"] or "unknown"
             })
-            
+
         top_worsening_assets = [a for a in asset_trend_list if a["risk_direction"] == "worsening"]
         top_worsening_assets.sort(key=lambda x: (-x["delta_critical"], -x["delta_total"]))
-        
+
         top_improving_assets = [a for a in asset_trend_list if a["risk_direction"] == "improving"]
         top_improving_assets.sort(key=lambda x: (x["delta_total"], x["delta_critical"]))
-        
+
         # Evolução por Owner
         owner_info = {}
         for v in prev_snap.get("_vulns", []):
@@ -3299,7 +3299,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             owner_info[owner]["prev_total"] += 1
             if v.get("sla_status") == "overdue":
                 owner_info[owner]["prev_overdue"] += 1
-                
+
         for v in last_vulns:
             owner = v.get("technical_owner", "unknown") or "unknown"
             if owner not in owner_info:
@@ -3307,7 +3307,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             owner_info[owner]["curr_total"] += 1
             if v.get("sla_status") == "overdue":
                 owner_info[owner]["curr_overdue"] += 1
-                
+
         owner_trend_list = []
         for owner, info in owner_info.items():
             dt = info["curr_total"] - info["prev_total"]
@@ -3318,7 +3318,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 dir_val = "improving"
             else:
                 dir_val = "stable"
-                
+
             owner_trend_list.append({
                 "technical_owner": owner,
                 "current_total": info["curr_total"],
@@ -3329,13 +3329,13 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "delta_overdue": do,
                 "risk_direction": dir_val
             })
-            
+
         # Séries temporais (Timeline)
         severity_trend = []
         sla_trend = []
         acceptance_trend = []
         clean_trend_series = []
-        
+
         for s in series:
             ts = s["timestamp"]
             clean_trend_series.append({
@@ -3366,7 +3366,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "expired_acceptances": s["expired_acceptances"],
                 "actionable_priorities": s["actionable_priorities"]
             })
-            
+
         # Alertas Executivos
         executive_alerts = []
         if len(series) >= 2:
@@ -3418,7 +3418,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
                 "title": "Histórico de Tendência Limitado",
                 "message": "Histórico insuficiente para calcular tendências executivas."
             })
-            
+
         trend_summary = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": "ok",
@@ -3458,9 +3458,9 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
             "top_persistent_cves": top_persistent,
             "executive_alerts": executive_alerts
         }
-        
+
         _atomic_write(json.dumps(trend_summary, indent=2, ensure_ascii=False), trend_summary_path, web_group)
-        
+
         return {
             "trend_enabled": True,
             "trend_status": trend_status,
@@ -3530,10 +3530,10 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
         snapshots_dir = web_path / "data" / "snapshots"
         latest_snap_path = snapshots_dir / "latest_snapshot.json"
         trend_summary_path = web_path / "data" / "trend_summary.json"
-        
+
         summary_path = web_path / "data" / "treatment_plan_summary.json"
         plan_detailed_path = web_path / "data" / "treatment_plan.json"
-        
+
         # Configuração de política padrão segura (default embutido)
         policy = {
             "metadata": {
@@ -3601,7 +3601,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 }
             }
         }
-        
+
         # Suporte ao arquivo real
         policy_opt = Path("/opt/hmg-soar/config/treatment_policy.json")
         policy_loc = Path("./config/treatment_policy.json")
@@ -3615,7 +3615,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                             policy[key].update(user_policy[key])
             except Exception as pe:
                 logger.warning(f"Falha ao carregar arquivo de política de tratativa: {pe}")
-                
+
         # Ler tendência de ativos
         asset_trends = {}
         if trend_summary_path.exists():
@@ -3628,19 +3628,19 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                             asset_trends[aid] = item.get("risk_direction", "stable")
             except Exception as te:
                 logger.warning(f"Falha ao ler trend_summary para plano de tratativa: {te}")
-                
+
         if not latest_snap_path.exists():
             write_degraded_treatment_plan(web_dir, web_group, "Snapshot mais recente nao disponível")
             return None
-            
+
         with open(latest_snap_path, "r", encoding="utf-8") as sf:
             snapshot = json.load(sf)
-            
+
         vulns = snapshot.get("agent_vulnerabilities", [])
         if not vulns:
             write_degraded_treatment_plan(web_dir, web_group, "Nenhuma vulnerabilidade ativa no snapshot")
             return None
-            
+
         # Mapeamento do número de agentes por CVE
         cve_agent_map = defaultdict(set)
         for v in vulns:
@@ -3648,22 +3648,22 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             aid = v.get("agent_id")
             if cve and aid:
                 cve_agent_map[cve].add(aid)
-                
+
         weights = policy.get("priority_weights", {})
         defaults = policy.get("defaults", {})
-        
+
         treated_items = []
         bucket_counts = defaultdict(int)
         effort_counts = defaultdict(int)
         owner_counts = defaultdict(int)
-        
+
         owner_details = {}
         sensitive_packages = {
-            "openssl", "curl", "sudo", "openssh", "openssh-server", "kernel", "linux-image", 
-            "glibc", "libc", "apache", "nginx", "php", "python", "java", "log4j", "docker", 
+            "openssl", "curl", "sudo", "openssh", "openssh-server", "kernel", "linux-image",
+            "glibc", "libc", "apache", "nginx", "php", "python", "java", "log4j", "docker",
             "containerd", "kubernetes"
         }
-        
+
         for v in vulns:
             cve = v.get("cve", "unknown_cve")
             aid = v.get("agent_id", "unknown_agent")
@@ -3671,25 +3671,25 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             pkg = v.get("package_name", "unknown_package")
             severity = v.get("severity", "unknown")
             severity_lower = str(severity).lower()
-            
+
             is_kev_val = bool(v.get("is_kev", False))
             epss_score_val = v.get("epss_score") or v.get("epss") or 0.0
-            
+
             owner = v.get("technical_owner") or defaults.get("owner_unknown_label", "unknown")
             b_owner = v.get("business_owner") or defaults.get("owner_unknown_label", "unknown")
-            
+
             criticality = v.get("criticality") or "unknown"
             exposure_level = v.get("exposure_level") or "unknown"
-            
+
             sla_status = v.get("sla_status", "unknown")
             days_to_due = v.get("days_to_due", 0)
-            
+
             ra = v.get("risk_acceptance", {})
             ra_status = ra.get("status", "none")
             ra_expired = ra.get("expired", False)
-            
+
             trend_dir = asset_trends.get(aid, "stable")
-            
+
             # 1. Technical Score
             tech_base = 0.0
             if is_kev_val:
@@ -3702,13 +3702,13 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 tech_base += 30
             elif epss_score_val >= 0.20:
                 tech_base += 20
-                
+
             assets_count = len(cve_agent_map.get(cve, []))
             tech_base += min(assets_count * 3, 15)
-            
+
             if str(pkg).lower() in sensitive_packages:
                 tech_base += 10
-                
+
             asset_crit_val = 0
             if criticality.lower() == "critical":
                 asset_crit_val = 25
@@ -3716,7 +3716,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 asset_crit_val = 15
             elif criticality.lower() == "medium":
                 asset_crit_val = 5
-                
+
             asset_expo_val = 0
             if exposure_level.lower() == "internet" or exposure_level.lower() == "internet_facing":
                 asset_expo_val = 25
@@ -3724,7 +3724,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 asset_expo_val = 15
             elif exposure_level.lower() == "internal":
                 asset_expo_val = 5
-                
+
             sla_op_val = 0
             if sla_status == "overdue":
                 sla_op_val += 15
@@ -3734,7 +3734,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 sla_op_val += 10
             if bool(v.get("recurring", False)):
                 sla_op_val += 10
-                
+
             ra_modifier = 0
             if ra_status == "accepted" and not ra_expired:
                 ra_modifier = -30
@@ -3742,9 +3742,9 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 ra_modifier = -15
             elif ra_expired:
                 ra_modifier = 10
-                
+
             technical_score = max(0, min(100, int(tech_base + asset_crit_val + asset_expo_val + sla_op_val + ra_modifier)))
-            
+
             # 2. Treatment Score
             severity_w = 0
             if severity_lower == "critical":
@@ -3755,32 +3755,32 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 severity_w = weights.get("medium", 10)
             elif severity_lower == "low":
                 severity_w = weights.get("low", 2)
-                
+
             kev_w = weights.get("kev", 30) if is_kev_val else 0
             epss_w = weights.get("epss_high", 15) if epss_score_val >= 0.20 else 0
-            
+
             sla_w = 0
             if sla_status == "overdue":
                 sla_w = weights.get("sla_overdue", 35)
             elif sla_status == "due_soon":
                 sla_w = weights.get("sla_due_soon", 20)
-                
+
             expo_w = 0
             if exposure_level.lower() == "internet" or exposure_level.lower() == "internet_facing":
                 expo_w = weights.get("internet_facing", 25)
             elif exposure_level.lower() == "dmz":
                 expo_w = weights.get("dmz", 15)
-                
+
             asset_w = 0
             if criticality.lower() == "critical":
                 asset_w = weights.get("critical_asset", 25)
             elif criticality.lower() == "high":
                 asset_w = weights.get("high_asset", 15)
-                
+
             trend_w = weights.get("trend_worsening", 20) if trend_dir.lower() == "worsening" else 0
             rec_w = weights.get("recurring", 10) if bool(v.get("recurring", False)) else 0
             per_w = weights.get("persistent", 10) if bool(v.get("persistent", False)) else 0
-            
+
             ra_w = 0
             if ra_status == "accepted" and not ra_expired:
                 ra_w = weights.get("accepted_valid", -30)
@@ -3788,16 +3788,16 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 ra_w = weights.get("false_positive_valid", -100)
             elif ra_expired:
                 ra_w = weights.get("expired_acceptance", 30)
-                
+
             treatment_score = max(0, min(100, int(
                 severity_w + kev_w + epss_w + sla_w + expo_w + asset_w + trend_w + rec_w + per_w + ra_w
             )))
-            
+
             # Determine Esforço e Esforço sugerido
             pkg_lower = str(pkg).lower()
             is_os_or_kernel = any(x in pkg_lower for x in ["linux-image", "linux-headers", "kernel", "linux-modules", "microsoft", "windows-update", "kb"])
             is_core_comp = pkg_lower in sensitive_packages
-            
+
             if is_os_or_kernel or is_core_comp:
                 effort = "high"
                 action_type = "planejar janela de mudança controlada" if is_os_or_kernel else "planejar atualização de componente crítico"
@@ -3810,7 +3810,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             else:
                 effort = "low"
                 action_type = "atualizar pacote via gerenciador de pacotes"
-                
+
             # Determine Bucket & suggested window
             if ra_status == "false_positive" and not ra_expired:
                 bucket = "false_positive"
@@ -3840,7 +3840,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                     bucket = "next_30_days"
                 else:
                     bucket = "monitor"
-                    
+
                 if bucket == "now":
                     suggested_win = "immediate"
                 elif bucket == "next_7_days":
@@ -3851,10 +3851,10 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                     suggested_win = "next_30_days"
                 else:
                     suggested_win = "routine_maintenance"
-                    
+
             if ra_expired:
                 action_type = "revisar regra de risk acceptance expirada"
-                
+
             # Dynamic reason
             reasons = []
             if severity_lower == "critical":
@@ -3879,10 +3879,10 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 reasons.append("exposto à internet")
             if ra_expired:
                 reasons.append("exceção expirada")
-                
+
             reason_str = ", ".join(reasons) if reasons else "Priorização geral de tratamento"
             reason_str = reason_str[0].upper() + reason_str[1:]
-            
+
             item_data = {
                 "cve": cve,
                 "agent_id": aid,
@@ -3905,16 +3905,16 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 "suggested_window": suggested_win,
                 "reason": reason_str
             }
-            
+
             treated_items.append(item_data)
-            
+
             # Counts aggregates
             is_actionable = bucket not in ["accepted_or_exception", "false_positive"]
             if is_actionable:
                 bucket_counts[bucket] += 1
                 effort_counts[effort] += 1
                 owner_counts[owner] += 1
-                
+
                 # Update workload per owner
                 if owner not in owner_details:
                     owner_details[owner] = {
@@ -3935,7 +3935,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                         "top_assets": [],
                         "top_cves": []
                     }
-                    
+
                 ow = owner_details[owner]
                 ow["total_actionable"] += 1
                 ow[bucket] += 1
@@ -3947,11 +3947,11 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                     ow["critical"] += 1
                 elif severity_lower == "high":
                     ow["high"] += 1
-                    
+
                 ow["estimated_effort"][effort] += 1
                 ow["_assets_counts"][(aid, aname)] += 1
                 ow["_cves_counts"][cve] += 1
-                
+
         # Finalize workload lists
         owner_workload = []
         for owner, ow in owner_details.items():
@@ -3962,22 +3962,22 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             ]
             cves_sorted = sorted(ow["_cves_counts"].items(), key=lambda x: -x[1])
             ow["top_cves"] = [{"cve": cve_id, "count": count} for cve_id, count in cves_sorted[:5]]
-            
+
             del ow["_assets_counts"]
             del ow["_cves_counts"]
-            
+
             owner_workload.append(ow)
-            
+
         # Sort treated items by treatment score descending
         treated_items.sort(key=lambda x: -x["treatment_score"])
-        
+
         # Select quick wins
         quick_wins_candidates = [
             i for i in treated_items
             if i["effort"] == "low" and i["treatment_bucket"] in ["now", "next_7_days"]
             and len(cve_agent_map.get(i["cve"], [])) <= defaults.get("quick_win_max_assets", 2)
         ]
-        
+
         quick_wins = []
         for qw in quick_wins_candidates[:defaults.get("max_top_items_per_section", 20)]:
             quick_wins.append({
@@ -3989,14 +3989,14 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 "owner": qw["technical_owner"],
                 "suggested_window": qw["suggested_window"]
             })
-            
+
         # Select change window candidates
         change_candidates_raw = [
             i for i in treated_items
             if i["effort"] == "high" or i["asset_criticality"].lower() == "critical"
             or len(cve_agent_map.get(i["cve"], [])) >= defaults.get("high_effort_threshold_assets", 5)
         ]
-        
+
         change_window_candidates = []
         change_seen = set()
         for cc in change_candidates_raw:
@@ -4016,9 +4016,9 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 })
                 if len(change_window_candidates) >= defaults.get("max_top_items_per_section", 20):
                     break
-                    
+
         total_actionable = sum(bucket_counts.values())
-        
+
         # Build alerts
         treatment_alerts = []
         if bucket_counts["now"] > 50:
@@ -4047,18 +4047,18 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 "title": "Janelas de Mudança Acumuladas",
                 "message": f"Há {len(change_window_candidates)} atualizações de alta complexidade listadas para planejamento."
             })
-            
+
         if not treatment_alerts:
             treatment_alerts.append({
                 "level": "info",
                 "title": "Plano Operacional Estável",
                 "message": "Nenhum desvio crítico detectado na priorização do plano operacional."
             })
-            
+
         by_owner = [{"owner": k, "count": v} for k, v in owner_counts.items()]
         by_bucket = [{"bucket": k, "count": v} for k, v in bucket_counts.items()]
         by_effort = [{"effort": k, "count": v} for k, v in effort_counts.items()]
-        
+
         treatment_summary = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": "ok",
@@ -4085,16 +4085,16 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             "owner_workload": owner_workload,
             "treatment_alerts": treatment_alerts
         }
-        
+
         _atomic_write(json.dumps(treatment_summary, indent=2, ensure_ascii=False), summary_path, web_group)
-        
+
         plan_detailed = {
             "timestamp": treatment_summary["timestamp"],
             "status": "ok",
             "items": treated_items[:defaults.get("max_plan_items", 200)]
         }
         _atomic_write(json.dumps(plan_detailed, indent=2, ensure_ascii=False), plan_detailed_path, web_group)
-        
+
         return {
             "treatment_plan_enabled": True,
             "treatment_now": bucket_counts["now"],
@@ -4106,7 +4106,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
             "quick_wins_count": len(quick_wins),
             "change_window_candidates_count": len(change_window_candidates)
         }
-        
+
     except Exception as e:
         logger.error(f"[ERRO] Falha ao gerar plano de tratativa operacional: {e}", exc_info=True)
         return None
@@ -4811,20 +4811,20 @@ def export_pdf(
             self.saveState()
             self.setFont("Helvetica", 8)
             self.setFillColor(colors.HexColor("#4a5568"))
-            
+
             if self._pageNumber > 1:
                 self.drawString(36, 765, "HMG Wazuh SOAR Brain - Relatório de Inteligência e Priorização")
                 self.setStrokeColor(colors.HexColor("#cbd5e0"))
                 self.setLineWidth(0.5)
                 self.line(36, 757, 576, 757)
-                
+
             page_text = f"Página {self._pageNumber} de {page_count}"
             self.drawRightString(576, 25, page_text)
             self.drawString(36, 25, f"HMG Wazuh Brain | Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
             self.setStrokeColor(colors.HexColor("#cbd5e0"))
             self.setLineWidth(0.5)
             self.line(36, 35, 576, 35)
-            
+
             self.restoreState()
 
     try:
@@ -4953,7 +4953,7 @@ def export_pdf(
             for r in top_threats:
                 p_style = p1_plus_style if r.priority == "Priority 1+" else p1_style
                 ransom_text = '<font color="#e53e3e"><b>SIM (Ransomware)</b></font>' if r.is_ransomware else "Não"
-                
+
                 threats_rows.append([
                     Paragraph(r.priority, p_style),
                     Paragraph(f"{r.agent_id}<br/>{r.agent_name}", cell_style),
@@ -5041,7 +5041,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
     assets_data = load_assets_context()
     exposure_data = load_exposure_context()
     sla_policy = load_sla_policy()
-    
+
     # Tentar inferir diretório de snapshots
     snapshots_dirs = [
         Path("/var/www/wazuh-soar/data/snapshots"),
@@ -5055,14 +5055,14 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
             break
     if not snapshots_dir:
         snapshots_dir = Path("/var/www/wazuh-soar/data/snapshots")
-        
+
     current_timestamp = metadata["generated_at"]
-    
+
     # Mapear first_seen e occurrences por chave única
     first_seen_map = {}
     occurrences_map = {}
     first_seen_estimated_map = {}
-    
+
     for r in records:
         if not r.cve:
             continue
@@ -5070,7 +5070,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
         first_seen_map[v_key] = current_timestamp
         occurrences_map[v_key] = 1
         first_seen_estimated_map[v_key] = True
-        
+
     if snapshots_dir.exists():
         snapshot_files = sorted(snapshots_dir.glob("snapshot_*.json"))
         vuln_timestamps = defaultdict(list)
@@ -5088,7 +5088,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
                     vuln_timestamps[v_key].append(ts)
             except Exception:
                 pass
-                
+
         for r in records:
             if not r.cve:
                 continue
@@ -5101,7 +5101,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
                 unique_ts = set(ts_list)
                 unique_ts.add(current_timestamp)
                 occurrences_map[v_key] = len(unique_ts)
-                
+
     near_due_threshold = sla_policy.get("near_due_threshold_days", 5)
     persistent_threshold = sla_policy.get("persistent_threshold_days", 30)
     recurring_threshold = sla_policy.get("recurring_threshold_count", 3)
@@ -5113,30 +5113,30 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
         expo_context = get_exposure_context(exposure_data, r.agent_id, r.agent_name)
         open_svcs = expo_context.get("open_services", [])
         top_svcs = [f"{s.get('service')}/{s.get('exposure')}" for s in open_svcs if s.get('service') and s.get('exposure')]
-        
+
         v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
         f_seen = first_seen_map.get(v_key, current_timestamp)
         occ_count = occurrences_map.get(v_key, 1)
         est_flag = first_seen_estimated_map.get(v_key, True)
-        
+
         age_days = calculate_days_difference(f_seen, current_timestamp, business_days)
         if age_days < 0:
             age_days = 0
-            
+
         sla_days = calculate_sla_days(r.severity, r.is_kev, context, expo_context, sla_policy)
         due_date = add_days(f_seen, sla_days, business_days)
         days_to_due = calculate_days_difference(current_timestamp, due_date, business_days)
-        
+
         if days_to_due < 0:
             sla_status = "overdue"
         elif 0 <= days_to_due <= near_due_threshold:
             sla_status = "due_soon"
         else:
             sla_status = "within_sla"
-            
+
         persistent = (age_days >= persistent_threshold)
         recurring = (occ_count >= recurring_threshold)
-        
+
         vuln_list.append({
             "agent_id": r.agent_id,
             "agent_name": r.agent_name,
@@ -5488,9 +5488,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --border-medium: var(--eyemole-border);
       --border-strong: rgba(120, 247, 255, 0.28);
     }
-    
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    
+
     html { scroll-behavior: smooth; }
 
     body {
@@ -5871,13 +5871,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .risk-card.epss::before { background: #a78bfa; }
     .risk-card.agentes::before { background: #3b82f6; }
     .risk-card.idade::before { background: #10b981; }
-    
+
     .alert-container { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
     .alert-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; border-left: 4px solid transparent; }
     .alert-critical { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.15); border-left-color: #ef4444; color: #f87171; }
     .alert-warning { background: rgba(234, 179, 8, 0.06); border: 1px solid rgba(234, 179, 8, 0.12); border-left-color: #eab308; color: #facc15; }
     .alert-info { background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.12); border-left-color: #3b82f6; color: #60a5fa; }
-    
+
     .delta-badge-new { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
     .delta-badge-resolved { background: rgba(16, 185, 129, 0.1); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
     .badge-overdue { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
@@ -6032,7 +6032,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="container">
     </head>
 
-  
+
     <header>
       <div class="brand-area">
         <img src="assets/eyemole.png" alt="Eyemole" class="brand-logo">
@@ -6045,7 +6045,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="meta-badge">Limiares: <strong>CVSS &gt;= <span id="cvss-limit"></span> | EPSS &gt;= <span id="epss-limit"></span>%</strong></div>
       </div>
     </header>
-    
+
     <!-- Aba Navigation sticky (Fase 3H) -->
     <nav class="tab-nav">
       <button class="tab-btn active" data-tab="overview" onclick="activateTab('overview')"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Visão Geral</span></button>
@@ -6063,70 +6063,70 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <section id="tab-overview" class="tab-panel active">
         <!-- Cards Principais Executivos -->
         <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 2rem; gap: 1rem;">
-          
+
           <!-- Total de Vulnerabilidades -->
           <div class="metric-card all" style="border-left: 4px solid var(--text-muted);">
             <div class="metric-title">Total de Vulnerabilidades</div>
             <div class="metric-value" id="overview-total-vulns">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Ativas no último snapshot</div>
           </div>
-          
+
           <!-- Críticas -->
           <div class="metric-card p1plus" style="border-left: 4px solid var(--p1plus);">
             <div class="metric-title">Severidade Crítica</div>
             <div class="metric-value" id="overview-risk-critical" style="color: #f87171;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Risco muito alto</div>
           </div>
-          
+
           <!-- Altas -->
           <div class="metric-card p1" style="border-left: 4px solid var(--p1);">
             <div class="metric-title">Severidade Alta</div>
             <div class="metric-value" id="overview-risk-high" style="color: #fb923c;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Risco alto</div>
           </div>
-          
+
           <!-- KEV -->
           <div class="metric-card p2" style="border-left: 4px solid #f59e0b;">
             <div class="metric-title">Catálogo CISA KEV</div>
             <div class="metric-value" id="overview-risk-kev" style="color: #facc15;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Vulnerabilidades exploradas</div>
           </div>
-          
+
           <!-- EPSS >= 20% -->
           <div class="metric-card p3" style="border-left: 4px solid #a78bfa;">
             <div class="metric-title">EPSS &gt;= 20%</div>
             <div class="metric-value" id="overview-risk-epss" style="color: #c084fc;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Alta probabilidade de exploração</div>
           </div>
-          
+
           <!-- Agentes Afetados -->
           <div class="metric-card p4" style="border-left: 4px solid #3b82f6;">
             <div class="metric-title">Agentes Afetados</div>
             <div class="metric-value" id="overview-risk-agents" style="color: #60a5fa;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Hosts com vulnerabilidades</div>
           </div>
-          
+
           <!-- SLA Próximo (Due soon) -->
           <div class="metric-card p1" style="border-left: 4px solid #fb923c;">
             <div class="metric-title">SLA Próximo / Vencido</div>
             <div class="metric-value" id="overview-sla-status" style="font-size: 1.4rem;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="overview-sla-details">Overdue: - | Due soon: -</div>
           </div>
-          
+
           <!-- Prioridades Acionáveis -->
           <div class="metric-card p2" style="border-left: 4px solid #eab308;">
             <div class="metric-title">Prioridades Acionáveis</div>
             <div class="metric-value" id="overview-actionable-priorities">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Excluindo exceções/FP</div>
           </div>
-          
+
           <!-- Status Tendência -->
           <div class="metric-card all" style="border-left: 4px solid #8b5cf6;">
             <div class="metric-title">Status Tendência</div>
             <div class="metric-value" id="overview-trend-health" style="font-size: 1.4rem;">-</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="overview-trend-direction">Direção do risco: -</div>
           </div>
-          
+
           <!-- Plano de Tratativa -->
           <div class="metric-card all" style="border-left: 4px solid #ef4444;">
             <div class="metric-title">Ações Imediatas (Now)</div>
@@ -6149,7 +6149,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
 
         </div>
-        
+
         <!-- Legacy Overview Metadata Elements (Ocultos para uso do JS) -->
         <div id="legacy-overview-meta-container" style="display: none;">
           <span id="overview-cvss-limit"></span>
@@ -6403,7 +6403,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="pagination-bar">
       <div>
         Exibindo <span id="pagination-start">0</span> a <span id="pagination-end">0</span> de <span id="pagination-total">0</span> registros.
-        Mostrar: 
+        Mostrar:
         <select class="page-size-selector" id="page-size" onchange="onChangePageSize()">
           <option value="10">10</option>
           <option value="25" selected>25</option>
@@ -7720,7 +7720,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           🔄 Atualizar status
         </button>
       </div>
-      
+
       <!-- Grid de Status Cards -->
       <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 1.5rem; gap: 1rem;">
         <div class="metric-card all" style="cursor: default; pointer-events: none;">
@@ -7812,7 +7812,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     const priorityRank = { 'Priority 1+': 0, 'Priority 1': 1, 'Priority 2': 2, 'Priority 3': 3, 'Priority 4': 4 };
 
-    
+
     function activateTab(tabId, updateHash = true) {
       const validTabs = [
         'overview',
@@ -7919,7 +7919,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function onSearchChange() { searchTerm = document.getElementById('search-box').value.trim().toLowerCase(); applyFilters(); }
     function onRansomwareToggle() { filterRansomwareOnly = document.getElementById('filter-ransomware').checked; applyFilters(); }
-    
+
     function resetFilters() {
       document.getElementById('search-box').value = '';
       document.getElementById('filter-ransomware').checked = false;
@@ -7997,7 +7997,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         else if (item.priority === 'Priority 1') pClass = 'badge-p1';
         else if (item.priority === 'Priority 2') pClass = 'badge-p2';
         else if (item.priority === 'Priority 3') pClass = 'badge-p3';
-        
+
         let cvssClass = 'score-none';
         if (item.cvss !== null) {
           if (item.cvss >= 7.0) cvssClass = 'score-high';
@@ -8011,7 +8011,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         let tagsHtml = '';
         if (item.is_kev) tagsHtml += `<span class="badge badge-kev" style="margin-right: 0.25rem;">KEV</span>`;
         if (item.is_ransomware) tagsHtml += `<span class="badge badge-ransomware" style="margin-right: 0.25rem;">Ransomware</span>`;
-        
+
         if (item.criticality && item.criticality !== 'unknown') {
           let critClass = 'badge-p4';
           if (item.criticality === 'critical') critClass = 'badge-p1plus';
@@ -8061,7 +8061,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (item.recurring) {
           tagsHtml += `<span class="badge badge-recurring" style="margin-right: 0.25rem; font-size: 0.7rem;">Recorrente</span>`;
         }
-        
+
         if (!tagsHtml) tagsHtml = `<span style="color: var(--text-muted); font-style: italic;">Nenhum</span>`;
 
         tr.innerHTML = `
@@ -8328,7 +8328,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             actions.forEach(act => {
               const tr = document.createElement('tr');
               const actTime = act.timestamp ? new Date(act.timestamp).toLocaleString() : 'N/A';
-              
+
               let resBadge = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-color);">Desconhecido</span>';
               if (act.result === 'success') {
                 resBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Sucesso</span>';
@@ -8339,7 +8339,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               }
 
               const exitVal = act.exit_code !== undefined ? act.exit_code : '-';
-              
+
               tr.innerHTML = `
                 <td>${actTime}</td>
                 <td style="font-weight: 600;">${act.remote_user || 'unknown'}</td>
@@ -8357,7 +8357,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById('audit-table-body').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 1.5rem;">Falha ao carregar registros de auditoria.</td></tr>';
       }
 
-      
+
       const ovStatApi = document.getElementById('overview-status-api');
       const ovStatSvc = document.getElementById('overview-status-service');
       if (ovStatApi && ovStatSvc) {
@@ -8380,13 +8380,13 @@ if (btn) btn.disabled = false;
         if (rRes.ok) {
           const rData = await rRes.json();
           const sum = rData.summary || {};
-          
+
           document.getElementById('risk-total').textContent = sum.total_vulnerabilities !== undefined ? sum.total_vulnerabilities : '-';
           document.getElementById('risk-critical').textContent = sum.critical !== undefined ? sum.critical : '-';
           document.getElementById('risk-high').textContent = sum.high !== undefined ? sum.high : '-';
           document.getElementById('risk-kev').textContent = sum.kev_count !== undefined ? sum.kev_count : '-';
           document.getElementById('risk-epss').textContent = sum.epss_high_count !== undefined ? sum.epss_high_count : '-';
-          
+
           const ovTotal = document.getElementById('overview-total-vulns');
           if (ovTotal) ovTotal.textContent = sum.total_vulnerabilities !== undefined ? sum.total_vulnerabilities : '-';
           const ovCrit = document.getElementById('overview-risk-critical');
@@ -8399,7 +8399,7 @@ if (btn) btn.disabled = false;
           if (ovEpss) ovEpss.textContent = sum.epss_high_count !== undefined ? sum.epss_high_count : '-';
           const ovAgents = document.getElementById('overview-risk-agents');
           if (ovAgents) ovAgents.textContent = sum.affected_agents !== undefined ? sum.affected_agents : '-';
-          
+
           if (rData.timestamp) {
             const rDate = new Date(rData.timestamp);
             const now = new Date();
@@ -8468,21 +8468,21 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             } else {
               priorities.forEach(p => {
                 const tr = document.createElement('tr');
-                
-                const kevBadge = p.kev 
-                  ? '<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">Sim</span>' 
+
+                const kevBadge = p.kev
+                  ? '<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">Sim</span>'
                   : '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-color);">Não</span>';
-                
+
                 const epssVal = p.epss !== null && p.epss !== undefined ? (p.epss * 100).toFixed(2) + '%' : '-';
-                
+
                 let sevColor = 'var(--text-muted)';
                 if (String(p.severity).toLowerCase() === 'critical') sevColor = '#f87171';
                 else if (String(p.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-                
+
                 let scoreColor = '#34d399';
                 if (p.priority_score >= 80) scoreColor = '#f87171';
                 else if (p.priority_score >= 50) scoreColor = '#fb923c';
-                
+
                 tr.innerHTML = `
                   <td style="font-weight: 700; text-align: center;">${p.rank || '-'}</td>
                   <td style="font-weight: 700; color: var(--text-main);">${p.cve || '-'}</td>
@@ -8502,7 +8502,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de Risco
           // ==========================================
-          
+
           // 1. Visão Geral - Donut de Severidade
           if (document.getElementById('overview-chart-severity')) {
             renderDonutChart('overview-chart-severity', [
@@ -8527,7 +8527,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 let sevColor = 'var(--text-muted)';
                 if (String(p.severity).toLowerCase() === 'critical') sevColor = '#f87171';
                 else if (String(p.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-                
+
                 let pClass = 'badge-p4';
                 if (p.priority === 'Priority 1+') pClass = 'badge-p1plus';
                 else if (p.priority === 'Priority 1') pClass = 'badge-p1';
@@ -8536,7 +8536,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
                 let tagsHtml = '';
                 if (p.kev) tagsHtml += `<span class="badge badge-kev" style="margin-right: 0.25rem;">KEV</span>`;
-                
+
                 tr.innerHTML = `
                   <td style="font-weight: 700; text-align: center;">${p.rank || '-'}</td>
                   <td><span class="badge ${pClass}">${p.priority || 'P1'}</span></td>
@@ -8648,7 +8648,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
         if (dRes.ok) {
           const dData = await dRes.json();
           const delta = dData.delta || {};
-          
+
           const setDeltaMetricValue = (id, val, isDelta = false, isGood = false) => {
             const el = document.getElementById(id);
             if (!el) return;
@@ -8695,41 +8695,41 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           if (data.status === 'ok') {
             const assets = data.assets || {};
             const expo = data.exposure || {};
-            
+
             document.getElementById('assets-total').textContent = assets.total_seen !== undefined ? assets.total_seen : '-';
             document.getElementById('assets-classified').textContent = assets.classified !== undefined ? assets.classified : '-';
             document.getElementById('assets-unclassified').textContent = assets.unclassified !== undefined ? assets.unclassified : '-';
             document.getElementById('assets-critical-count').textContent = assets.critical !== undefined ? assets.critical : '-';
             document.getElementById('assets-unknown-crit').textContent = assets.unknown !== undefined ? assets.unknown : '-';
-            
+
             const exposed = (expo.internet || 0) + (expo.dmz || 0);
             document.getElementById('assets-exposed-count').textContent = exposed;
-            
+
             const alertEl = document.getElementById('assets-alerts-container');
             if (assets.unclassified > 0) {
               alertEl.style.display = 'block';
             } else {
               alertEl.style.display = 'none';
             }
-            
+
             const riskTbody = document.getElementById('assets-risk-tbody');
             riskTbody.innerHTML = '';
             const topAssets = data.top_risky_assets || [];
-            if (topAssets.length === 0) {
-              riskTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum ativo listado.</td></tr>';
+            if (topAssets.length === 0 || assets.classified === 0) {
+              riskTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Ativo pendente de classificação</td></tr>';
             } else {
               topAssets.forEach(a => {
                 const tr = document.createElement('tr');
                 let critColor = 'var(--text-muted)';
                 if (a.criticality === 'critical') critColor = '#f87171';
                 else if (a.criticality === 'high') critColor = '#fb923c';
-                
+
                 tr.innerHTML = `
                   <td><code>${a.agent_id}</code></td>
                   <td style="font-weight: 600;">${a.agent_name}</td>
@@ -8741,7 +8741,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 riskTbody.appendChild(tr);
               });
             }
-            
+
             const pendingTbody = document.getElementById('assets-pending-tbody');
             pendingTbody.innerHTML = '';
             const pendingAssets = data.unclassified_assets || [];
@@ -8763,16 +8763,20 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             // ==========================================
             // Fase 3H.2 - Renderizar Gráficos de Ativos
             // ==========================================
-            
+
             // 1. Ativos por Criticidade
             if (document.getElementById('assets-chart-criticality')) {
-              renderDonutChart('assets-chart-criticality', [
-                { label: 'Crítico', value: assets.critical || 0, color: '#f87171' },
-                { label: 'Alto', value: assets.high || 0, color: '#fb923c' },
-                { label: 'Médio', value: assets.medium || 0, color: '#facc15' },
-                { label: 'Baixo', value: assets.low || 0, color: '#34d399' },
-                { label: 'Desconhecido', value: assets.unknown || 0, color: '#9ca3af' }
-              ], { totalLabel: 'Criticidade' });
+              if (assets.classified === 0) {
+                showChartEmptyState('assets-chart-criticality', 'Ativo pendente de classificação');
+              } else {
+                renderDonutChart('assets-chart-criticality', [
+                  { label: 'Crítico', value: assets.critical || 0, color: '#f87171' },
+                  { label: 'Alto', value: assets.high || 0, color: '#fb923c' },
+                  { label: 'Médio', value: assets.medium || 0, color: '#facc15' },
+                  { label: 'Baixo', value: assets.low || 0, color: '#34d399' },
+                  { label: 'Desconhecido', value: assets.unknown || 0, color: '#9ca3af' }
+                ], { totalLabel: 'Criticidade' });
+              }
             }
 
             // 2. Top Ativos por Risco Contextual
@@ -8782,7 +8786,11 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               color: '#f87171'
             }));
             if (document.getElementById('assets-chart-top-risk')) {
-              renderMiniBarChart('assets-chart-top-risk', topRisky);
+              if (assets.classified === 0) {
+                showChartEmptyState('assets-chart-top-risk', 'Ativo pendente de classificação');
+              } else {
+                renderMiniBarChart('assets-chart-top-risk', topRisky);
+              }
             }
 
           } else {
@@ -8797,7 +8805,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
         if (btn) btn.disabled = false;
       }
     }
-    
+
     function showFallbackAssets(msg) {
       document.getElementById('assets-total').textContent = '-';
       document.getElementById('assets-classified').textContent = '-';
@@ -8806,14 +8814,19 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       document.getElementById('assets-exposed-count').textContent = '-';
       document.getElementById('assets-unknown-crit').textContent = '-';
       document.getElementById('assets-alerts-container').style.display = 'none';
-      
-      document.getElementById('assets-risk-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Contexto indisponível: ${msg}</td></tr>`;
-      document.getElementById('assets-pending-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
+
+      const isPending = msg.toLowerCase().includes('pendente') || msg.toLowerCase().includes('unknown');
+      const assetsMsg = isPending ? msg : `Contexto indisponível: ${msg}`;
+      const generalMsg = isPending ? msg : `Indisponível: ${msg}`;
+      const chartMsg = isPending ? msg : `Gráfico indisponível: ${msg}`;
+
+      document.getElementById('assets-risk-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`;
+      document.getElementById('assets-pending-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
 
       const charts = ['assets-chart-criticality', 'assets-chart-top-risk'];
       charts.forEach(id => {
         const c = document.getElementById(id);
-        if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${msg}</div>`;
+        if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">${chartMsg}</div>`;
       });
     }
 
@@ -8826,7 +8839,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const assets = data.assets || {};
@@ -8836,7 +8849,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const topAssets = data.top_exposed_assets || [];
           const missingAssets = data.assets_missing_exposure_context || [];
           const extList = data.external_assets_list || [];
-          
+
           document.getElementById('expo-with-context').textContent = assets.with_exposure_context !== undefined ? assets.with_exposure_context : '-';
           document.getElementById('expo-without-context').textContent = assets.without_exposure_context !== undefined ? assets.without_exposure_context : '-';
           document.getElementById('expo-internet-facing').textContent = assets.internet_facing !== undefined ? assets.internet_facing : '-';
@@ -8845,7 +8858,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           document.getElementById('expo-internet-services').textContent = services.internet_exposed_services !== undefined ? services.internet_exposed_services : '-';
           document.getElementById('expo-external-no-agent').textContent = external.without_wazuh_agent !== undefined ? external.without_wazuh_agent : '-';
           document.getElementById('expo-alerts-count').textContent = alerts.length;
-          
+
           const alertEl = document.getElementById('exposure-alerts-container');
           if (alerts.length > 0) {
             alertEl.style.display = 'flex';
@@ -8862,12 +8875,12 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             alertEl.style.display = 'none';
           }
-          
+
           // Render top_exposed_assets table
           const topTbody = document.getElementById('expo-top-assets-tbody');
           topTbody.innerHTML = '';
-          if (topAssets.length === 0) {
-            topTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum ativo exposto.</td></tr>';
+          if (topAssets.length === 0 || assets.with_exposure_context === 0) {
+            topTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Contexto de exposição pendente</td></tr>';
           } else {
             topAssets.forEach(a => {
               const tr = document.createElement('tr');
@@ -8875,7 +8888,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let badgeText = '#9ca3af';
               if (a.exposure_level === 'internet') { badgeColor = 'rgba(239, 68, 68, 0.15)'; badgeText = '#f87171'; }
               else if (a.exposure_level === 'dmz') { badgeColor = 'rgba(249, 115, 22, 0.15)'; badgeText = '#fb923c'; }
-              
+
               tr.innerHTML = `
                 <td><code>${a.agent_id}</code></td>
                 <td style="font-weight: 600;">${a.agent_name}</td>
@@ -8887,7 +8900,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               topTbody.appendChild(tr);
             });
           }
-          
+
           // Render assets_missing_exposure_context table
           const missingTbody = document.getElementById('expo-missing-tbody');
           missingTbody.innerHTML = '';
@@ -8905,7 +8918,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               missingTbody.appendChild(tr);
             });
           }
-          
+
           // Render exposure_alerts table
           const alertsTbody = document.getElementById('expo-alerts-tbody');
           alertsTbody.innerHTML = '';
@@ -8917,7 +8930,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let lvlBadge = '<span class="badge badge-p4">Info</span>';
               if (al.level === 'critical') lvlBadge = '<span class="badge badge-p1plus">Crítico</span>';
               else if (al.level === 'warning') lvlBadge = '<span class="badge badge-p1">Aviso</span>';
-              
+
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
                 <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
@@ -8935,8 +8948,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             extList.forEach(ext => {
               const tr = document.createElement('tr');
-              let agentBadge = ext.has_wazuh_agent 
-                ? '<span class="badge badge-p4">Com Agente</span>' 
+              let agentBadge = ext.has_wazuh_agent
+                ? '<span class="badge badge-p4">Com Agente</span>'
                 : '<span class="badge badge-p1plus">Sem Agente</span>';
               tr.innerHTML = `
                 <td><div style="font-weight:600;">${ext.asset_name || '-'}</div><div>${agentBadge}</div></td>
@@ -8951,26 +8964,34 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de Exposição
           // ==========================================
-          
+
           // 1. Ativos por Exposição
           const internalExpo = Math.max(0, (assets.with_exposure_context || 0) - (assets.internet_facing || 0) - (assets.dmz || 0));
           if (document.getElementById('assets-chart-exposure')) {
-            renderDonutChart('assets-chart-exposure', [
-              { label: 'Internet', value: assets.internet_facing || 0, color: '#ef4444' },
-              { label: 'DMZ', value: assets.dmz || 0, color: '#f97316' },
-              { label: 'Interno', value: internalExpo, color: '#34d399' }
-            ], { totalLabel: 'Exposição' });
+            if (assets.with_exposure_context === 0) {
+              showChartEmptyState('assets-chart-exposure', 'Contexto de exposição pendente');
+            } else {
+              renderDonutChart('assets-chart-exposure', [
+                { label: 'Internet', value: assets.internet_facing || 0, color: '#ef4444' },
+                { label: 'DMZ', value: assets.dmz || 0, color: '#f97316' },
+                { label: 'Interno', value: internalExpo, color: '#34d399' }
+              ], { totalLabel: 'Exposição' });
+            }
           }
 
           // 2. Serviços Críticos e Expostos
           if (document.getElementById('assets-chart-services')) {
-            renderMetricComparison('assets-chart-services', [
-              { label: 'Serviços Críticos', value: services.critical_services || 0, color: '#f87171' },
-              { label: 'Serviços Expostos', value: services.internet_exposed_services || 0, color: '#fb923c' },
-              { label: 'Externos sem Wazuh', value: external.without_wazuh_agent || 0, color: '#a855f7' }
-            ]);
+            if (assets.with_exposure_context === 0) {
+              showChartEmptyState('assets-chart-services', 'Contexto de exposição pendente');
+            } else {
+              renderMetricComparison('assets-chart-services', [
+                { label: 'Serviços Críticos', value: services.critical_services || 0, color: '#f87171' },
+                { label: 'Serviços Expostos', value: services.internet_exposed_services || 0, color: '#fb923c' },
+                { label: 'Externos sem Wazuh', value: external.without_wazuh_agent || 0, color: '#a855f7' }
+              ]);
+            }
           }
-          
+
         } else {
           showFallbackExposure('Falha HTTP ao contatar a API');
         }
@@ -8990,18 +9011,23 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       document.getElementById('expo-internet-services').textContent = '-';
       document.getElementById('expo-external-no-agent').textContent = '-';
       document.getElementById('expo-alerts-count').textContent = '-';
-      
+
       document.getElementById('exposure-alerts-container').style.display = 'none';
-      
-      document.getElementById('expo-top-assets-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Superfície de ataque indisponível: ${msg}</td></tr>`;
-      document.getElementById('expo-missing-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('expo-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('expo-external-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
+
+      const isPending = msg.toLowerCase().includes('pendente') || msg.toLowerCase().includes('unknown');
+      const assetsMsg = isPending ? msg : `Superfície de ataque indisponível: ${msg}`;
+      const generalMsg = isPending ? msg : `Indisponível: ${msg}`;
+      const chartMsg = isPending ? msg : `Gráfico indisponível: ${msg}`;
+
+      document.getElementById('expo-top-assets-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`;
+      document.getElementById('expo-missing-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
+      document.getElementById('expo-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
+      document.getElementById('expo-external-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
 
       const charts = ['assets-chart-exposure', 'assets-chart-services'];
       charts.forEach(id => {
         const c = document.getElementById(id);
-        if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${msg}</div>`;
+        if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">${chartMsg}</div>`;
       });
     }
 
@@ -9014,7 +9040,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const sum = data.summary || {};
@@ -9025,7 +9051,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const topRecurring = data.top_recurring_cves || [];
           const backlogAssets = data.top_backlog_assets || [];
           const backlogOwners = data.top_backlog_owners || [];
-          
+
           document.getElementById('sla-total-open').textContent = sum.total_open !== undefined ? sum.total_open : '-';
           document.getElementById('sla-overdue').textContent = sum.overdue !== undefined ? sum.overdue : '-';
           document.getElementById('sla-due-soon').textContent = sum.due_soon !== undefined ? sum.due_soon : '-';
@@ -9034,7 +9060,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           document.getElementById('sla-avg-age').textContent = sum.average_age_days !== undefined ? sum.average_age_days + 'd' : '-';
           document.getElementById('sla-max-age').textContent = sum.max_age_days !== undefined ? sum.max_age_days + 'd' : '-';
           document.getElementById('sla-persistent').textContent = sum.persistent_vulnerabilities !== undefined ? sum.persistent_vulnerabilities : '-';
-          
+
           const ovSlaStatus = document.getElementById('overview-sla-status');
           const ovSlaDetails = document.getElementById('overview-sla-details');
           if (ovSlaStatus && ovSlaDetails) {
@@ -9044,7 +9070,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             ovSlaDetails.textContent = `Overdue: ${overdue} | Due soon: ${dueSoon}`;
           }
           document.getElementById('sla-recurring').textContent = sum.recurring_vulnerabilities !== undefined ? sum.recurring_vulnerabilities : '-';
-          
+
           const alertEl = document.getElementById('sla-alerts-container');
           if (alerts.length > 0) {
             alertEl.style.display = 'flex';
@@ -9061,7 +9087,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             alertEl.style.display = 'none';
           }
-          
+
           // Render overdue table
           const overdueTbody = document.getElementById('sla-overdue-tbody');
           overdueTbody.innerHTML = '';
@@ -9073,7 +9099,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let sevColor = 'var(--text-muted)';
               if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
               else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-              
+
               tr.innerHTML = `
                 <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
                 <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
@@ -9085,7 +9111,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               overdueTbody.appendChild(tr);
             });
           }
-          
+
           // Render due soon table
           const dueSoonTbody = document.getElementById('sla-due-soon-tbody');
           dueSoonTbody.innerHTML = '';
@@ -9097,7 +9123,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let sevColor = 'var(--text-muted)';
               if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
               else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-              
+
               tr.innerHTML = `
                 <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
                 <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
@@ -9109,7 +9135,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               dueSoonTbody.appendChild(tr);
             });
           }
-          
+
           // Render persistent table
           const persistentTbody = document.getElementById('sla-persistent-tbody');
           persistentTbody.innerHTML = '';
@@ -9121,7 +9147,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let sevColor = 'var(--text-muted)';
               if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
               else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-              
+
               tr.innerHTML = `
                 <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
                 <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
@@ -9132,7 +9158,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               persistentTbody.appendChild(tr);
             });
           }
-          
+
           // Render recurring table
           const recurringTbody = document.getElementById('sla-recurring-tbody');
           recurringTbody.innerHTML = '';
@@ -9144,7 +9170,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let sevColor = 'var(--text-muted)';
               if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
               else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
-              
+
               tr.innerHTML = `
                 <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
                 <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
@@ -9155,7 +9181,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               recurringTbody.appendChild(tr);
             });
           }
-          
+
           // Render backlog asset table
           const backlogAssetTbody = document.getElementById('sla-backlog-asset-tbody');
           backlogAssetTbody.innerHTML = '';
@@ -9175,12 +9201,12 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               backlogAssetTbody.appendChild(tr);
             });
           }
-          
+
           // Render backlog owner table
           const backlogOwnerTbody = document.getElementById('sla-backlog-owner-tbody');
           backlogOwnerTbody.innerHTML = '';
-          if (backlogOwners.length === 0) {
-            backlogOwnerTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum backlog por owner técnico listado.</td></tr>';
+          if (backlogOwners.length === 0 || (backlogOwners.length === 1 && backlogOwners[0].technical_owner === 'unknown')) {
+            backlogOwnerTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Owner técnico pendente</td></tr>';
           } else {
             backlogOwners.forEach(o => {
               const tr = document.createElement('tr');
@@ -9206,7 +9232,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let lvlBadge = '<span class="badge badge-p4">Info</span>';
               if (al.level === 'critical') lvlBadge = '<span class="badge badge-p1plus">Crítico</span>';
               else if (al.level === 'warning') lvlBadge = '<span class="badge badge-p1">Aviso</span>';
-              
+
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
                 <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
@@ -9215,11 +9241,11 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               alertsTbody.appendChild(tr);
             });
           }
-          
+
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de SLA
           // ==========================================
-          
+
           // 1. Visão Geral - Donut de SLA
           if (document.getElementById('overview-chart-sla')) {
             renderDonutChart('overview-chart-sla', [
@@ -9259,15 +9285,19 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           }
 
           // 5. SLA & Backlog - Top Backlog por Owner
-          let ownerBacklog = backlogOwners.slice(0, 5).map(o => ({
-            label: o.technical_owner,
-            value: o.total,
-            color: '#60a5fa'
-          }));
           if (document.getElementById('sla-chart-backlog-owner')) {
-            renderMiniBarChart('sla-chart-backlog-owner', ownerBacklog);
+            if (backlogOwners.length === 0 || (backlogOwners.length === 1 && backlogOwners[0].technical_owner === 'unknown')) {
+              showChartEmptyState('sla-chart-backlog-owner', 'Owner técnico pendente');
+            } else {
+              let ownerBacklog = backlogOwners.slice(0, 5).map(o => ({
+                label: o.technical_owner,
+                value: o.total,
+                color: '#60a5fa'
+              }));
+              renderMiniBarChart('sla-chart-backlog-owner', ownerBacklog);
+            }
           }
-          
+
         } else {
           showFallbackSla('Falha HTTP ao contatar a API');
         }
@@ -9288,21 +9318,25 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       safeSetHtml('sla-max-age', '-');
       safeSetHtml('sla-persistent', '-');
       safeSetHtml('sla-recurring', '-');
-      
+
       const alertsContainer = safeGetEl('sla-alerts-container');
       if (alertsContainer) alertsContainer.style.display = 'none';
-      
-      safeSetHtml('sla-overdue-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-due-soon-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-persistent-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-recurring-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-backlog-asset-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-backlog-owner-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
-      safeSetHtml('sla-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">SLA indisponível: ${msg}</td></tr>`);
+
+      const isPending = msg.toLowerCase().includes('pendente') || msg.toLowerCase().includes('unknown');
+      const generalMsg = isPending ? msg : `SLA indisponível: ${msg}`;
+      const chartMsg = isPending ? msg : `Gráfico indisponível: ${msg}`;
+
+      safeSetHtml('sla-overdue-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-due-soon-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-persistent-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-recurring-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-backlog-asset-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-backlog-owner-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      safeSetHtml('sla-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
 
       const charts = ['overview-chart-sla', 'sla-chart-compliance', 'sla-chart-aging', 'sla-chart-backlog-asset', 'sla-chart-backlog-owner'];
       charts.forEach(id => {
-        showChartEmptyState(id, `Gráfico indisponível: ${msg}`);
+        showChartEmptyState(id, chartMsg);
       });
     }
 
@@ -9315,7 +9349,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const sum = data.summary || {};
@@ -9324,7 +9358,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const expiringSoon = data.expiring_soon || [];
           const invalidRules = data.invalid_rules || [];
           const matchedSample = data.matched_items_sample || [];
-          
+
           document.getElementById('ra-rules-total').textContent = sum.rules_total !== undefined ? sum.rules_total : '-';
           document.getElementById('ra-rules-invalid').textContent = sum.rules_invalid !== undefined ? sum.rules_invalid : '-';
           document.getElementById('ra-accepted-count').textContent = sum.accepted !== undefined ? sum.accepted : '-';
@@ -9333,11 +9367,11 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           document.getElementById('ra-compensating-count').textContent = sum.compensating_control !== undefined ? sum.compensating_control : '-';
           document.getElementById('ra-waiting-count').textContent = sum.waiting_change_window !== undefined ? sum.waiting_change_window : '-';
           document.getElementById('ra-expired-count').textContent = sum.expired !== undefined ? sum.expired : '-';
-          
+
           const ovAct = document.getElementById('overview-actionable-priorities');
           if (ovAct) ovAct.textContent = sum.actionable_after_acceptance !== undefined ? sum.actionable_after_acceptance : '-';
           document.getElementById('ra-actionable-count').textContent = sum.actionable_after_acceptance !== undefined ? sum.actionable_after_acceptance : '-';
-          
+
           const alertEl = document.getElementById('ra-alerts-container');
           if (alerts.length > 0) {
             alertEl.style.display = 'flex';
@@ -9354,7 +9388,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             alertEl.style.display = 'none';
           }
-          
+
           // Helper: format CVE or Package
           const formatCveOrPkg = (item) => {
             if (item.cve) {
@@ -9416,7 +9450,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               expiredTbody.appendChild(tr);
             });
           }
-          
+
           // 2. Render Expiring Soon Table
           const expiringSoonTbody = document.getElementById('ra-expiring-soon-tbody');
           expiringSoonTbody.innerHTML = '';
@@ -9435,7 +9469,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               expiringSoonTbody.appendChild(tr);
             });
           }
-          
+
           // 3. Render FP Table
           const fpTbody = document.getElementById('ra-fp-tbody');
           fpTbody.innerHTML = '';
@@ -9454,7 +9488,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               fpTbody.appendChild(tr);
             });
           }
-          
+
           // 4. Render Riscos Aceitos Table
           const acceptedTbody = document.getElementById('ra-accepted-tbody');
           acceptedTbody.innerHTML = '';
@@ -9473,7 +9507,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               acceptedTbody.appendChild(tr);
             });
           }
-          
+
           // 5. Render Planned Table
           const plannedTbody = document.getElementById('ra-planned-tbody');
           plannedTbody.innerHTML = '';
@@ -9492,7 +9526,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               plannedTbody.appendChild(tr);
             });
           }
-          
+
           // 6. Render Compensating Table
           const compensatingTbody = document.getElementById('ra-compensating-tbody');
           compensatingTbody.innerHTML = '';
@@ -9519,7 +9553,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               compensatingTbody.appendChild(tr);
             });
           }
-          
+
           // 7. Render Invalid Rules Table
           const invalidTbody = document.getElementById('ra-invalid-rules-tbody');
           invalidTbody.innerHTML = '';
@@ -9536,7 +9570,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               invalidTbody.appendChild(tr);
             });
           }
-          
+
           // 8. Render Matched Sample Table
           const matchedSampleTbody = document.getElementById('ra-matched-sample-tbody');
           matchedSampleTbody.innerHTML = '';
@@ -9554,7 +9588,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               matchedSampleTbody.appendChild(tr);
             });
           }
-          
+
           // 9. Render Alerts Table
           const alertsTbody = document.getElementById('ra-alerts-tbody');
           alertsTbody.innerHTML = '';
@@ -9566,7 +9600,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let lvlBadge = '<span class="badge badge-p4">Info</span>';
               if (al.level === 'critical') lvlBadge = '<span class="badge badge-p1plus">Crítico</span>';
               else if (al.level === 'warning') lvlBadge = '<span class="badge badge-p1">Aviso</span>';
-              
+
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
                 <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
@@ -9619,7 +9653,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               ]);
             }
           }
-          
+
         } else {
           showFallbackRiskAcceptance('Falha HTTP ao contatar a API');
         }
@@ -9640,10 +9674,10 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       safeSetHtml('ra-waiting-count', '-');
       safeSetHtml('ra-expired-count', '-');
       safeSetHtml('ra-actionable-count', '-');
-      
+
       const alertEl = safeGetEl('ra-alerts-container');
       if (alertEl) alertEl.style.display = 'none';
-      
+
       safeSetHtml('ra-expired-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Exceções indisponíveis: ${msg}</td></tr>`);
       safeSetHtml('ra-expiring-soon-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Exceções indisponíveis: ${msg}</td></tr>`);
       safeSetHtml('ra-fp-tbody', `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Exceções indisponíveis: ${msg}</td></tr>`);
@@ -9669,7 +9703,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const sum = data.summary || {};
@@ -9681,9 +9715,9 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const topItems = data.top_treatment_items || [];
           const ownerWorkload = data.owner_workload || [];
           const alerts = data.treatment_alerts || [];
-          
+
           // Render Metrics Cards
-          
+
           const ovTreatNow = document.getElementById('overview-treatment-now');
           if (ovTreatNow) ovTreatNow.textContent = sum.now !== undefined ? sum.now : '-';
           document.getElementById('treatment-metrics-now').textContent = sum.now !== undefined ? sum.now : '-';
@@ -9694,7 +9728,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           document.getElementById('treatment-metrics-exc-fp').textContent = `Exceções: ${sum.accepted_or_exception || 0} | FP: ${sum.false_positive || 0}`;
           document.getElementById('treatment-metrics-owners').textContent = sum.owners !== undefined ? sum.owners : '-';
           document.getElementById('treatment-metrics-wins-change').textContent = `Quick Wins: ${sum.quick_wins || 0} | Janelas: ${sum.change_window_candidates || 0}`;
-          
+
           // Render Alertas de Tratativa
           const alertEl = document.getElementById('treatment-alerts-container');
           if (alerts.length > 0 && alerts[0].title !== "Plano Operacional Estável") {
@@ -9712,7 +9746,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             alertEl.style.display = 'none';
           }
-          
+
           // Render Top Items Table
           const topTbody = document.getElementById('treatment-top-tbody');
           topTbody.innerHTML = '';
@@ -9724,11 +9758,11 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let scoreColor = '#34d399';
               if (i.treatment_score >= 80) scoreColor = '#f87171';
               else if (i.treatment_score >= 50) scoreColor = '#fb923c';
-              
+
               let effortBadge = '<span class="badge badge-p4">Baixo</span>';
               if (i.effort === 'high') effortBadge = '<span class="badge badge-p1plus">Alto</span>';
               else if (i.effort === 'medium') effortBadge = '<span class="badge badge-p2">Médio</span>';
-              
+
               tr.innerHTML = `
                 <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${i.cve}" target="_blank">${i.cve}</a></td>
                 <td><code>${i.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${i.agent_name}</span></td>
@@ -9743,7 +9777,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               topTbody.appendChild(tr);
             });
           }
-          
+
           // Render Workload por Owner
           const workloadTbody = document.getElementById('treatment-workload-tbody');
           workloadTbody.innerHTML = '';
@@ -9767,7 +9801,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               workloadTbody.appendChild(tr);
             });
           }
-          
+
           // Render Quick Wins
           const winsTbody = document.getElementById('treatment-wins-tbody');
           winsTbody.innerHTML = '';
@@ -9787,7 +9821,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               winsTbody.appendChild(tr);
             });
           }
-          
+
           // Render Change Window
           const changeTbody = document.getElementById('treatment-change-tbody');
           changeTbody.innerHTML = '';
@@ -9807,7 +9841,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               changeTbody.appendChild(tr);
             });
           }
-          
+
           // Render Plan Alerts Table
           const alertsTbody = document.getElementById('treatment-plan-alerts-tbody');
           alertsTbody.innerHTML = '';
@@ -9816,7 +9850,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             let badgeClass = 'badge-p3';
             if (al.level === 'critical') badgeClass = 'badge-p1plus';
             else if (al.level === 'warning') badgeClass = 'badge-p1';
-            
+
             tr.innerHTML = `
               <td><span class="badge ${badgeClass}">${al.level}</span></td>
               <td style="font-weight:700; color: var(--text-main);">${al.title}</td>
@@ -9824,7 +9858,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             `;
             alertsTbody.appendChild(tr);
           });
-          
+
           // Render Buckets and Effort Lists
           const bucketsUl = document.getElementById('treatment-summary-buckets');
           bucketsUl.innerHTML = '';
@@ -9834,7 +9868,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             li.innerHTML = `<span style="font-weight:700; text-transform:capitalize;">${b.bucket}:</span> <code>${b.count}</code>`;
             bucketsUl.appendChild(li);
           });
-          
+
           const effortUl = document.getElementById('treatment-summary-effort');
           effortUl.innerHTML = '';
           byEffort.forEach(e => {
@@ -9847,7 +9881,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de Tratativa
           // ==========================================
-          
+
           // 1. Visão Geral - Mini Bar de Buckets de Tratativa
           if (document.getElementById('overview-chart-treatment')) {
             renderMiniBarChart('overview-chart-treatment', [
@@ -9901,7 +9935,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               { label: 'Esforço Alto', value: highCount, color: '#f87171' }
             ]);
           }
-          
+
         } else {
           showFallbackTreatmentPlan(response.statusText);
         }
@@ -9921,15 +9955,15 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       document.getElementById('treatment-metrics-exc-fp').textContent = '-';
       document.getElementById('treatment-metrics-owners').textContent = '-';
       document.getElementById('treatment-metrics-wins-change').textContent = '-';
-      
+
       document.getElementById('treatment-alerts-container').style.display = 'none';
-      
+
       document.getElementById('treatment-top-tbody').innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
       document.getElementById('treatment-workload-tbody').innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
       document.getElementById('treatment-wins-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
       document.getElementById('treatment-change-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
       document.getElementById('treatment-plan-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
-      
+
       document.getElementById('treatment-summary-buckets').innerHTML = '<li>indisponível</li>';
       document.getElementById('treatment-summary-effort').innerHTML = '<li>indisponível</li>';
 
@@ -9949,23 +9983,23 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const sum = data.summary || {};
           const curr = data.current || {};
           const delta = data.delta || {};
-          
+
           const alerts = data.executive_alerts || [];
           const worseningAssets = data.top_worsening_assets || [];
           const improvingAssets = data.top_improving_assets || [];
           const ownerTrend = data.owner_trend || [];
           const persistentCves = data.top_persistent_cves || [];
-          
+
           const severityTrend = data.severity_trend || [];
           const slaTrend = data.sla_trend || [];
           const acceptanceTrend = data.acceptance_trend || [];
-          
+
           // Formatar status executivo
           let execHealthHtml = '-';
           if (sum.executive_health === 'healthy') {
@@ -9977,7 +10011,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             execHealthHtml = '<span style="color: var(--text-muted); font-weight: 700;">Cinza / Desconhecido</span>';
           }
-          
+
           const ovTrendHealth = document.getElementById('overview-trend-health');
           const ovTrendDir = document.getElementById('overview-trend-direction');
           if (ovTrendHealth && ovTrendDir) {
@@ -9986,7 +10020,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           }
           document.getElementById('trend-exec-health').innerHTML = execHealthHtml;
           document.getElementById('trend-period-days').textContent = `Período: ${sum.period_days !== undefined ? sum.period_days : 0} Dias`;
-          
+
           // Formatar direção do risco
           let riskDirHtml = '-';
           if (sum.risk_direction === 'improving') {
@@ -10005,21 +10039,21 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             ovTrendDirAfter.innerHTML = `Direção Risco: ${riskDirHtml}`;
           }
           document.getElementById('trend-snapshots-analyzed').textContent = `Snapshots analisados: ${sum.snapshots_analyzed || 0} (${sum.trend_status || 'unknown'})`;
-          
+
           // Delta total
           let deltaTotalVal = delta.total_vulnerabilities || 0;
           let deltaTotalColor = deltaTotalVal > 0 ? '#ef4444' : (deltaTotalVal < 0 ? '#10b981' : 'var(--text-main)');
           let deltaTotalSign = deltaTotalVal > 0 ? '+' : '';
           document.getElementById('trend-delta-total').innerHTML = `<span style="color: ${deltaTotalColor}; font-weight: 800;">${deltaTotalSign}${deltaTotalVal}</span>`;
           document.getElementById('trend-delta-critical-high').textContent = `Críticas: ${delta.critical > 0 ? '+' : ''}${delta.critical || 0} | Altas: ${delta.high > 0 ? '+' : ''}${delta.high || 0}`;
-          
+
           // Delta SLA / Backlog
           let deltaSlaVal = delta.sla_overdue || 0;
           let deltaSlaColor = deltaSlaVal > 0 ? '#ef4444' : (deltaSlaVal < 0 ? '#10b981' : 'var(--text-main)');
           let deltaSlaSign = deltaSlaVal > 0 ? '+' : '';
           document.getElementById('trend-delta-sla-actionable').innerHTML = `<span style="color: ${deltaSlaColor}; font-weight: 800;">${deltaSlaSign}${deltaSlaVal}</span>`;
           document.getElementById('trend-delta-details').textContent = `SLA Vencido: ${delta.sla_overdue > 0 ? '+' : ''}${delta.sla_overdue || 0} | KEV: ${delta.kev_count > 0 ? '+' : ''}${delta.kev_count || 0}`;
-          
+
           // Alertas
           const alertEl = document.getElementById('trend-alerts-container');
           if (alerts.length > 0 && sum.executive_health !== 'healthy') {
@@ -10037,14 +10071,14 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             alertEl.style.display = 'none';
           }
-          
+
           // Formatar direção em texto/badge
           const getDirBadge = (dir) => {
             if (dir === 'worsening') return '<span class="badge badge-p1plus" style="font-size:0.7rem;">Piora ↗</span>';
             if (dir === 'improving') return '<span class="badge badge-p4" style="font-size:0.7rem;">Melhora ↘</span>';
             return '<span class="badge badge-p3" style="font-size:0.7rem;">Estável →</span>';
           };
-          
+
           const formatAgentLink = (agent_id, agent_name) => {
             return `<code>${agent_id || '-'}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${agent_name || ''}</span>`;
           };
@@ -10067,7 +10101,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               worseningTbody.appendChild(tr);
             });
           }
-          
+
           // 2. Render Improving Table
           const improvingTbody = document.getElementById('trend-improving-tbody');
           improvingTbody.innerHTML = '';
@@ -10086,7 +10120,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               improvingTbody.appendChild(tr);
             });
           }
-          
+
           // 3. Render Owner Trend Table
           const ownerTbody = document.getElementById('trend-owner-tbody');
           ownerTbody.innerHTML = '';
@@ -10106,7 +10140,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               ownerTbody.appendChild(tr);
             });
           }
-          
+
           // 4. Render Persistent Table
           const persistentTbody = document.getElementById('trend-persistent-tbody');
           persistentTbody.innerHTML = '';
@@ -10128,7 +10162,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               persistentTbody.appendChild(tr);
             });
           }
-          
+
           // Helper for timestamp formatting
           const formatTime = (ts) => {
             if (!ts) return '-';
@@ -10158,7 +10192,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               severityTbody.appendChild(tr);
             });
           }
-          
+
           // 6. SLA Trend Table
           const slaTbody = document.getElementById('trend-sla-tbody');
           slaTbody.innerHTML = '';
@@ -10177,7 +10211,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               slaTbody.appendChild(tr);
             });
           }
-          
+
           // 7. Risk Acceptance Trend Table
           const acceptanceTbody = document.getElementById('trend-acceptance-tbody');
           acceptanceTbody.innerHTML = '';
@@ -10197,7 +10231,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               acceptanceTbody.appendChild(tr);
             });
           }
-          
+
           // 8. Alerts Table
           const alertsTbody = document.getElementById('trend-alerts-tbody');
           alertsTbody.innerHTML = '';
@@ -10209,7 +10243,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let lvlBadge = '<span class="badge badge-p4">Info</span>';
               if (al.level === 'critical') lvlBadge = '<span class="badge badge-p1plus">Crítico</span>';
               else if (al.level === 'warning') lvlBadge = '<span class="badge badge-p1">Aviso</span>';
-              
+
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
                 <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
@@ -10218,7 +10252,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               alertsTbody.appendChild(tr);
             });
           }
-          
+
           // Renderização de Gráficos (Fase 3H.2)
           if (severityTrend && severityTrend.length > 0) {
             // 1. Visão Geral - Evolução do Risco
@@ -10282,14 +10316,14 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       document.getElementById('trend-risk-direction').innerHTML = '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>';
       document.getElementById('trend-period-days').textContent = 'Período: -';
       document.getElementById('trend-snapshots-analyzed').textContent = 'Snapshots analisados: -';
-      
+
       document.getElementById('trend-delta-total').textContent = '-';
       document.getElementById('trend-delta-critical-high').textContent = 'Críticas: - | Altas: -';
       document.getElementById('trend-delta-sla-actionable').textContent = '-';
       document.getElementById('trend-delta-details').textContent = 'SLA Vencido: - | KEV: -';
-      
+
       document.getElementById('trend-alerts-container').style.display = 'none';
-      
+
       document.getElementById('trend-worsening-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
       document.getElementById('trend-improving-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
       document.getElementById('trend-owner-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;

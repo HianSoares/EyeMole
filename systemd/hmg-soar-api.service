@@ -5,8 +5,8 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=hmg-soar-api
-Group=hmg-soar-api
+User=hmg-soar
+Group=www-data
 
 WorkingDirectory=/opt/hmg-soar
 ExecStart=/usr/bin/python3 /opt/hmg-soar/soar_api.py
@@ -24,7 +24,7 @@ SyslogIdentifier=hmg-soar-api
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/hmg-soar/audit
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=true
 MemoryDenyWriteExecute=true
