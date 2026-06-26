@@ -44,8 +44,9 @@ LATEST_JSON = WEB_DIR / "data" / "latest.json"
 REPORTS_DIR = WEB_DIR / "reports"
 
 # Auditoria
-AUDIT_DIR = Path("/opt/hmg-soar/audit")
-AUDIT_LOG = AUDIT_DIR / "actions.log"
+AUDIT_DIR = Path("/var/www/wazuh-soar/data")
+AUDIT_LOG = AUDIT_DIR / "audit_actions.jsonl"
+
 
 # Lock para evitar execuções concorrentes via API
 _run_lock = Lock()
@@ -72,13 +73,15 @@ def audit_log(action: str, remote_user: str, client_ip: str,
         "remote_user": remote_user or "unknown",
         "client_ip": client_ip or "unknown",
         "result": result,
+        "exit_code": exit_code,
         "message": message,
     }
-    if exit_code is not None:
-        entry["exit_code"] = exit_code
 
     try:
-        AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         with open(AUDIT_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError as e:
@@ -380,7 +383,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         # Retorno degraded se não encontrar ou falhar ao ler
         self._send_json(200, {
             "status": "degraded",
-            "message": "Asset context summary not available yet",
+            "message": "Ativo pendente de classificação",
             "assets": {
                 "total_seen": 0,
                 "classified": 0,
@@ -402,7 +405,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         # Retorno degraded se não encontrar ou falhar ao ler
         self._send_json(200, {
             "status": "degraded",
-            "message": "Exposure context summary not available yet",
+            "message": "Contexto de exposição pendente",
             "assets": {
                 "total_seen": 0,
                 "with_exposure_context": 0,
@@ -424,7 +427,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         # Retorno degraded se não encontrar ou falhar ao ler
         self._send_json(200, {
             "status": "degraded",
-            "message": "SLA summary not available yet",
+            "message": "Owner técnico pendente",
             "summary": {
                 "total_open": 0,
                 "overdue": 0,
