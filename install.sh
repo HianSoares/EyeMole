@@ -448,6 +448,7 @@ mkdir -p "${BACKUP_DIR}"
 
   create_user_and_dirs
   install_app_files
+  ensure_api_audit_dirs
   validate_python
   install_safe_wrappers
   install_systemd
@@ -455,6 +456,7 @@ mkdir -p "${BACKUP_DIR}"
   inject_nginx_include
   reload_nginx
   run_report_once_if_possible
+  ensure_api_audit_dirs
   final_message
 }
 
