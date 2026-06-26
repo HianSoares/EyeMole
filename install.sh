@@ -93,28 +93,28 @@ install -d -o root -g root -m 0755 "${ETC_DIR}"
 }
 
 install_app_files() {
-log "Instalando aplicação em ${APP_DIR}..."
+  log "Instalando aplicação em ${APP_DIR}..."
 
-[[ -f "${REPO_ROOT}/opt/hmg-soar/analyserV1.py" ]] || die "Arquivo não encontrado: opt/hmg-soar/analyserV1.py"
+  [[ -f "${REPO_ROOT}/opt/hmg-soar/analyserV1.py" ]] || die "Arquivo não encontrado: opt/hmg-soar/analyserV1.py"
 
-rsync -a --delete 
---exclude 'config/' 
---exclude 'output/' 
---exclude '.hmg_cache/' 
---exclude '**pycache**/' 
-"${REPO_ROOT}/opt/hmg-soar/" 
-"${APP_DIR}/"
+  rsync -a --delete \
+    --exclude 'config/' \
+    --exclude 'output/' \
+    --exclude '.hmg_cache/' \
+    --exclude '__pycache__/' \
+    "${REPO_ROOT}/opt/hmg-soar/" \
+    "${APP_DIR}/"
 
-chown -R "${APP_USER}:${WEB_GROUP}" "${APP_DIR}"
+  chown -R "${APP_USER}:${WEB_GROUP}" "${APP_DIR}"
 
-rm -rf "${APP_DIR}/**pycache**"
-install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/**pycache**"
+  rm -rf "${APP_DIR}/__pycache__"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/__pycache__"
 
-if [[ -f "${APP_DIR}/assets/eyemole.png" ]]; then
-install -o "${APP_USER}" -g "${WEB_GROUP}" -m 0644 
-"${APP_DIR}/assets/eyemole.png" 
-"${WEB_DIR}/assets/eyemole.png"
-fi
+  if [[ -f "${APP_DIR}/assets/eyemole.png" ]]; then
+    install -o "${APP_USER}" -g "${WEB_GROUP}" -m 0644 \
+      "${APP_DIR}/assets/eyemole.png" \
+      "${WEB_DIR}/assets/eyemole.png"
+  fi
 }
 
 validate_python() {
