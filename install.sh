@@ -103,6 +103,20 @@ create_user_and_dirs() {
   install -d -o root -g root -m 0755 "${ETC_DIR}"
 }
 
+ensure_api_audit_dirs() {
+  log "Garantindo diretórios de auditoria da API..."
+
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/audit"
+  touch "${APP_DIR}/audit/actions.log"
+  chown "${APP_USER}:${WEB_GROUP}" "${APP_DIR}/audit/actions.log"
+  chmod 0640 "${APP_DIR}/audit/actions.log"
+
+  install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/data"
+  touch "${WEB_DIR}/data/audit_actions.jsonl"
+  chown "${APP_USER}:${WEB_GROUP}" "${WEB_DIR}/data/audit_actions.jsonl"
+  chmod 0660 "${WEB_DIR}/data/audit_actions.jsonl"
+}
+
 install_app_files() {
   log "Instalando aplicação em ${APP_DIR}..."
 
