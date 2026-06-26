@@ -132,29 +132,29 @@ fi
 }
 
 install_systemd() {
-log "Instalando unidades systemd, se existirem no repositório..."
+  log "Instalando unidades systemd, se existirem no repositório..."
 
-if [[ -f "${REPO_ROOT}/systemd/${SERVICE_FILE}" ]]; then
-install -o root -g root -m 0644 
-"${REPO_ROOT}/systemd/${SERVICE_FILE}" 
-"/etc/systemd/system/${SERVICE_FILE}"
-else
-warn "Service não encontrado no repo: systemd/${SERVICE_FILE}"
-fi
+  if [[ -f "${REPO_ROOT}/systemd/${SERVICE_FILE}" ]]; then
+    install -o root -g root -m 0644 \
+      "${REPO_ROOT}/systemd/${SERVICE_FILE}" \
+      "/etc/systemd/system/${SERVICE_FILE}"
+  else
+    warn "Service não encontrado no repo: systemd/${SERVICE_FILE}"
+  fi
 
-if [[ -f "${REPO_ROOT}/systemd/${TIMER_FILE}" ]]; then
-install -o root -g root -m 0644 
-"${REPO_ROOT}/systemd/${TIMER_FILE}" 
-"/etc/systemd/system/${TIMER_FILE}"
-else
-warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
-fi
+  if [[ -f "${REPO_ROOT}/systemd/${TIMER_FILE}" ]]; then
+    install -o root -g root -m 0644 \
+      "${REPO_ROOT}/systemd/${TIMER_FILE}" \
+      "/etc/systemd/system/${TIMER_FILE}"
+  else
+    warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
+  fi
 
-systemctl daemon-reload
+  systemctl daemon-reload
 
-if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
-systemctl enable "${TIMER_FILE}" >/dev/null 2>&1 || true
-fi
+  if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
+    systemctl enable "${TIMER_FILE}" >/dev/null 2>&1 || true
+  fi
 }
 
 install_nginx_snippet() {
@@ -175,7 +175,7 @@ location ^~ /soar/assets/ {
 alias ${WEB_DIR}/assets/;
 auth_basic "HMG SOAR - Acesso Restrito";
 auth_basic_user_file ${HTPASSWD_FILE};
-try_files $uri =404;
+try_files \$uri =404;
 
 ```
 add_header X-Frame-Options "SAMEORIGIN" always;
@@ -189,7 +189,7 @@ location ^~ /soar/data/ {
 alias ${WEB_DIR}/data/;
 auth_basic "HMG SOAR - Acesso Restrito";
 auth_basic_user_file ${HTPASSWD_FILE};
-try_files $uri =404;
+try_files \$uri =404;
 
 ```
 default_type application/json;
@@ -205,7 +205,7 @@ location ^~ /soar/reports/ {
 alias ${WEB_DIR}/reports/;
 auth_basic "HMG SOAR - Acesso Restrito";
 auth_basic_user_file ${HTPASSWD_FILE};
-try_files $uri =404;
+try_files \$uri =404;
 
 ```
 add_header X-Frame-Options "SAMEORIGIN" always;
@@ -220,7 +220,7 @@ alias ${WEB_DIR}/;
 index index.html;
 auth_basic "HMG SOAR - Acesso Restrito";
 auth_basic_user_file ${HTPASSWD_FILE};
-try_files $uri $uri/ =404;
+try_files \$uri \$uri/ =404;
 
 ```
 add_header X-Frame-Options "SAMEORIGIN" always;
