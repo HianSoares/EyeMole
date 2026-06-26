@@ -158,124 +158,106 @@ install_systemd() {
 }
 
 install_nginx_snippet() {
-log "Instalando snippet Nginx para /soar/..."
+  log "Instalando snippet Nginx para /soar/..."
 
-install -d -o root -g root -m 0755 /etc/nginx/snippets
+  install -d -o root -g root -m 0755 /etc/nginx/snippets
 
-touch "${HTPASSWD_FILE}"
-chown root:"${WEB_GROUP}" "${HTPASSWD_FILE}"
-chmod 0640 "${HTPASSWD_FILE}"
+  touch "${HTPASSWD_FILE}"
+  chown root:"${WEB_GROUP}" "${HTPASSWD_FILE}"
+  chmod 0640 "${HTPASSWD_FILE}"
 
-cat > "${SNIPPET_FILE}" <<EOF
+  cat > "${SNIPPET_FILE}" <<NGINX_EYEMOLE_SNIPPET
 location = /soar {
-return 301 /soar/;
+    return 301 /soar/;
 }
 
 location ^~ /soar/assets/ {
-alias ${WEB_DIR}/assets/;
-auth_basic "HMG SOAR - Acesso Restrito";
-auth_basic_user_file ${HTPASSWD_FILE};
-try_files \$uri =404;
+    alias ${WEB_DIR}/assets/;
+    auth_basic "HMG SOAR - Acesso Restrito";
+    auth_basic_user_file ${HTPASSWD_FILE};
+    try_files \$uri =404;
 
-```
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-```
-
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 
 location ^~ /soar/data/ {
-alias ${WEB_DIR}/data/;
-auth_basic "HMG SOAR - Acesso Restrito";
-auth_basic_user_file ${HTPASSWD_FILE};
-try_files \$uri =404;
+    alias ${WEB_DIR}/data/;
+    auth_basic "HMG SOAR - Acesso Restrito";
+    auth_basic_user_file ${HTPASSWD_FILE};
+    try_files \$uri =404;
 
-```
-default_type application/json;
-add_header Cache-Control "no-cache, no-store, must-revalidate" always;
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-```
-
+    default_type application/json;
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 
 location ^~ /soar/reports/ {
-alias ${WEB_DIR}/reports/;
-auth_basic "HMG SOAR - Acesso Restrito";
-auth_basic_user_file ${HTPASSWD_FILE};
-try_files \$uri =404;
+    alias ${WEB_DIR}/reports/;
+    auth_basic "HMG SOAR - Acesso Restrito";
+    auth_basic_user_file ${HTPASSWD_FILE};
+    try_files \$uri =404;
 
-```
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-```
-
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 
 location ^~ /soar/ {
-alias ${WEB_DIR}/;
-index index.html;
-auth_basic "HMG SOAR - Acesso Restrito";
-auth_basic_user_file ${HTPASSWD_FILE};
-try_files \$uri \$uri/ =404;
+    alias ${WEB_DIR}/;
+    index index.html;
+    auth_basic "HMG SOAR - Acesso Restrito";
+    auth_basic_user_file ${HTPASSWD_FILE};
+    try_files \$uri \$uri/ =404;
 
-```
-add_header X-Frame-Options "SAMEORIGIN" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-add_header Cache-Control "no-cache, no-store, must-revalidate" always;
-```
-
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
 }
 
 location /soar-api/ {
-auth_basic "HMG SOAR - Acesso Restrito";
-auth_basic_user_file ${HTPASSWD_FILE};
+    auth_basic "HMG SOAR - Acesso Restrito";
+    auth_basic_user_file ${HTPASSWD_FILE};
 
-```
-proxy_pass http://127.0.0.1:8765/;
-proxy_http_version 1.1;
-proxy_set_header Host \$host;
-proxy_set_header X-Real-IP \$remote_addr;
-proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-proxy_set_header X-Forwarded-Proto \$scheme;
-```
-
+    proxy_pass http://127.0.0.1:8765/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
 }
-EOF
+NGINX_EYEMOLE_SNIPPET
 
-chown root:root "${SNIPPET_FILE}"
-chmod 0644 "${SNIPPET_FILE}"
+  chown root:root "${SNIPPET_FILE}"
+  chmod 0644 "${SNIPPET_FILE}"
 }
 
 inject_nginx_include() {
-log "Procurando server block do Wazuh Dashboard para incluir /soar/..."
+  log "Procurando server block do Wazuh Dashboard para incluir /soar/..."
 
-local target_conf=""
+  local target_conf=""
 
-target_conf="$(grep -RIl "proxy_pass https://127.0.0.1:5601" 
-/etc/nginx/sites-available 
-/etc/nginx/conf.d 
-/etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
+  target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' /etc/nginx/sites-available /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
 
-if [[ -z "${target_conf}" ]]; then
-warn "Não encontrei automaticamente o server block do Wazuh Dashboard."
-warn "Inclua manualmente dentro do server block HTTPS:"
-warn "include ${SNIPPET_FILE};"
-return 0
-fi
+  if [[ -z "${target_conf}" ]]; then
+    warn "Não encontrei automaticamente o server block do Wazuh Dashboard."
+    warn "Inclua manualmente dentro do server block HTTPS:"
+    warn "include ${SNIPPET_FILE};"
+    return 0
+  fi
 
-if grep -q "${SNIPPET_FILE}" "${target_conf}"; then
-log "Include Nginx já existe em: ${target_conf}"
-return 0
-fi
+  if grep -Fq "include ${SNIPPET_FILE};" "${target_conf}"; then
+    log "Include Nginx já existe em: ${target_conf}"
+    return 0
+  fi
 
-backup_path "${target_conf}"
+  backup_path "${target_conf}"
 
-python3 - "${target_conf}" "${SNIPPET_FILE}" <<'PY'
+  python3 -c '
 import re
 import sys
 from pathlib import Path
@@ -283,30 +265,29 @@ from pathlib import Path
 conf_path = Path(sys.argv[1])
 snippet = sys.argv[2]
 
-text = conf_path.read_text(encoding="utf-8").splitlines()
-
+lines = conf_path.read_text(encoding="utf-8").splitlines()
 include_line = f"    include {snippet};"
 
-if any(snippet in line for line in text):
-sys.exit(0)
+if any(snippet in line for line in lines):
+    sys.exit(0)
 
 out = []
 inserted = False
 
-for line in text:
-if not inserted and re.match(r"^\s*location\s+/\s*{", line):
-out.append(include_line)
-inserted = True
-out.append(line)
+for line in lines:
+    if not inserted and re.match(r"^\s*location\s+/\s*\{", line):
+        out.append(include_line)
+        inserted = True
+    out.append(line)
 
 if not inserted:
-print(f"ERRO: não encontrei 'location / {{' em {conf_path}", file=sys.stderr)
-sys.exit(2)
+    print(f"ERRO: não encontrei location / em {conf_path}", file=sys.stderr)
+    sys.exit(2)
 
 conf_path.write_text("\n".join(out) + "\n", encoding="utf-8")
-PY
+' "${target_conf}" "${SNIPPET_FILE}"
 
-log "Include inserido em: ${target_conf}"
+  log "Include inserido em: ${target_conf}"
 }
 
 reload_nginx() {
