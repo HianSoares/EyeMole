@@ -2,3 +2,5 @@
 *.jpg binary
 *.jpeg binary
 *.webp binary
+
+*.sh text eol=lf
