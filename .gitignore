@@ -15,3 +15,25 @@ credentials.env
 *.secret
 *.key
 *.pem
+
+# Local redesign tooling
+eyemole_redesign*.py
+extract_template.py
+template_only.html
+*.backup-*
+
+# Local donut patch tooling
+eyemole_donut_patch.py
+
+# Local pie chart patch tooling
+eyemole_pie_chart_patch.py
+
+# Local brand theme patch tooling
+eyemole_brand_theme_patch.py
+
+# Local brand theme patch tooling
+eyemole_brand_theme_patch.py
+
+eyemole_brand_final_polish.py
+
+eyemole_card_color_logo_patch.py
