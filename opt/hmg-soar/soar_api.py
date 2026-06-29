@@ -244,9 +244,80 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 service_status = {"raw": stdout}
 
+        # Extrair estados do serviço de relatório
+        svc_active = service_status.get("active_state", "unknown")
+        svc_sub = service_status.get("sub_state", "unknown")
+        svc_unit_file_state = service_status.get("unit_file_state", "unknown")
+        svc_exec_main_status = service_status.get("exec_main_status", "")
+        svc_result = service_status.get("result", "unknown")
+
+        # Extrair estados do timer
+        timer_info = service_status.get("timer_info", {})
+        timer_active = timer_info.get("active_state", "unknown")
+        timer_sub = timer_info.get("sub_state", "unknown")
+        timer_unit_file_state = timer_info.get("unit_file_state", "unknown")
+        timer_load_state = timer_info.get("load_state", "unknown")
+        timer_next_elapse = timer_info.get("next_elapse", "")
+        timer_last_trigger = timer_info.get("last_trigger", "")
+
+        # Regra para serviço de relatório (unidade oneshot/pontual):
+        # active/running               => "Executando"
+        # inactive/dead + exit_code==0 => "Pronto (Ocioso)"
+        # failed ou exit_code != 0     => "Falha"
+        # demais casos                 => "Desconhecido"
+        if svc_active in ("active", "activating") and svc_sub in ("running", "start"):
+            report_status_label = "Executando"
+            report_status_class = "status-running"
+        elif svc_active == "inactive" and svc_sub == "dead" and exit_code == 0:
+            report_status_label = "Pronto (Ocioso)"
+            report_status_class = "status-ready"
+        elif svc_active == "failed" or exit_code != 0:
+            report_status_label = "Falha"
+            report_status_class = "status-failed"
+        else:
+            report_status_label = "Desconhecido"
+            report_status_class = "status-unknown"
+
+        # Regra para timer (independente do exit_code do wrapper do serviço):
+        # active/waiting ou active/running => "Ativo"
+        # inactive/dead                    => "Inativo"
+        # failed                           => "Falha"
+        # demais casos                     => "Desconhecido"
+        if timer_active in ("active", "activating") and timer_sub in ("waiting", "running"):
+            timer_status_label = "Ativo"
+            timer_status_class = "status-active"
+        elif timer_active == "inactive" and timer_sub == "dead":
+            timer_status_label = "Inativo"
+            timer_status_class = "status-inactive"
+        elif timer_active == "failed":
+            timer_status_label = "Falha"
+            timer_status_class = "status-failed"
+        else:
+            timer_status_label = "Desconhecido"
+            timer_status_class = "status-unknown"
+
         response = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "service_info": service_status,
+            "service_info": {
+                "report_service_active": service_status.get("report_service_active", False),
+                "active_state": svc_active,
+                "sub_state": svc_sub,
+                "unit_file_state": svc_unit_file_state,
+                "exec_main_status": svc_exec_main_status,
+                "result": svc_result,
+            },
+            "timer_info": {
+                "active_state": timer_active,
+                "sub_state": timer_sub,
+                "unit_file_state": timer_unit_file_state,
+                "load_state": timer_load_state,
+                "next_elapse": timer_next_elapse,
+                "last_trigger": timer_last_trigger,
+            },
+            "report_status_label": report_status_label,
+            "report_status_class": report_status_class,
+            "timer_status_label": timer_status_label,
+            "timer_status_class": timer_status_class,
             "index_html_mtime": _get_file_mtime_iso(INDEX_HTML),
             "latest_json_mtime": _get_file_mtime_iso(LATEST_JSON),
             "latest_report": _get_latest_report(),
