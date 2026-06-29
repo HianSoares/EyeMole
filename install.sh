@@ -356,7 +356,7 @@ inject_nginx_include() {
 
   local target_conf=""
 
-  target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' /etc/nginx/sites-available /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
+  target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' /etc/nginx/sites-enabled /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
 
   if [[ -z "${target_conf}" ]]; then
     warn "Não encontrei automaticamente o server block do Wazuh Dashboard."
