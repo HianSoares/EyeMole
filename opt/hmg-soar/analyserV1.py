@@ -5885,6 +5885,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .badge-within-sla { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
     .badge-persistent { background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3); }
     .badge-recurring { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .status-running { color: #f59e0b; }
+    .status-ready { color: #10b981; }
+    .status-active { color: #10b981; }
+    .status-inactive { color: #9ca3af; }
+    .status-failed { color: #ef4444; }
+    .status-unknown { color: #ef4444; }
     .sla-card-overdue::before { background: var(--p1plus) !important; }
     .sla-card-due-soon::before { background: var(--p1) !important; }
     .sla-card-within-sla::before { background: var(--p4) !important; }
@@ -8267,30 +8273,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         });
         if (sRes.ok) {
           const sData = await sRes.json();
-          const svc = sData.service_info || {};
 
           // Report service status
-          if (svc.report_service_active) {
-            document.getElementById('status-report-service').innerHTML = '<span style="color: #f59e0b;">● Executando</span>';
-          } else if (svc.report_service_status === 'active' || svc.report_service_status === 'inactive') {
-            document.getElementById('status-report-service').innerHTML = '<span style="color: #10b981;">● Pronto (Ocioso)</span>';
-          } else {
-            document.getElementById('status-report-service').innerHTML = '<span style="color: #ef4444;">● ' + (svc.report_service_status || 'desconhecido') + '</span>';
-          }
+          const reportLabel = sData.report_status_label || 'Desconhecido';
+          const reportClass = sData.report_status_class || 'status-unknown';
+          document.getElementById('status-report-service').innerHTML = `<span class="${reportClass}">● ${reportLabel}</span>`;
           document.getElementById('status-report-detail').textContent = 'Último Exit Code: ' + (sData.wrapper_exit_code !== undefined ? sData.wrapper_exit_code : '-');
 
           // Timer Status
-          if (svc.timer_status === 'active') {
-            document.getElementById('status-timer').innerHTML = '<span style="color: #10b981;">● Ativo</span>';
-            let nextTrigger = 'N/A';
-            if (svc.next_trigger) {
-              nextTrigger = isNaN(svc.next_trigger) ? svc.next_trigger : new Date(parseInt(svc.next_trigger)/1000).toLocaleString();
+          const timerLabel = sData.timer_status_label || 'Desconhecido';
+          const timerClass = sData.timer_status_class || 'status-unknown';
+          document.getElementById('status-timer').innerHTML = `<span class="${timerClass}">● ${timerLabel}</span>`;
+
+          let nextTrigger = 'N/A';
+          const timerInfo = sData.timer_info || {};
+          if (timerInfo.next_elapse && timerInfo.next_elapse !== '0' && timerInfo.next_elapse !== 'N/A') {
+            const nextUs = parseInt(timerInfo.next_elapse);
+            if (!isNaN(nextUs) && nextUs > 0) {
+              nextTrigger = new Date(nextUs / 1000).toLocaleString();
             }
-            document.getElementById('status-timer-detail').textContent = 'Próxima: ' + nextTrigger;
-          } else {
-            document.getElementById('status-timer').innerHTML = '<span style="color: #ef4444;">● ' + (svc.timer_status || 'Inativo') + '</span>';
-            document.getElementById('status-timer-detail').textContent = 'Agendamento desabilitado';
           }
+          document.getElementById('status-timer-detail').textContent = 'Próxima: ' + nextTrigger;
 
           // HTML / JSON Mtimes
           const indexTime = sData.index_html_mtime && sData.index_html_mtime !== 'N/A' ? new Date(sData.index_html_mtime).toLocaleString() : 'N/A';
