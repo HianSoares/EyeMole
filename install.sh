@@ -44,7 +44,7 @@ return 0
 fi
 
 if command -v apt-get >/dev/null 2>&1; then
-log "Instalando pacote necessário: ${pkg_name}"
+log "Instalando pacote necessÃ¡rio: ${pkg_name}"
 apt-get update -y
 apt-get install -y "${pkg_name}"
 else
@@ -63,7 +63,7 @@ fi
 }
 
 create_user_and_dirs() {
-  log "Preparando usuário, grupo e diretórios..."
+  log "Preparando usuÃ¡rio, grupo e diretÃ³rios..."
 
   if ! getent group "${WEB_GROUP}" >/dev/null 2>&1; then
     groupadd --system "${WEB_GROUP}"
@@ -84,7 +84,7 @@ create_user_and_dirs() {
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/output"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/.hmg_cache"
 
-  # Diretório exigido pelo sandbox/ReadWritePaths do systemd da API.
+  # DiretÃ³rio exigido pelo sandbox/ReadWritePaths do systemd da API.
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/audit"
   touch "${APP_DIR}/audit/actions.log"
   chown "${APP_USER}:${WEB_GROUP}" "${APP_DIR}/audit/actions.log"
@@ -95,7 +95,7 @@ create_user_and_dirs() {
   install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/data"
   install -d -o root -g "${WEB_GROUP}" -m 2775 "${WEB_DIR}/reports"
 
-  # Arquivo usado pela API para registrar ações exibidas em Status & Auditoria.
+  # Arquivo usado pela API para registrar aÃ§Ãµes exibidas em Status & Auditoria.
   touch "${WEB_DIR}/data/audit_actions.jsonl"
   chown "${APP_USER}:${WEB_GROUP}" "${WEB_DIR}/data/audit_actions.jsonl"
   chmod 0660 "${WEB_DIR}/data/audit_actions.jsonl"
@@ -104,7 +104,7 @@ create_user_and_dirs() {
 }
 
 ensure_api_audit_dirs() {
-  log "Garantindo diretórios de auditoria da API..."
+  log "Garantindo diretÃ³rios de auditoria da API..."
 
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/audit"
   touch "${APP_DIR}/audit/actions.log"
@@ -118,9 +118,9 @@ ensure_api_audit_dirs() {
 }
 
 install_app_files() {
-  log "Instalando aplicação em ${APP_DIR}..."
+  log "Instalando aplicaÃ§Ã£o em ${APP_DIR}..."
 
-  [[ -f "${REPO_ROOT}/opt/hmg-soar/analyserV1.py" ]] || die "Arquivo não encontrado: opt/hmg-soar/analyserV1.py"
+  [[ -f "${REPO_ROOT}/opt/hmg-soar/analyserV1.py" ]] || die "Arquivo nÃ£o encontrado: opt/hmg-soar/analyserV1.py"
 
   rsync -a --delete \
     --exclude 'config/' \
@@ -171,20 +171,48 @@ systemctl start hmg-soar-report.service
 EOF
 
   # Wrapper 2: status
+  # Coleta estados do serviÃ§o (oneshot) e do timer via 'systemctl show' (somente leitura,
+  # argumentos fixos, sem interpolaÃ§Ã£o de entrada externa) e emite JSON estÃ¡vel.
   cat > "/usr/local/sbin/hmg-soar-status" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-ACTIVE_STATE=$(systemctl show hmg-soar-report.service -p ActiveState --value || echo "unknown")
-SUB_STATE=$(systemctl show hmg-soar-report.service -p SubState --value || echo "unknown")
+
+# --- ServiÃ§o de relatÃ³rio (unidade oneshot/pontual) ---
+SVC_ACTIVE_STATE=$(systemctl show hmg-soar-report.service -p ActiveState --value || echo "unknown")
+SVC_SUB_STATE=$(systemctl show hmg-soar-report.service -p SubState --value || echo "unknown")
+SVC_UNIT_FILE_STATE=$(systemctl show hmg-soar-report.service -p UnitFileState --value || echo "unknown")
+SVC_EXEC_MAIN_STATUS=$(systemctl show hmg-soar-report.service -p ExecMainStatus --value || echo "")
+SVC_RESULT=$(systemctl show hmg-soar-report.service -p Result --value || echo "unknown")
+
 IS_ACTIVE="false"
-if [[ "${ACTIVE_STATE}" == "active" || "${ACTIVE_STATE}" == "activating" ]]; then
+if [[ "${SVC_ACTIVE_STATE}" == "active" || "${SVC_ACTIVE_STATE}" == "activating" ]]; then
   IS_ACTIVE="true"
 fi
+
+# --- Timer ---
+TIMER_ACTIVE_STATE=$(systemctl show hmg-soar-report.timer -p ActiveState --value || echo "unknown")
+TIMER_SUB_STATE=$(systemctl show hmg-soar-report.timer -p SubState --value || echo "unknown")
+TIMER_UNIT_FILE_STATE=$(systemctl show hmg-soar-report.timer -p UnitFileState --value || echo "unknown")
+TIMER_LOAD_STATE=$(systemctl show hmg-soar-report.timer -p LoadState --value || echo "unknown")
+TIMER_NEXT_ELAPSE=$(systemctl show hmg-soar-report.timer -p NextElapseUSecRealtime --value || echo "")
+TIMER_LAST_TRIGGER=$(systemctl show hmg-soar-report.timer -p LastTriggerUSec --value || echo "")
+
 cat <<OUT
 {
   "report_service_active": ${IS_ACTIVE},
-  "active_state": "${ACTIVE_STATE}",
-  "sub_state": "${SUB_STATE}"
+  "active_state": "${SVC_ACTIVE_STATE}",
+  "sub_state": "${SVC_SUB_STATE}",
+  "unit_file_state": "${SVC_UNIT_FILE_STATE}",
+  "exec_main_status": "${SVC_EXEC_MAIN_STATUS}",
+  "result": "${SVC_RESULT}",
+  "timer_info": {
+    "active_state": "${TIMER_ACTIVE_STATE}",
+    "sub_state": "${TIMER_SUB_STATE}",
+    "unit_file_state": "${TIMER_UNIT_FILE_STATE}",
+    "load_state": "${TIMER_LOAD_STATE}",
+    "next_elapse": "${TIMER_NEXT_ELAPSE}",
+    "last_trigger": "${TIMER_LAST_TRIGGER}"
+  }
 }
 OUT
 EOF
@@ -204,14 +232,14 @@ EOF
 }
 
 install_systemd() {
-  log "Instalando unidades systemd, se existirem no repositório..."
+  log "Instalando unidades systemd, se existirem no repositÃ³rio..."
 
   if [[ -f "${REPO_ROOT}/systemd/${SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
       "${REPO_ROOT}/systemd/${SERVICE_FILE}" \
       "/etc/systemd/system/${SERVICE_FILE}"
   else
-    warn "Service não encontrado no repo: systemd/${SERVICE_FILE}"
+    warn "Service nÃ£o encontrado no repo: systemd/${SERVICE_FILE}"
   fi
 
   if [[ -f "${REPO_ROOT}/systemd/${TIMER_FILE}" ]]; then
@@ -219,7 +247,7 @@ install_systemd() {
       "${REPO_ROOT}/systemd/${TIMER_FILE}" \
       "/etc/systemd/system/${TIMER_FILE}"
   else
-    warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
+    warn "Timer nÃ£o encontrado no repo: systemd/${TIMER_FILE}"
   fi
 
   API_SERVICE_FILE="hmg-soar-api.service"
@@ -228,18 +256,18 @@ install_systemd() {
       "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" \
       "/etc/systemd/system/${API_SERVICE_FILE}"
   else
-    warn "Service API não encontrado no repo: systemd/${API_SERVICE_FILE}"
+    warn "Service API nÃ£o encontrado no repo: systemd/${API_SERVICE_FILE}"
   fi
 
   systemctl daemon-reload
 
   if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
-    systemctl enable "${TIMER_FILE}" >/dev/null 2>&1 || true
+    systemctl enable --now "${TIMER_FILE}" >/dev/null 2>&1 || true
   fi
 
   if [[ -f "/etc/systemd/system/${API_SERVICE_FILE}" ]]; then
-    systemctl enable "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
-    systemctl start "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
+    systemctl enable --now "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
+    systemctl restart "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
   fi
 }
 
@@ -331,14 +359,14 @@ inject_nginx_include() {
   target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' /etc/nginx/sites-available /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
 
   if [[ -z "${target_conf}" ]]; then
-    warn "Não encontrei automaticamente o server block do Wazuh Dashboard."
+    warn "NÃ£o encontrei automaticamente o server block do Wazuh Dashboard."
     warn "Inclua manualmente dentro do server block HTTPS:"
     warn "include ${SNIPPET_FILE};"
     return 0
   fi
 
   if grep -Fq "include ${SNIPPET_FILE};" "${target_conf}"; then
-    log "Include Nginx já existe em: ${target_conf}"
+    log "Include Nginx jÃ¡ existe em: ${target_conf}"
     return 0
   fi
 
@@ -368,7 +396,7 @@ for line in lines:
     out.append(line)
 
 if not inserted:
-    print(f"ERRO: não encontrei location / em {conf_path}", file=sys.stderr)
+    print(f"ERRO: nÃ£o encontrei location / em {conf_path}", file=sys.stderr)
     sys.exit(2)
 
 conf_path.write_text("\n".join(out) + "\n", encoding="utf-8")
@@ -386,24 +414,24 @@ systemctl reload nginx
 
 run_report_once_if_possible() {
   if [[ ! -f "/etc/systemd/system/${SERVICE_FILE}" ]]; then
-    warn "Service systemd não instalado. Pulando execução."
+    warn "Service systemd nÃ£o instalado. Pulando execuÃ§Ã£o."
     return 0
   fi
 
   if [[ -f "${ETC_DIR}/credentials.env" ]]; then
-    log "Executando serviço real uma vez para publicar o dashboard..."
+    log "Executando serviÃ§o real uma vez para publicar o dashboard..."
     systemctl restart "${SERVICE_FILE}" || true
   else
-    warn "Arquivo ${ETC_DIR}/credentials.env não encontrado. Gerando bootstrap inicial offline."
+    warn "Arquivo ${ETC_DIR}/credentials.env nÃ£o encontrado. Gerando bootstrap inicial offline."
   fi
 
   log "Executando bootstrap de contexto (context_bootstrap.py)..."
   python3 "${APP_DIR}/context_bootstrap.py" --auto || true
 
   if [[ -f "${ETC_DIR}/credentials.env" ]]; then
-    log "Executando novamente hmg-soar-report.service após o bootstrap..."
+    log "Executando novamente hmg-soar-report.service apÃ³s o bootstrap..."
     systemctl restart "${SERVICE_FILE}" || true
-    log "Últimas linhas do serviço:"
+    log "Ãšltimas linhas do serviÃ§o:"
     journalctl -u "${SERVICE_FILE}" -n 40 --no-pager || true
   fi
 }
@@ -416,23 +444,15 @@ echo "App dir : ${APP_DIR}"
 echo "Web dir : ${WEB_DIR}"
 echo "URL     : https://<servidor>/soar/"
 echo
-echo "Próximo passo:"
+echo "PrÃ³ximo passo:"
 echo "sudo ./create-web-user.sh <usuario>"
 echo
-echo "Backup desta instalação:"
+echo "Backup desta instalaÃ§Ã£o:"
 echo "${BACKUP_DIR}"
 echo "============================================================"
 }
 
 main() {
-need_root
-
-install_package_if_missing python3 python3
-install_package_if_missing rsync rsync
-install_package_if_missing nginx nginx
-
-mkdir -p "${BACKUP_DIR}"
-
   need_root
 
   install_package_if_missing python3 python3
