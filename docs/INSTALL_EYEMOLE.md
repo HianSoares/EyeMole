@@ -990,3 +990,31 @@ Agendamento: Ativo
 
 ```
 
+---
+
+## Segurança e modo de produção (importante)
+
+A instalação **padrão é o modo seguro**: o `install.sh` **não cria**
+`/etc/sudoers.d/hmg-soar-api` nem regras `NOPASSWD`. Consequências:
+
+- A **execução automática** do relatório continua funcionando via
+  `hmg-soar-report.timer` (habilitado pelo root durante a instalação).
+- O botão **"Executar análise agora"** do dashboard pode aparecer
+  **desabilitado/oculto** em produção (modo seguro).
+- A **execução manual**, quando necessária, é feita por um administrador via SSH:
+  `sudo systemctl start hmg-soar-report.service`.
+- O endpoint `/soar-api/status` continua funcionando (status lido por
+  `systemctl show`, sem `sudo`). O endpoint `/soar-api/run-analysis` responde
+  `403` no modo seguro.
+
+Habilitar a execução manual via web **apenas em ambiente controlado (HMG/lab)**:
+
+```bash
+EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh
+# ou
+sudo ./install.sh --enable-web-run
+```
+
+Detalhes completos (hardening systemd/Nginx, permissões, validação, riscos e
+rollback) em [docs/SECURITY_HARDENING.md](SECURITY_HARDENING.md).
+

@@ -16,6 +16,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="/opt/backup-eyemole-install-${TS}"
 
+# ====================================================================
+# MODO DE OPERAÇÃO
+# Padrão: MODO SEGURO (sem sudoers, sem NOPASSWD, sem execução manual via web).
+# Opt-in (apenas ambiente controlado): habilita execução manual via web,
+# instalando wrappers + regra sudoers RESTRITA.
+#   EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh
+#   sudo ./install.sh --enable-web-run
+# ====================================================================
+ENABLE_WEB_RUN="${EYEMOLE_ENABLE_WEB_RUN:-0}"
+SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/hmg-soar-api}"
+WRAPPER_RUN_ANALYSIS="/usr/local/sbin/hmg-soar-run-analysis"
+WRAPPER_STATUS="/usr/local/sbin/hmg-soar-status"
+
 log() {
 echo "[+] $*"
 }
@@ -33,6 +46,36 @@ need_root() {
 if [[ "${EUID}" -ne 0 ]]; then
 die "Execute como root: sudo ./install.sh"
 fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --enable-web-run)
+        ENABLE_WEB_RUN=1
+        ;;
+      --safe|--no-web-run)
+        ENABLE_WEB_RUN=0
+        ;;
+      -h|--help)
+        echo "Uso: sudo ./install.sh [--enable-web-run]"
+        echo
+        echo "  Padrão (modo seguro): sem sudoers, sem NOPASSWD."
+        echo "    A execução manual via web fica DESABILITADA. O relatório é"
+        echo "    gerado automaticamente pelo timer hmg-soar-report.timer."
+        echo
+        echo "  --enable-web-run (opt-in, apenas ambiente controlado/HMG/lab):"
+        echo "    instala wrappers + regra sudoers RESTRITA para habilitar o"
+        echo "    botão 'Executar análise agora' no dashboard."
+        echo "    Equivale a: EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh"
+        exit 0
+        ;;
+      *)
+        warn "Argumento ignorado: $1"
+        ;;
+    esac
+    shift
+  done
 }
 
 install_package_if_missing() {
@@ -160,75 +203,87 @@ runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/preview_server.py"
 fi
 }
 
-install_safe_wrappers() {
-  log "Instalando wrappers seguros para a API..."
+configure_web_run_mode() {
+  # No modo seguro padrão NÃO instalamos sudoers nem wrappers privilegiados.
+  # O status do dashboard é lido pela API diretamente via 'systemctl show' (sem sudo).
+  if [[ "${ENABLE_WEB_RUN}" == "1" ]]; then
+    install_web_run_optin
+  else
+    enforce_safe_mode_no_sudoers
+  fi
+}
 
-  # Wrapper 1: run-analysis
-  cat > "/usr/local/sbin/hmg-soar-run-analysis" <<'EOF'
+enforce_safe_mode_no_sudoers() {
+  log "Modo seguro ativo: sudoers da API não será instalado. Execução manual via web ficará desabilitada."
+
+  # Remover sudoers de instalação anterior, se existir (com backup).
+  if [[ -f "${SUDOERS_FILE}" ]]; then
+    backup_path "${SUDOERS_FILE}"
+    rm -f "${SUDOERS_FILE}"
+    log "Sudoers anterior removido: ${SUDOERS_FILE} (backup em ${BACKUP_DIR})."
+  fi
+
+  # Remover wrappers privilegiados antigos (inúteis e indesejados no modo seguro).
+  if [[ -f "${WRAPPER_RUN_ANALYSIS}" || -f "${WRAPPER_STATUS}" ]]; then
+    rm -f "${WRAPPER_RUN_ANALYSIS}" "${WRAPPER_STATUS}"
+    log "Wrappers privilegiados anteriores removidos."
+  fi
+}
+
+install_web_run_optin() {
+  warn "EYEMOLE_ENABLE_WEB_RUN ativo: habilitando execução manual via web (sudoers RESTRITO)."
+  warn "Use SOMENTE em ambiente controlado (HMG/lab). Em produção, prefira o modo seguro."
+
+  log "Instalando wrapper de execução (run-analysis)..."
+  # Wrapper run-analysis: dispara o serviço oneshot, sem argumentos do cliente.
+  cat > "${WRAPPER_RUN_ANALYSIS}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 systemctl start hmg-soar-report.service
 EOF
 
-  # Wrapper 2: status
-  # Coleta estados do serviço (oneshot) e do timer via 'systemctl show' (somente leitura,
-  # argumentos fixos, sem interpolação de entrada externa) e emite JSON estável.
-  cat > "/usr/local/sbin/hmg-soar-status" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
+  chmod 0700 "${WRAPPER_RUN_ANALYSIS}"
+  chown root:root "${WRAPPER_RUN_ANALYSIS}"
 
-# --- Serviço de relatório (unidade oneshot/pontual) ---
-SVC_ACTIVE_STATE=$(systemctl show hmg-soar-report.service -p ActiveState --value || echo "unknown")
-SVC_SUB_STATE=$(systemctl show hmg-soar-report.service -p SubState --value || echo "unknown")
-SVC_UNIT_FILE_STATE=$(systemctl show hmg-soar-report.service -p UnitFileState --value || echo "unknown")
-SVC_EXEC_MAIN_STATUS=$(systemctl show hmg-soar-report.service -p ExecMainStatus --value || echo "")
-SVC_RESULT=$(systemctl show hmg-soar-report.service -p Result --value || echo "unknown")
-
-IS_ACTIVE="false"
-if [[ "${SVC_ACTIVE_STATE}" == "active" || "${SVC_ACTIVE_STATE}" == "activating" ]]; then
-  IS_ACTIVE="true"
-fi
-
-# --- Timer ---
-TIMER_ACTIVE_STATE=$(systemctl show hmg-soar-report.timer -p ActiveState --value || echo "unknown")
-TIMER_SUB_STATE=$(systemctl show hmg-soar-report.timer -p SubState --value || echo "unknown")
-TIMER_UNIT_FILE_STATE=$(systemctl show hmg-soar-report.timer -p UnitFileState --value || echo "unknown")
-TIMER_LOAD_STATE=$(systemctl show hmg-soar-report.timer -p LoadState --value || echo "unknown")
-TIMER_NEXT_ELAPSE=$(systemctl show hmg-soar-report.timer -p NextElapseUSecRealtime --value || echo "")
-TIMER_LAST_TRIGGER=$(systemctl show hmg-soar-report.timer -p LastTriggerUSec --value || echo "")
-
-cat <<OUT
-{
-  "report_service_active": ${IS_ACTIVE},
-  "active_state": "${SVC_ACTIVE_STATE}",
-  "sub_state": "${SVC_SUB_STATE}",
-  "unit_file_state": "${SVC_UNIT_FILE_STATE}",
-  "exec_main_status": "${SVC_EXEC_MAIN_STATUS}",
-  "result": "${SVC_RESULT}",
-  "timer_info": {
-    "active_state": "${TIMER_ACTIVE_STATE}",
-    "sub_state": "${TIMER_SUB_STATE}",
-    "unit_file_state": "${TIMER_UNIT_FILE_STATE}",
-    "load_state": "${TIMER_LOAD_STATE}",
-    "next_elapse": "${TIMER_NEXT_ELAPSE}",
-    "last_trigger": "${TIMER_LAST_TRIGGER}"
-  }
-}
-OUT
-EOF
-
-  chmod 0700 "/usr/local/sbin/hmg-soar-run-analysis" "/usr/local/sbin/hmg-soar-status"
-  chown root:root "/usr/local/sbin/hmg-soar-run-analysis" "/usr/local/sbin/hmg-soar-status"
-
-  # Sudoers rule
-  log "Instalando regra sudoers para a API..."
-  cat > "/etc/sudoers.d/hmg-soar-api" <<'EOF'
+  # Regra sudoers RESTRITA: apenas o wrapper fixo de run-analysis.
+  # (O status NÃO precisa de sudo: a API lê via 'systemctl show'.)
+  log "Instalando regra sudoers restrita para a API..."
+  cat > "${SUDOERS_FILE}" <<'EOF'
 hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-run-analysis
-hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-status
 EOF
 
-  chmod 0440 "/etc/sudoers.d/hmg-soar-api"
-  chown root:root "/etc/sudoers.d/hmg-soar-api"
+  chmod 0440 "${SUDOERS_FILE}"
+  chown root:root "${SUDOERS_FILE}"
+
+  # Validar sintaxe do sudoers, sem abortar a instalação se visudo faltar.
+  if command -v visudo >/dev/null 2>&1; then
+    if ! visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1; then
+      warn "visudo reprovou ${SUDOERS_FILE}; removendo por segurança."
+      rm -f "${SUDOERS_FILE}"
+    fi
+  fi
+}
+
+secure_credentials_env() {
+  local cred="${ETC_DIR}/credentials.env"
+
+  if [[ -f "${cred}" ]]; then
+    # EnvironmentFile é lido pelo systemd como root antes de baixar privilégio,
+    # portanto o usuário do serviço não precisa de leitura direta. Mantemos 0640
+    # com grupo dedicado quando existir; caso contrário, root (sem www-data).
+    local grp="root"
+    if getent group "${APP_USER}" >/dev/null 2>&1; then
+      grp="${APP_USER}"
+    fi
+    chown "root:${grp}" "${cred}"
+    chmod 0640 "${cred}"
+    log "Permissões de credentials.env ajustadas: root:${grp} 0640 (nunca www-data)."
+  else
+    warn "Credenciais não encontradas em ${cred}."
+    warn "Crie-as com permissões seguras (sem expor valores em logs):"
+    warn "  install -o root -g root -m 0640 /dev/null ${cred}"
+    warn "  # edite ${cred} e defina as variáveis necessárias"
+  fi
 }
 
 install_systemd() {
@@ -287,6 +342,7 @@ location = /soar {
 
 location ^~ /soar/assets/ {
     alias ${WEB_DIR}/assets/;
+    autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
     try_files \$uri =404;
@@ -298,6 +354,7 @@ location ^~ /soar/assets/ {
 
 location ^~ /soar/data/ {
     alias ${WEB_DIR}/data/;
+    autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
     try_files \$uri =404;
@@ -311,6 +368,7 @@ location ^~ /soar/data/ {
 
 location ^~ /soar/reports/ {
     alias ${WEB_DIR}/reports/;
+    autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
     try_files \$uri =404;
@@ -323,6 +381,7 @@ location ^~ /soar/reports/ {
 location ^~ /soar/ {
     alias ${WEB_DIR}/;
     index index.html;
+    autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
     try_files \$uri \$uri/ =404;
@@ -337,6 +396,13 @@ location /soar-api/ {
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
 
+    autoindex off;
+    add_header Cache-Control "no-store" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Proxy SOMENTE para a API local em 127.0.0.1:8765 (nunca exposta na rede).
     proxy_pass http://127.0.0.1:8765/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
@@ -356,7 +422,24 @@ inject_nginx_include() {
 
   local target_conf=""
 
-  target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' /etc/nginx/sites-enabled /etc/nginx/conf.d /etc/nginx/nginx.conf 2>/dev/null | head -n 1 || true)"
+  # Procurar o server block ATIVO do Wazuh Dashboard, priorizando sites-enabled
+  # para evitar instalar o include no arquivo errado (problema visto no HMG).
+  local search_paths=(
+    /etc/nginx/sites-enabled
+    /etc/nginx/sites-available
+    /etc/nginx/conf.d
+    /etc/nginx/nginx.conf
+  )
+
+  local sp
+  for sp in "${search_paths[@]}"; do
+    [[ -e "${sp}" ]] || continue
+    target_conf="$(grep -RIl 'proxy_pass https://127.0.0.1:5601' "${sp}" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${target_conf}" ]]; then
+      log "Server block do Wazuh Dashboard encontrado em: ${target_conf} (origem: ${sp})"
+      break
+    fi
+  done
 
   if [[ -z "${target_conf}" ]]; then
     warn "Não encontrei automaticamente o server block do Wazuh Dashboard."
@@ -443,6 +526,13 @@ echo "EyeMole SOAR instalado."
 echo "App dir : ${APP_DIR}"
 echo "Web dir : ${WEB_DIR}"
 echo "URL     : https://<servidor>/soar/"
+if [[ "${ENABLE_WEB_RUN}" == "1" ]]; then
+echo "Modo    : WEB-RUN (opt-in) - execução manual via web HABILITADA (sudoers restrito)"
+else
+echo "Modo    : SEGURO (padrão) - sem sudoers; execução manual via web DESABILITADA"
+echo "          Relatório gerado automaticamente pelo timer hmg-soar-report.timer."
+echo "          Execução manual (admin): sudo systemctl start hmg-soar-report.service"
+fi
 echo
 echo "Próximo passo:"
 echo "sudo ./create-web-user.sh <usuario>"
@@ -453,6 +543,7 @@ echo "============================================================"
 }
 
 main() {
+  parse_args "$@"
   need_root
 
   install_package_if_missing python3 python3
@@ -465,12 +556,14 @@ main() {
   backup_path "${WEB_DIR}"
   backup_path "${HTPASSWD_FILE}"
   backup_path "${SNIPPET_FILE}"
+  backup_path "${SUDOERS_FILE}"
 
   create_user_and_dirs
   install_app_files
   ensure_api_audit_dirs
   validate_python
-  install_safe_wrappers
+  configure_web_run_mode
+  secure_credentials_env
   install_systemd
   install_nginx_snippet
   inject_nginx_include

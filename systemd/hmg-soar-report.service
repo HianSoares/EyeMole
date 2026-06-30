@@ -22,9 +22,30 @@ ExecStart=/usr/bin/python3 /opt/hmg-soar/analyserV1.py \
 
 StandardOutput=journal
 StandardError=journal
+
+# ====================================================================
+# HARDENING (compatível: precisa de REDE para Wazuh/Indexer e escrita
+# em output/cache/web). Sem MemoryDenyWriteExecute (libs nativas: pdf/csv).
+# ====================================================================
 NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/www/wazuh-soar /opt/hmg-soar/.hmg_cache /opt/hmg-soar/output
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0027
+
+# Sem capabilities especiais.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Gravação restrita aos diretórios realmente necessários.
+ReadWritePaths=/opt/hmg-soar/output /opt/hmg-soar/.hmg_cache /opt/hmg-soar/config /var/www/wazuh-soar /var/www/wazuh-soar/data /var/www/wazuh-soar/reports /var/www/wazuh-soar/assets
 
 [Install]
 WantedBy=multi-user.target
