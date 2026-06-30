@@ -19,6 +19,18 @@ No modo seguro:
 - Habilitar execução manual via web (apenas HMG/lab):
   `sudo ./install.sh --enable-web-run`.
 
+## Classificação de ativos via web
+
+A aba **Ativos & Exposição** permite classificar ativos pendentes pela interface
+(botão **Classificar**), **sem linha de comando** e **sem privilégio**:
+
+- não usa `sudo`, não cria `sudoers`, não chama `systemctl` nem executa shell;
+- apenas edita o JSON local `/opt/hmg-soar/config/assets_context.json`;
+- a execução manual via web continua **desabilitada** em produção;
+- a priorização é aplicada no próximo relatório automático (timer) ou via SSH:
+  `sudo systemctl start hmg-soar-report.service`;
+- toda alteração é auditada em `/opt/hmg-soar/audit/audit_actions.jsonl`.
+
 ## Documentação
 
 - [Guia de Instalação do EyeMole SOAR](docs/INSTALL_EYEMOLE.md)

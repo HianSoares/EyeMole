@@ -343,3 +343,57 @@ sudo ./install.sh          # reexecuta no modo seguro: faz backup e remove o sud
 - Nginx: snippet `/etc/nginx/snippets/eyemole-soar-locations.conf`;
   auth `/etc/nginx/.htpasswd-wazuh-soar`.
 - API: `127.0.0.1:8765` (loopback apenas).
+
+---
+
+## 12. Classificação de ativos via web (sem privilégio)
+
+A aba **Ativos & Exposição** permite classificar ativos pendentes diretamente
+pela interface, **sem linha de comando**. Esta funcionalidade é segura por
+construção:
+
+- **Não usa** `sudo`, `sudoers`, `NOPASSWD`, `systemctl`, shell, `os.system`,
+  `subprocess`, `eval` nem `shell=True`.
+- **Apenas edita** o arquivo JSON local
+  `/opt/hmg-soar/config/assets_context.json` (único caminho de escrita
+  autorizado; o `agent_id` nunca é usado como caminho).
+- **Não reativa** a execução manual via web: o botão "Executar análise agora"
+  continua desabilitado em modo seguro e `/soar-api/run-analysis` continua `403`.
+
+Endpoints (atrás de Basic Auth do Nginx, API em loopback):
+
+- `GET /soar-api/assets-context` — lista o contexto de ativos (sanitizado).
+- `POST /soar-api/assets-context/<agent_id>` — atualiza o contexto de um ativo.
+
+Validações no servidor (defesa em profundidade):
+
+- `agent_id`: somente `[A-Za-z0-9_-]`, até 64 caracteres (sem path traversal).
+- `criticality` ∈ {critical, high, medium, low, unknown}.
+- `environment` ∈ {prod, hmg, dev, test, unknown}.
+- `exposure` ∈ {internal, dmz, internet, unknown}.
+- `technical_owner`/`business_owner`: texto até 256 chars; `notes` até 1000;
+  remoção de caracteres de controle.
+- `Content-Type` deve ser `application/json`; payload máximo de 16 KB.
+- Rejeita `Origin`/`Referer` de host diferente (proteção mínima de CSRF).
+- Escrita **atômica**: backup `.bak`, arquivo temporário no mesmo diretório,
+  validação do JSON e `os.replace`; permissões `0640` (owner `hmg-soar`,
+  grupo `www-data`).
+
+`classification_status` é definido como `classified` quando `criticality` for
+diferente de `unknown`, ou `pending` caso contrário — então o ativo sai da lista
+de pendentes.
+
+A priorização completa só é aplicada no **próximo relatório automático** (timer)
+ou após execução manual via SSH (`sudo systemctl start hmg-soar-report.service`).
+A edição de contexto funciona normalmente em **modo seguro**, pois não exige
+privilégio administrativo.
+
+Auditoria: cada alteração gera um evento JSONL em
+`/opt/hmg-soar/audit/audit_actions.jsonl` com `timestamp`, `remote_addr`,
+`user` (Basic Auth via `X-Remote-User`), `action=update_asset_context`,
+`agent_id`, `changed_fields`, `result` e `message` — **sem registrar valores
+sensíveis** (apenas os nomes dos campos alterados).
+
+Hardening do serviço da API para esta função: `ReadWritePaths` inclui
+`/opt/hmg-soar/config` (além de `/opt/hmg-soar/audit`), mantendo o restante de
+`/opt/hmg-soar` como somente leitura.
