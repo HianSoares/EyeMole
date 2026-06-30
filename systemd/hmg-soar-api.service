@@ -51,9 +51,11 @@ AmbientCapabilities=
 # Famílias de socket: AF_INET p/ bind 127.0.0.1; AF_UNIX p/ D-Bus do systemctl show.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
-# Filesystem: /opt/hmg-soar somente leitura; gravação restrita a auditoria/dados.
+# Filesystem: /opt/hmg-soar somente leitura; gravação restrita a auditoria/dados
+# e ao diretório de configuração (classificação de ativos via web edita apenas
+# /opt/hmg-soar/config/assets_context.json).
 ReadOnlyPaths=/opt/hmg-soar
-ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config
 
 [Install]
 WantedBy=multi-user.target

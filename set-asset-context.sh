@@ -28,6 +28,19 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
+# Tratar ajuda ANTES de definir AGENT_ID, para nunca criar um ativo "--help"/"-h".
+case "${1}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  -*)
+    echo "[x] Erro: o primeiro argumento deve ser o <agent_id>, recebido: '${1}'" >&2
+    usage
+    exit 1
+    ;;
+esac
+
 AGENT_ID="$1"
 shift
 

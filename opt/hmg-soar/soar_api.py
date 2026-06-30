@@ -19,14 +19,17 @@ Endpoints:
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from threading import Lock
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 # ==========================================
 # CONFIGURAÇÃO
@@ -48,6 +51,38 @@ REPORTS_DIR = WEB_DIR / "reports"
 # Auditoria
 AUDIT_DIR = Path("/var/www/wazuh-soar/data")
 AUDIT_LOG = AUDIT_DIR / "audit_actions.jsonl"
+
+# ==========================================
+# CLASSIFICAÇÃO DE ATIVOS VIA WEB (somente edição de JSON local)
+# ==========================================
+APP_DIR = Path("/opt/hmg-soar")
+CONFIG_DIR = APP_DIR / "config"
+# ÚNICO arquivo autorizado para escrita de contexto de ativos.
+ASSETS_CONTEXT_JSON = CONFIG_DIR / "assets_context.json"
+
+# Auditoria específica de contexto (separada, conforme requisito de segurança).
+CONTEXT_AUDIT_DIR = APP_DIR / "audit"
+CONTEXT_AUDIT_LOG = CONTEXT_AUDIT_DIR / "audit_actions.jsonl"
+
+# Limites e listas de validação (defesa em profundidade).
+MAX_BODY_BYTES = 16 * 1024          # 16 KB
+MAX_TEXT_LEN = 256                  # donos técnico/negócio
+MAX_NOTES_LEN = 1000               # observações
+MAX_AGENT_ID_LEN = 64
+
+ALLOWED_CRITICALITY = {"critical", "high", "medium", "low", "unknown"}
+ALLOWED_ENVIRONMENT = {"prod", "hmg", "dev", "test", "unknown"}
+ALLOWED_EXPOSURE = {"internal", "dmz", "internet", "unknown"}
+AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,%d}$" % MAX_AGENT_ID_LEN)
+
+# Campos de texto (e seus limites) aceitos do payload.
+TEXT_FIELDS = {"technical_owner": MAX_TEXT_LEN, "business_owner": MAX_TEXT_LEN, "notes": MAX_NOTES_LEN}
+# Campos retornados (sanitizados) na leitura do contexto.
+PUBLIC_AGENT_FIELDS = (
+    "id", "asset_name", "hostname", "asset_type", "criticality", "environment",
+    "exposure", "technical_owner", "business_owner", "is_critical_service",
+    "notes", "classification_status", "tags",
+)
 
 
 # Lock para evitar execuções concorrentes via API
@@ -223,6 +258,124 @@ def _is_service_active() -> bool:
 
 
 # ==========================================
+# CONTEXTO DE ATIVOS — utilidades seguras
+# ==========================================
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _sanitize_text(value, max_len: int) -> str:
+    """Sanitiza um campo de texto livre: força str, remove caracteres de controle,
+    normaliza espaços nas pontas e trunca no limite. Nunca executa nada."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        # Não tentamos interpretar tipos inesperados como texto executável.
+        value = str(value)
+    value = _CONTROL_CHARS_RE.sub("", value)
+    value = value.replace("\r", " ").replace("\n", " ").strip()
+    if len(value) > max_len:
+        value = value[:max_len]
+    return value
+
+
+def _context_audit_log(remote_addr: str, user: str, agent_id: str,
+                       changed_fields: list, result: str, message: str) -> None:
+    """Registra evento de classificação em audit_actions.jsonl (JSONL).
+
+    Nunca registra valores sensíveis: apenas nomes dos campos alterados.
+    """
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "remote_addr": remote_addr or "unknown",
+        "user": user or "unknown",
+        "action": "update_asset_context",
+        "agent_id": agent_id or "unknown",
+        "changed_fields": changed_fields or [],
+        "result": result,
+        "message": message,
+    }
+    try:
+        CONTEXT_AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    try:
+        with open(CONTEXT_AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as e:
+        logger.error(f"Falha ao gravar auditoria de contexto: {e}")
+
+
+def _atomic_write_assets_context(data: dict) -> None:
+    """Escreve o JSON de contexto de forma atômica e segura.
+
+    - Só escreve em ASSETS_CONTEXT_JSON (caminho fixo; agent_id nunca vira path).
+    - Faz backup do arquivo atual.
+    - Grava em arquivo temporário no MESMO diretório, valida o JSON e troca com
+      os.replace (atômico). Mantor permissões 0640 e owner/grupo do serviço.
+    """
+    target = ASSETS_CONTEXT_JSON
+    # Garantia explícita: jamais escrever fora do arquivo autorizado.
+    if Path(target).resolve() != Path(ASSETS_CONTEXT_JSON).resolve():
+        raise ValueError("Caminho de escrita não autorizado")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    # Backup do arquivo atual (se existir).
+    if target.exists():
+        try:
+            shutil.copy2(target, target.with_name(target.name + ".bak"))
+        except OSError as e:
+            logger.warning(f"Não foi possível criar backup do contexto: {e}")
+
+    fd, tmp_path = tempfile.mkstemp(prefix=".tmp_assets_ctx_", suffix=".json",
+                                    dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            json.dump(data, tmp, indent=4, ensure_ascii=False)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+
+        # Validar que o arquivo temporário é JSON válido antes de promover.
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            json.load(f)
+
+        os.replace(tmp_path, target)
+        tmp_path = None  # promovido com sucesso
+
+        try:
+            os.chmod(target, 0o640)
+        except OSError:
+            pass
+
+        # Melhor esforço para manter owner/grupo compatível com o serviço.
+        try:
+            import pwd
+            import grp
+            uid = pwd.getpwnam("hmg-soar").pw_uid
+            gid = grp.getgrnam("www-data").gr_gid
+            os.chown(target, uid, gid)
+        except (KeyError, PermissionError, OSError):
+            pass
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def _sanitize_agent_for_output(agent_id: str, agent: dict) -> dict:
+    """Retorna apenas campos públicos de um ativo (sem caminhos internos/segredos)."""
+    out = {"agent_id": agent_id}
+    if isinstance(agent, dict):
+        for key in PUBLIC_AGENT_FIELDS:
+            if key in agent:
+                out[key] = agent[key]
+    return out
+
+
+# ==========================================
 # HTTP HANDLER
 # ==========================================
 
@@ -268,6 +421,8 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             self._handle_risk_delta()
         elif path == "/asset-context":
             self._handle_asset_context()
+        elif path in ("/assets-context", "/context/assets"):
+            self._handle_get_assets_context()
         elif path == "/exposure-context":
             self._handle_exposure_context()
         elif path == "/sla-summary":
@@ -282,10 +437,20 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Endpoint não encontrado"})
 
     def do_POST(self) -> None:
-        if self.path == "/run-analysis":
+        path = urlparse(self.path).path
+
+        if path == "/run-analysis":
             self._handle_run_analysis()
-        else:
-            self._send_json(404, {"error": "Endpoint não encontrado"})
+            return
+
+        # POST /assets-context/<agent_id>  (ou /context/assets/<agent_id>)
+        for prefix in ("/assets-context/", "/context/assets/"):
+            if path.startswith(prefix):
+                raw_agent_id = unquote(path[len(prefix):])
+                self._handle_update_asset_context(raw_agent_id)
+                return
+
+        self._send_json(404, {"error": "Endpoint não encontrado"})
 
     def do_PUT(self) -> None:
         self._send_method_not_allowed()
@@ -569,6 +734,246 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             }
         })
 
+    # --- Classificação de ativos via web (somente edição de JSON local) ---
+
+    def _read_assets_context_file(self):
+        """Lê ASSETS_CONTEXT_JSON. Retorna (data, error_dict, http_status)."""
+        if not ASSETS_CONTEXT_JSON.exists() or not ASSETS_CONTEXT_JSON.is_file():
+            return None, {"status": "error",
+                          "message": "Arquivo de contexto de ativos não encontrado."}, 404
+        try:
+            with open(ASSETS_CONTEXT_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            return None, {"status": "error",
+                          "message": "JSON de contexto de ativos inválido."}, 422
+        except OSError as e:
+            logger.error(f"Erro ao ler assets_context.json: {e}")
+            return None, {"status": "error",
+                          "message": "Falha ao ler o contexto de ativos."}, 500
+        if not isinstance(data, dict):
+            return None, {"status": "error",
+                          "message": "Estrutura de contexto inválida."}, 422
+        return data, None, 200
+
+    def _handle_get_assets_context(self) -> None:
+        data, error, status = self._read_assets_context_file()
+        if error is not None:
+            self._send_json(status, error)
+            return
+
+        agents = data.get("agents", {})
+        if not isinstance(agents, dict):
+            agents = {}
+
+        sanitized = {}
+        for agent_id, agent in agents.items():
+            # Ignora chaves de ativo com formato inesperado.
+            if not isinstance(agent_id, str) or not AGENT_ID_RE.match(agent_id):
+                continue
+            sanitized[agent_id] = _sanitize_agent_for_output(agent_id, agent)
+
+        defaults = data.get("defaults", {})
+        if not isinstance(defaults, dict):
+            defaults = {}
+
+        self._send_json(200, {
+            "status": "ok",
+            "action_mode": "web_run_enabled" if _web_run_enabled() else "safe_no_sudoers",
+            "count": len(sanitized),
+            "agents": sanitized,
+            "defaults": defaults,
+            "allowed": {
+                "criticality": sorted(ALLOWED_CRITICALITY),
+                "environment": sorted(ALLOWED_ENVIRONMENT),
+                "exposure": sorted(ALLOWED_EXPOSURE),
+            },
+        })
+
+    def _origin_is_allowed(self) -> bool:
+        """Proteção mínima contra CSRF: se Origin/Referer estiver presente, seu host
+        deve bater com o Host da requisição. Ausência é tolerada (cliente curl/SSR)."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        for header in ("Origin", "Referer"):
+            value = self.headers.get(header)
+            if not value:
+                continue
+            try:
+                netloc = urlparse(value).netloc.lower()
+            except ValueError:
+                return False
+            if not netloc:
+                continue
+            if host and netloc != host:
+                return False
+        return True
+
+    def _handle_update_asset_context(self, raw_agent_id: str) -> None:
+        remote_user = self._get_remote_user()
+        client_ip = self._get_client_ip()
+
+        def fail(http_status, message, changed=None, audit=True):
+            if audit:
+                _context_audit_log(client_ip, remote_user, raw_agent_id[:MAX_AGENT_ID_LEN],
+                                   changed or [], "failure", message)
+            self._send_json(http_status, {"status": "error", "message": message})
+
+        # 1) agent_id seguro (sem path traversal / caracteres perigosos).
+        agent_id = raw_agent_id.strip()
+        if not AGENT_ID_RE.match(agent_id):
+            fail(400, "agent_id inválido (use apenas letras, números, hífen e underscore).")
+            return
+
+        # 2) CSRF / Origin.
+        if not self._origin_is_allowed():
+            fail(403, "Origem da requisição não permitida.")
+            return
+
+        # 3) Content-Type estritamente application/json.
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            fail(415, "Content-Type deve ser application/json.")
+            return
+
+        # 4) Tamanho do payload (<= 16 KB).
+        try:
+            content_length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            fail(400, "Content-Length inválido.")
+            return
+        if content_length <= 0:
+            fail(400, "Corpo da requisição vazio.")
+            return
+        if content_length > MAX_BODY_BYTES:
+            fail(413, "Payload excede o limite de 16 KB.")
+            return
+
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) > MAX_BODY_BYTES:
+            fail(413, "Payload excede o limite de 16 KB.")
+            return
+
+        # 5) Parse JSON.
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            fail(400, "JSON do corpo inválido.")
+            return
+        if not isinstance(payload, dict):
+            fail(400, "Payload deve ser um objeto JSON.")
+            return
+
+        # 6) Validar campos (apenas os permitidos são considerados).
+        updates = {}
+        changed_fields = []
+
+        if "criticality" in payload:
+            crit = payload["criticality"]
+            if not isinstance(crit, str) or crit not in ALLOWED_CRITICALITY:
+                fail(400, "criticality inválida.")
+                return
+            updates["criticality"] = crit
+            changed_fields.append("criticality")
+
+        if "environment" in payload:
+            env = payload["environment"]
+            if not isinstance(env, str) or env not in ALLOWED_ENVIRONMENT:
+                fail(400, "environment inválido.")
+                return
+            updates["environment"] = env
+            changed_fields.append("environment")
+
+        if "exposure" in payload:
+            expo = payload["exposure"]
+            if not isinstance(expo, str) or expo not in ALLOWED_EXPOSURE:
+                fail(400, "exposure inválida.")
+                return
+            updates["exposure"] = expo
+            changed_fields.append("exposure")
+
+        if "is_critical_service" in payload:
+            ics = payload["is_critical_service"]
+            if not isinstance(ics, bool):
+                fail(400, "is_critical_service deve ser booleano.")
+                return
+            updates["is_critical_service"] = ics
+            changed_fields.append("is_critical_service")
+
+        for field, max_len in TEXT_FIELDS.items():
+            if field in payload:
+                updates[field] = _sanitize_text(payload[field], max_len)
+                changed_fields.append(field)
+
+        if not updates:
+            fail(400, "Nenhum campo válido para atualização.")
+            return
+
+        # 7) Carregar contexto atual (ou estrutura mínima).
+        if ASSETS_CONTEXT_JSON.exists():
+            data, error, status = self._read_assets_context_file()
+            if error is not None:
+                self._send_json(status, error)
+                _context_audit_log(client_ip, remote_user, agent_id, changed_fields,
+                                   "failure", error.get("message", "leitura inválida"))
+                return
+        else:
+            data = {}
+
+        if not isinstance(data.get("agents"), dict):
+            data["agents"] = {}
+
+        agent = data["agents"].get(agent_id)
+        if not isinstance(agent, dict):
+            agent = {
+                "id": agent_id,
+                "asset_name": f"agent-{agent_id}",
+                "hostname": f"agent-{agent_id}",
+                "criticality": "unknown",
+                "environment": "unknown",
+                "exposure": "unknown",
+                "technical_owner": "unknown",
+                "business_owner": "unknown",
+                "is_critical_service": False,
+                "notes": "",
+                "classification_status": "pending",
+                "tags": [],
+            }
+
+        agent.update(updates)
+
+        # 8) classification_status derivado da criticidade final.
+        final_crit = agent.get("criticality", "unknown")
+        agent["classification_status"] = "pending" if final_crit == "unknown" else "classified"
+
+        data["agents"][agent_id] = agent
+
+        # Metadados (sem segredos).
+        if not isinstance(data.get("metadata"), dict):
+            data["metadata"] = {}
+        data["metadata"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        data["metadata"]["updated_by"] = f"web:{remote_user}" if remote_user and remote_user != "unknown" else "web"
+
+        # 9) Escrita atômica e segura no único arquivo autorizado.
+        try:
+            _atomic_write_assets_context(data)
+        except (OSError, ValueError) as e:
+            logger.error(f"Falha ao gravar contexto de ativos: {e}")
+            fail(500, "Falha ao gravar o contexto de ativos.", changed=changed_fields)
+            return
+
+        _context_audit_log(client_ip, remote_user, agent_id, changed_fields,
+                           "success", f"Contexto do ativo {agent_id} atualizado via web.")
+
+        self._send_json(200, {
+            "status": "success",
+            "message": "Contexto salvo. A priorização completa será refletida no próximo "
+                       "relatório automático ou após execução manual via SSH.",
+            "agent_id": agent_id,
+            "classification_status": agent["classification_status"],
+            "changed_fields": changed_fields,
+            "agent": _sanitize_agent_for_output(agent_id, agent),
+        })
+
     def _handle_exposure_context(self) -> None:
         exposure_context_path = WEB_DIR / "data" / "exposure_context_summary.json"
         if exposure_context_path.exists() and exposure_context_path.is_file():
@@ -780,6 +1185,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
 # ==========================================
 
 def main() -> int:
+    # API local: classificação de ativos via web edita apenas JSON local (sem sudo).
     logger.info(f"Iniciando HMG SOAR API em {LISTEN_HOST}:{LISTEN_PORT}")
     logger.info(f"Wrapper run-analysis: {WRAPPER_RUN_ANALYSIS}")
     logger.info(f"Wrapper status: {WRAPPER_STATUS}")

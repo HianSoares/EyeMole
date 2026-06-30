@@ -5787,6 +5787,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
     .btn-run.running { background: linear-gradient(135deg, #d97706, #dc2626); animation: pulse-btn 1.5s infinite; }
     @keyframes pulse-btn { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .classify-overlay { position: fixed; inset: 0; background: rgba(3, 6, 12, 0.72); backdrop-filter: blur(2px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .classify-modal { background: var(--surface-2, #121826); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .classify-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .classify-close { background: transparent; border: none; color: var(--text-muted); font-size: 1.1rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 6px; }
+    .classify-close:hover { background: rgba(255,255,255,0.06); color: var(--text-main); }
+    .classify-modal-body { padding: 1.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem 1rem; }
+    .classify-field { display: flex; flex-direction: column; gap: 0.3rem; }
+    .classify-field-full { grid-column: 1 / -1; }
+    .classify-field label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+    .classify-field input, .classify-field select, .classify-field textarea { background: rgba(10, 14, 23, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.5rem 0.65rem; color: var(--text-main); font-size: 0.85rem; font-family: inherit; }
+    .classify-field input[readonly] { opacity: 0.7; cursor: not-allowed; }
+    .classify-field textarea { resize: vertical; }
+    .classify-modal-footer { display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.25rem; border-top: 1px solid rgba(255,255,255,0.06); }
+    .classify-msg { grid-column: 1 / -1; padding: 0.6rem 0.8rem; border-radius: 8px; font-size: 0.82rem; font-weight: 600; }
+    .classify-msg.success { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .classify-msg.error { background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    @media (max-width: 600px) { .classify-modal-body { grid-template-columns: 1fr; } }
     .run-status { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
     .run-status.success { color: #10b981; }
     .run-status.error { color: #ef4444; }
@@ -6537,6 +6554,79 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
     </div>
+        <!-- Modal de Classificação de Ativo (somente edita JSON local via API) -->
+    <div id="classify-modal-overlay" class="classify-overlay" style="display: none;">
+      <div class="classify-modal" role="dialog" aria-modal="true" aria-labelledby="classify-modal-title">
+        <div class="classify-modal-header">
+          <h3 id="classify-modal-title" style="margin: 0; font-size: 1.1rem; font-weight: 800;">🏷️ Classificar Ativo</h3>
+          <button type="button" class="classify-close" onclick="closeClassifyModal()" aria-label="Fechar">✕</button>
+        </div>
+        <div class="classify-modal-body">
+          <div class="classify-field">
+            <label>ID do agente</label>
+            <input type="text" id="classify-agent-id" readonly />
+          </div>
+          <div class="classify-field">
+            <label>Nome / Hostname</label>
+            <input type="text" id="classify-agent-name" readonly />
+          </div>
+          <div class="classify-field">
+            <label for="classify-criticality">Criticidade</label>
+            <select id="classify-criticality">
+              <option value="unknown">unknown</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="critical">critical</option>
+            </select>
+          </div>
+          <div class="classify-field">
+            <label for="classify-environment">Ambiente</label>
+            <select id="classify-environment">
+              <option value="unknown">unknown</option>
+              <option value="prod">prod</option>
+              <option value="hmg">hmg</option>
+              <option value="dev">dev</option>
+              <option value="test">test</option>
+            </select>
+          </div>
+          <div class="classify-field">
+            <label for="classify-exposure">Exposição</label>
+            <select id="classify-exposure">
+              <option value="unknown">unknown</option>
+              <option value="internal">internal</option>
+              <option value="dmz">dmz</option>
+              <option value="internet">internet</option>
+            </select>
+          </div>
+          <div class="classify-field">
+            <label for="classify-technical-owner">Dono técnico</label>
+            <input type="text" id="classify-technical-owner" maxlength="256" placeholder="Ex.: Equipe Linux" />
+          </div>
+          <div class="classify-field">
+            <label for="classify-business-owner">Dono de negócio</label>
+            <input type="text" id="classify-business-owner" maxlength="256" placeholder="Ex.: Segurança da Informação" />
+          </div>
+          <div class="classify-field">
+            <label for="classify-critical-service">Serviço crítico</label>
+            <select id="classify-critical-service">
+              <option value="false">Não</option>
+              <option value="true">Sim</option>
+            </select>
+          </div>
+          <div class="classify-field classify-field-full">
+            <label for="classify-notes">Observações</label>
+            <textarea id="classify-notes" rows="3" maxlength="1000" placeholder="Observações (opcional)"></textarea>
+          </div>
+          <div id="classify-modal-msg" class="classify-msg" style="display: none;"></div>
+        </div>
+        <div class="classify-modal-footer">
+          <button type="button" class="btn" onclick="closeClassifyModal()">Cancelar</button>
+          <button type="button" class="btn btn-run" id="classify-save-btn" onclick="submitClassification()">💾 Salvar classificação</button>
+        </div>
+      </div>
+    </div>
+
         <!-- Contexto de Exposição e Superfície de Ataque (Fase 3C) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -8724,6 +8814,95 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       if (btn) btn.disabled = false;
     }
 
+    // ==========================================
+    // CLASSIFICAÇÃO DE ATIVOS VIA WEB
+    // Apenas edita o JSON de contexto local via API (sem sudo, sem shell,
+    // sem systemctl). Não dispara relatório nem execução privilegiada.
+    // ==========================================
+    let classifyCurrentAgentId = null;
+
+    function openClassifyModal(agentId, agentName) {
+      classifyCurrentAgentId = agentId;
+      document.getElementById('classify-agent-id').value = agentId || '';
+      document.getElementById('classify-agent-name').value = agentName || '';
+      document.getElementById('classify-criticality').value = 'unknown';
+      document.getElementById('classify-environment').value = 'unknown';
+      document.getElementById('classify-exposure').value = 'unknown';
+      document.getElementById('classify-technical-owner').value = '';
+      document.getElementById('classify-business-owner').value = '';
+      document.getElementById('classify-critical-service').value = 'false';
+      document.getElementById('classify-notes').value = '';
+      const msg = document.getElementById('classify-modal-msg');
+      msg.style.display = 'none'; msg.textContent = ''; msg.className = 'classify-msg';
+      document.getElementById('classify-save-btn').disabled = false;
+      document.getElementById('classify-modal-overlay').style.display = 'flex';
+    }
+
+    function closeClassifyModal() {
+      document.getElementById('classify-modal-overlay').style.display = 'none';
+      classifyCurrentAgentId = null;
+    }
+
+    function setClassifyMsg(text, kind) {
+      const msg = document.getElementById('classify-modal-msg');
+      msg.textContent = text;
+      msg.className = 'classify-msg' + (kind ? ' ' + kind : '');
+      msg.style.display = 'block';
+    }
+
+    function updatePendingCounter() {
+      const tbody = document.getElementById('assets-pending-tbody');
+      if (!tbody) return;
+      const remaining = tbody.querySelectorAll('tr[data-agent-id]').length;
+      if (remaining === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight:600;">✓ Todos os ativos estão devidamente classificados!</td></tr>';
+      }
+    }
+
+    async function submitClassification() {
+      if (!classifyCurrentAgentId) return;
+      const saveBtn = document.getElementById('classify-save-btn');
+      saveBtn.disabled = true;
+
+      const payload = {
+        criticality: document.getElementById('classify-criticality').value,
+        environment: document.getElementById('classify-environment').value,
+        exposure: document.getElementById('classify-exposure').value,
+        technical_owner: document.getElementById('classify-technical-owner').value,
+        business_owner: document.getElementById('classify-business-owner').value,
+        is_critical_service: document.getElementById('classify-critical-service').value === 'true',
+        notes: document.getElementById('classify-notes').value
+      };
+
+      try {
+        const resp = await fetch('/soar-api/assets-context/' + encodeURIComponent(classifyCurrentAgentId), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json().catch(() => ({}));
+
+        if (resp.ok && data.status === 'success') {
+          const removedAgentId = classifyCurrentAgentId;
+          setClassifyMsg('✓ ' + (data.message || 'Contexto salvo.'), 'success');
+          if (data.classification_status === 'classified') {
+            const sel = (window.CSS && CSS.escape) ? CSS.escape(removedAgentId) : removedAgentId;
+            const row = document.querySelector('#assets-pending-tbody tr[data-agent-id="' + sel + '"]');
+            if (row) row.remove();
+            updatePendingCounter();
+          }
+          setTimeout(() => { closeClassifyModal(); refreshAssetContext(); }, 1500);
+        } else {
+          setClassifyMsg('✗ ' + (data.message || ('Falha ao salvar (HTTP ' + resp.status + ').')), 'error');
+          saveBtn.disabled = false;
+        }
+      } catch (e) {
+        setClassifyMsg('✗ Não foi possível comunicar com a API local.', 'error');
+        saveBtn.disabled = false;
+      }
+    }
+
     async function refreshAssetContext() {
       const btn = document.getElementById('btn-refresh-assets');
       if (btn) btn.disabled = true;
@@ -8788,12 +8967,32 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             } else {
               pendingAssets.forEach(a => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                  <td><code>${a.agent_id}</code></td>
-                  <td style="font-weight: 600;">${a.agent_name}</td>
-                  <td><span class="badge badge-p2" style="background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3);">Pendente</span></td>
-                  <td style="font-style: italic; color: var(--text-muted);">Adicionar à seção "agents" do assets_context.json</td>
-                `;
+                tr.setAttribute('data-agent-id', a.agent_id);
+
+                const tdId = document.createElement('td');
+                const code = document.createElement('code');
+                code.textContent = a.agent_id;
+                tdId.appendChild(code);
+
+                const tdName = document.createElement('td');
+                tdName.style.fontWeight = '600';
+                tdName.textContent = a.agent_name || '';
+
+                const tdStatus = document.createElement('td');
+                tdStatus.innerHTML = '<span class="badge badge-p2" style="background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3);">Pendente</span>';
+
+                const tdAction = document.createElement('td');
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.style.cssText = 'padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;';
+                btn.textContent = '🏷️ Classificar';
+                btn.addEventListener('click', () => openClassifyModal(a.agent_id, a.agent_name || ''));
+                tdAction.appendChild(btn);
+
+                tr.appendChild(tdId);
+                tr.appendChild(tdName);
+                tr.appendChild(tdStatus);
+                tr.appendChild(tdAction);
                 pendingTbody.appendChild(tr);
               });
             }

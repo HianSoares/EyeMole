@@ -1018,3 +1018,34 @@ sudo ./install.sh --enable-web-run
 Detalhes completos (hardening systemd/Nginx, permissões, validação, riscos e
 rollback) em [docs/SECURITY_HARDENING.md](SECURITY_HARDENING.md).
 
+---
+
+## Classificação de ativos pela interface web
+
+Os ativos pendentes podem ser classificados **diretamente pela web**, sem a
+linha de comando, na aba **Ativos & Exposição**:
+
+1. abra a aba **Ativos & Exposição**;
+2. na tabela **Ativos Pendentes de Classificação**, clique em **Classificar**;
+3. preencha criticidade, ambiente, exposição, donos, serviço crítico e
+   observações;
+4. clique em **Salvar classificação**.
+
+Após salvar, o ativo sai da lista de pendentes e aparece a mensagem:
+*"Contexto salvo. A priorização completa será refletida no próximo relatório
+automático ou após execução manual via SSH."*
+
+Importante:
+
+- A classificação via web **não usa sudo**, **não cria sudoers** e **apenas
+  edita** o JSON local `/opt/hmg-soar/config/assets_context.json`.
+- A **execução manual via web continua desabilitada** em produção (modo seguro).
+- O **relatório automático** (timer `hmg-soar-report.timer`) aplica a
+  priorização; se necessário antes disso, um administrador pode rodar via SSH:
+  `sudo systemctl start hmg-soar-report.service`.
+- Toda alteração de contexto é auditada em
+  `/opt/hmg-soar/audit/audit_actions.jsonl`.
+
+O script `set-asset-context.sh` continua disponível para uso por CLI. Ajuda:
+`sudo ./set-asset-context.sh --help` (não cria nenhum ativo chamado `--help`).
+
