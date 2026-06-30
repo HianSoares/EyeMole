@@ -6566,7 +6566,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
       <div class="page-controls" id="page-controls"></div>
     </div>
-  </div>
       </section>
 
       <!-- Aba 3: Ativos & Exposição -->
@@ -6922,6 +6921,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </tbody>
           </table>
         </div>
+      </div>
     </div>
       </section>
 
