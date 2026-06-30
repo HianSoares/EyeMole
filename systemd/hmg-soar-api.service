@@ -11,6 +11,9 @@ Group=www-data
 WorkingDirectory=/opt/hmg-soar
 ExecStart=/usr/bin/python3 /opt/hmg-soar/soar_api.py
 
+# A API escuta SOMENTE em 127.0.0.1:8765 (definido em soar_api.py).
+# Nunca expor em 0.0.0.0. O proxy Nginx fala apenas com 127.0.0.1:8765.
+
 # Restart em caso de falha
 Restart=on-failure
 RestartSec=5
@@ -20,19 +23,37 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hmg-soar-api
 
-# Hardening
+# ====================================================================
+# HARDENING (compatível com Python stdlib + leitura via systemctl show)
+# ====================================================================
+NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-LockPersonality=true
-MemoryDenyWriteExecute=true
-RestrictRealtime=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
+UMask=0027
+
+# Sem capabilities: a API não precisa de nenhum privilégio especial.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Famílias de socket: AF_INET p/ bind 127.0.0.1; AF_UNIX p/ D-Bus do systemctl show.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Filesystem: /opt/hmg-soar somente leitura; gravação restrita a auditoria/dados.
+ReadOnlyPaths=/opt/hmg-soar
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit
 
 [Install]
 WantedBy=multi-user.target

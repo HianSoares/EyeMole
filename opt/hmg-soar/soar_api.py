@@ -6,7 +6,9 @@ API local mínima para disparar análises sob demanda.
 - Escuta APENAS em 127.0.0.1:8765 (não exposta na rede)
 - Usa apenas bibliotecas padrão do Python
 - Não acessa credenciais, Wazuh API ou OpenSearch diretamente
-- Dispara análises via wrapper sudo restrito
+- STATUS: lido diretamente via `systemctl show` (somente leitura, SEM sudo)
+- MODO SEGURO (padrão): sem sudoers; execução manual via web desabilitada (403)
+- MODO OPT-IN (EYEMOLE_ENABLE_WEB_RUN): dispara análise via wrapper sudo restrito
 
 Endpoints:
   GET  /health       → Healthcheck simples
@@ -137,15 +139,86 @@ def _run_wrapper(wrapper_path: str) -> tuple:
         return (-3, "", str(e))
 
 
+def _systemctl_show(unit: str, properties: list) -> dict:
+    """Lê propriedades de uma unit via 'systemctl show', SEM privilégio (somente leitura).
+
+    Nunca usa sudo. Retorna dict {Propriedade: valor} ou None se o comando não
+    puder ser executado (systemctl ausente, timeout, etc.).
+    """
+    try:
+        cmd = ["systemctl", "show", unit, "--no-page"]
+        for prop in properties:
+            cmd.extend(["-p", prop])
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    data = {}
+    for line in result.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            data[key.strip()] = value.strip()
+    return data or None
+
+
+def _collect_status_direct() -> dict:
+    """Coleta status do serviço e do timer diretamente via systemctl show (sem sudo).
+
+    Retorna estrutura compatível com a usada pela API, ou None se indisponível
+    (permitindo resposta degradada segura, sem erro 500).
+    """
+    svc = _systemctl_show(
+        "hmg-soar-report.service",
+        ["ActiveState", "SubState", "UnitFileState", "ExecMainStatus", "Result"],
+    )
+    timer = _systemctl_show(
+        "hmg-soar-report.timer",
+        ["ActiveState", "SubState", "UnitFileState", "LoadState",
+         "NextElapseUSecRealtime", "LastTriggerUSec"],
+    )
+
+    if svc is None and timer is None:
+        return None
+
+    svc = svc or {}
+    timer = timer or {}
+    active_state = svc.get("ActiveState", "unknown")
+    return {
+        "report_service_active": active_state in ("active", "activating"),
+        "active_state": active_state,
+        "sub_state": svc.get("SubState", "unknown"),
+        "unit_file_state": svc.get("UnitFileState", "unknown"),
+        "exec_main_status": svc.get("ExecMainStatus", ""),
+        "result": svc.get("Result", "unknown"),
+        "timer_info": {
+            "active_state": timer.get("ActiveState", "unknown"),
+            "sub_state": timer.get("SubState", "unknown"),
+            "unit_file_state": timer.get("UnitFileState", "unknown"),
+            "load_state": timer.get("LoadState", "unknown"),
+            "next_elapse": timer.get("NextElapseUSecRealtime", ""),
+            "last_trigger": timer.get("LastTriggerUSec", ""),
+        },
+    }
+
+
+def _web_run_enabled() -> bool:
+    """Indica se a execução manual privilegiada via web está habilitada.
+
+    Só é verdadeira no modo opt-in (EYEMOLE_ENABLE_WEB_RUN / --enable-web-run),
+    quando o install.sh instalou o wrapper sudo. No modo seguro padrão (sem
+    sudoers) retorna False e a API nunca tenta usar sudo.
+    """
+    return os.path.isfile(WRAPPER_RUN_ANALYSIS)
+
+
 def _is_service_active() -> bool:
-    """Verifica se hmg-soar-report.service está ativo (rodando) via wrapper."""
-    exit_code, stdout, _ = _run_wrapper(WRAPPER_STATUS)
-    if exit_code == 0 and stdout:
-        try:
-            data = json.loads(stdout)
-            return data.get("report_service_active", False)
-        except (json.JSONDecodeError, KeyError):
-            pass
+    """Verifica se hmg-soar-report.service está ativo (rodando), leitura direta sem sudo."""
+    status = _collect_status_direct()
+    if status:
+        return bool(status.get("report_service_active", False))
     return False
 
 
@@ -234,15 +307,44 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         })
 
     def _handle_status(self) -> None:
-        # Obter status via wrapper
-        exit_code, stdout, stderr = _run_wrapper(WRAPPER_STATUS)
+        # Modo de operação: 'safe_no_sudoers' (padrão) ou 'web_run_enabled' (opt-in).
+        action_mode = "web_run_enabled" if _web_run_enabled() else "safe_no_sudoers"
 
-        service_status = {}
-        if exit_code == 0 and stdout:
-            try:
-                service_status = json.loads(stdout)
-            except json.JSONDecodeError:
-                service_status = {"raw": stdout}
+        # Status é lido diretamente via systemctl show (somente leitura, SEM sudo),
+        # funcionando tanto no modo seguro quanto no opt-in.
+        service_status = _collect_status_direct()
+
+        if not service_status:
+            # systemctl indisponível/sem permissão: degradar com segurança (sem erro 500).
+            self._send_json(200, {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "action_mode": action_mode,
+                "service_info": {
+                    "report_service_active": False,
+                    "active_state": "unknown",
+                    "sub_state": "unknown",
+                    "unit_file_state": "unknown",
+                    "exec_main_status": "",
+                    "result": "unknown",
+                },
+                "timer_info": {
+                    "active_state": "unknown",
+                    "sub_state": "unknown",
+                    "unit_file_state": "unknown",
+                    "load_state": "unknown",
+                    "next_elapse": "",
+                    "last_trigger": "",
+                },
+                "report_status_label": "Indisponível",
+                "report_status_class": "status-unknown",
+                "timer_status_label": "Indisponível",
+                "timer_status_class": "status-unknown",
+                "index_html_mtime": _get_file_mtime_iso(INDEX_HTML),
+                "latest_json_mtime": _get_file_mtime_iso(LATEST_JSON),
+                "latest_report": _get_latest_report(),
+                "wrapper_exit_code": None,
+            })
+            return
 
         # Extrair estados do serviço de relatório
         svc_active = service_status.get("active_state", "unknown")
@@ -260,18 +362,25 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         timer_next_elapse = timer_info.get("next_elapse", "")
         timer_last_trigger = timer_info.get("last_trigger", "")
 
+        # Código de saída lógico do último ExecMain do serviço oneshot (sem sudo).
+        try:
+            exit_code = int(svc_exec_main_status) if svc_exec_main_status != "" else 0
+        except (ValueError, TypeError):
+            exit_code = 0
+
         # Regra para serviço de relatório (unidade oneshot/pontual):
-        # active/running               => "Executando"
-        # inactive/dead + exit_code==0 => "Pronto (Ocioso)"
-        # failed ou exit_code != 0     => "Falha"
-        # demais casos                 => "Desconhecido"
+        # active/running                          => "Executando"
+        # inactive/dead + result success/exit 0   => "Pronto (Ocioso)"
+        # failed ou result de falha/exit != 0     => "Falha"
+        # demais casos                            => "Desconhecido"
         if svc_active in ("active", "activating") and svc_sub in ("running", "start"):
             report_status_label = "Executando"
             report_status_class = "status-running"
-        elif svc_active == "inactive" and svc_sub == "dead" and exit_code == 0:
+        elif (svc_active == "inactive" and svc_sub == "dead"
+              and svc_result in ("success", "") and exit_code == 0):
             report_status_label = "Pronto (Ocioso)"
             report_status_class = "status-ready"
-        elif svc_active == "failed" or exit_code != 0:
+        elif svc_active == "failed" or svc_result not in ("success", "") or exit_code != 0:
             report_status_label = "Falha"
             report_status_class = "status-failed"
         else:
@@ -298,6 +407,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
 
         response = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action_mode": action_mode,
             "service_info": {
                 "report_service_active": service_status.get("report_service_active", False),
                 "active_state": svc_active,
@@ -323,9 +433,6 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             "latest_report": _get_latest_report(),
             "wrapper_exit_code": exit_code,
         }
-
-        if exit_code != 0:
-            response["wrapper_error"] = stderr
 
         self._send_json(200, response)
 
@@ -580,6 +687,22 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
     def _handle_run_analysis(self) -> None:
         remote_user = self._get_remote_user()
         client_ip = self._get_client_ip()
+
+        # Modo seguro (padrão, sem sudoers): execução manual via web desabilitada.
+        # NÃO tenta sudo nem systemctl start. Retorna 403 com JSON claro.
+        if not _web_run_enabled():
+            audit_log(
+                action="run-analysis",
+                remote_user=remote_user,
+                client_ip=client_ip,
+                result="disabled",
+                message="Execução manual via web desabilitada em modo seguro.",
+            )
+            self._send_json(403, {
+                "status": "disabled",
+                "message": "Execução manual via web desabilitada em modo seguro.",
+            })
+            return
 
         # Verificar se já está rodando
         if _is_service_active():

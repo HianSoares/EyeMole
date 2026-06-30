@@ -8,3 +8,4 @@
 *.timer text eol=lf
 systemd/* text eol=lf
 *.py text eol=lf
+*.md text eol=lf

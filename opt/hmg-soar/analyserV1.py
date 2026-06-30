@@ -7717,6 +7717,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         🔄 Executar análise agora
       </button>
       <span class="run-status" id="run-status">Pronto</span>
+      <span class="run-status" id="run-disabled-msg" style="display: none; color: var(--text-muted); max-width: 720px; line-height: 1.4;">
+        🔒 Execução manual via web desabilitada em modo seguro. Use o timer automático ou execute manualmente via SSH com privilégio administrativo.
+      </span>
     </div>
         <!-- Status Operacional da Automação -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
@@ -8148,10 +8151,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
+    // Aplica o modo de operação reportado pela API.
+    // Fail-closed: se action_mode estiver ausente, assume modo seguro (oculta o botão).
+    let currentActionMode = 'safe_no_sudoers';
+    function applyActionMode(mode) {
+      currentActionMode = (mode === 'web_run_enabled') ? 'web_run_enabled' : 'safe_no_sudoers';
+      const btn = document.getElementById('btn-run-analysis');
+      const runStatus = document.getElementById('run-status');
+      const disabledMsg = document.getElementById('run-disabled-msg');
+      if (currentActionMode === 'web_run_enabled') {
+        if (btn) { btn.style.display = ''; btn.disabled = false; }
+        if (runStatus) runStatus.style.display = '';
+        if (disabledMsg) disabledMsg.style.display = 'none';
+      } else {
+        // Modo seguro: ocultar/desabilitar execução manual e exibir mensagem.
+        if (btn) { btn.disabled = true; btn.style.display = 'none'; }
+        if (runStatus) runStatus.style.display = 'none';
+        if (disabledMsg) disabledMsg.style.display = '';
+      }
+    }
+
     let lastMTime = null;
     let pollInterval = null;
 
     async function runAnalysis() {
+      // Guarda de modo seguro: nunca dispara execução manual quando desabilitada.
+      if (currentActionMode !== 'web_run_enabled') {
+        applyActionMode(currentActionMode);
+        return;
+      }
       setRunButtonState(true);
       setRunStatus('Iniciando análise...', 'running');
 
@@ -8180,6 +8208,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (response.status === 202) {
           setRunStatus('⏳ Executando análise... O painel será atualizado automaticamente ao concluir.', 'running');
           startAnalysisPolling();
+        } else if (response.status === 403) {
+          // Modo seguro: execução manual desabilitada no servidor.
+          applyActionMode('safe_no_sudoers');
+          setRunButtonState(false);
         } else if (response.status === 409) {
           setRunStatus('⚠ ' + (data.message || 'Já existe uma análise em execução.'), 'error');
           setRunButtonState(false);
@@ -8273,6 +8305,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         });
         if (sRes.ok) {
           const sData = await sRes.json();
+
+          // Modo de operação (seguro x web-run): controla o botão de execução manual.
+          applyActionMode(sData.action_mode);
 
           // Report service status
           const reportLabel = sData.report_status_label || 'Desconhecido';
