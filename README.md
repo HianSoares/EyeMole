@@ -19,6 +19,11 @@ No modo seguro:
 - Habilitar execução manual via web (apenas HMG/lab):
   `sudo ./install.sh --enable-web-run`.
 
+
+## Dashboard corporativo
+
+A interface web do EyeMole usa um layout de produto SaaS para gestão de vulnerabilidades: sidebar fixa, topbar executiva, filtros visuais, KPIs, gráficos SVG autocontidos, tabelas compactas e modal moderno de contexto de ativos. O botão **Recarregar Dados** apenas refaz leituras via API/JSON e atualiza a tela; ele não executa análise, não chama `systemctl`, não usa `sudo` e não dispara shell.
+
 ## Classificação de ativos via web
 
 A aba **Ativos & Exposição** permite classificar ativos pendentes pela interface
