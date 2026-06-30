@@ -5432,6 +5432,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EyeMole - Gestão de Vulnerabilidades e Exposição</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
@@ -5917,7 +5918,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     .tab-panel.active {
       display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      min-height: 400px;
       animation: tabFadeIn 0.2s ease-out;
+    }
+
+    .content-wrapper,
+    .content-area,
+    .main-content,
+    .dashboard-content {
+      min-height: 100vh;
+      width: 100%;
+    }
+    main {
+      min-height: 400px;
+      width: 100%;
     }
 
     /* Modal Aprimorado */
@@ -8040,13 +8056,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
-    async function safeRefresh(func, tabId, label) {
+    async function safeRefresh(arg1, arg2, arg3) {
+      let func, tabId, label;
+      if (typeof arg1 === 'function') {
+        func = arg1;
+        tabId = arg2;
+        label = arg3 || tabId;
+      } else {
+        tabId = arg1;
+        func = arg2;
+        label = arg3 || tabId;
+      }
       try {
         await func();
       } catch (err) {
         console.error(`Erro ao carregar aba ${tabId} (${label}):`, err);
         showTabFallback(tabId, err.message || err);
       }
+    }
+
+    function setupTabs() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', event => {
+          event.preventDefault();
+          activateTab(btn.dataset.tab);
+        });
+      });
     }
 
     async function reloadAllData() {
@@ -8169,7 +8204,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       });
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      setupTabs();
       const hash = (window.location.hash || '#overview').replace('#', '');
       activateTab(hash, false);
 
@@ -8177,13 +8213,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (event.key === 'Escape') {
           closeClassifyModal();
         }
-      });
-
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', event => {
-          event.preventDefault();
-          activateTab(btn.dataset.tab);
-        });
       });
 
       const overviewCvssEl = document.getElementById('overview-cvss-limit');
@@ -8196,16 +8225,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (cvssLimitEl) cvssLimitEl.innerText = scanMeta.cvssThresh.toFixed(1);
       const epssLimitEl = document.getElementById('epss-limit');
       if (epssLimitEl) epssLimitEl.innerText = (scanMeta.epssThresh * 100).toFixed(0);
-      calculateMetrics();
-      applyFilters();
-      safeRefresh(refreshOperationalStatus, 'status', 'Status & Auditoria');
-      safeRefresh(refreshRiskIntelligence, 'risk', 'Vulnerabilidades');
-      safeRefresh(refreshAssetContext, 'assets', 'Ativos & Exposição');
-      safeRefresh(refreshExposureContext, 'assets', 'Ativos & Exposição');
-      safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog');
-      safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções');
-      safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
-      safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa');
+
+      try { calculateMetrics(); } catch(e) { console.error('Erro calculateMetrics:', e); }
+      try { applyFilters(); } catch(e) { console.error('Erro applyFilters:', e); }
+
+      await safeRefresh(refreshOperationalStatus, 'status', 'Status & Auditoria');
+      await safeRefresh(refreshRiskIntelligence, 'risk', 'Vulnerabilidades');
+      await safeRefresh(refreshAssetContext, 'assets', 'Ativos & Exposição');
+      await safeRefresh(refreshExposureContext, 'assets', 'Ativos & Exposição');
+      await safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog');
+      await safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções');
+      await safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
+      await safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa');
     });
 
     window.addEventListener('hashchange', () => {
@@ -8214,19 +8245,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     });
 
     function calculateMetrics() {
-      document.getElementById('count-total').innerText = rawData.length;
-      document.getElementById('count-p1plus').innerText = rawData.filter(r => r.priority === 'Priority 1+').length;
-      document.getElementById('count-p1').innerText = rawData.filter(r => r.priority === 'Priority 1').length;
-      document.getElementById('count-p2').innerText = rawData.filter(r => r.priority === 'Priority 2').length;
-      document.getElementById('count-p3').innerText = rawData.filter(r => r.priority === 'Priority 3').length;
-      document.getElementById('count-p4').innerText = rawData.filter(r => r.priority === 'Priority 4').length;
+      const setInner = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = val;
+      };
+      setInner('count-total', rawData.length);
+      setInner('count-p1plus', rawData.filter(r => r.priority === 'Priority 1+').length);
+      setInner('count-p1', rawData.filter(r => r.priority === 'Priority 1').length);
+      setInner('count-p2', rawData.filter(r => r.priority === 'Priority 2').length);
+      setInner('count-p3', rawData.filter(r => r.priority === 'Priority 3').length);
+      setInner('count-p4', rawData.filter(r => r.priority === 'Priority 4').length);
     }
 
     function filterByPriority(priority) {
       activePriorityFilter = priority;
       document.querySelectorAll('.metric-card').forEach(card => card.classList.remove('active'));
       const mapping = { 'ALL': '.all', 'Priority 1+': '.p1plus', 'Priority 1': '.p1', 'Priority 2': '.p2', 'Priority 3': '.p3', 'Priority 4': '.p4' };
-      document.querySelector(mapping[priority]).classList.add('active');
+      const el = document.querySelector(mapping[priority]);
+      if (el) el.classList.add('active');
       applyFilters();
     }
 
@@ -9617,26 +9653,35 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
     }
 
     function showFallbackExposure(msg) {
-      document.getElementById('expo-with-context').textContent = '-';
-      document.getElementById('expo-without-context').textContent = '-';
-      document.getElementById('expo-internet-facing').textContent = '-';
-      document.getElementById('expo-dmz').textContent = '-';
-      document.getElementById('expo-critical-services').textContent = '-';
-      document.getElementById('expo-internet-services').textContent = '-';
-      document.getElementById('expo-external-no-agent').textContent = '-';
-      document.getElementById('expo-alerts-count').textContent = '-';
+      const setInner = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+      };
+      setInner('expo-with-context', '-');
+      setInner('expo-without-context', '-');
+      setInner('expo-internet-facing', '-');
+      setInner('expo-dmz', '-');
+      setInner('expo-critical-services', '-');
+      setInner('expo-internet-services', '-');
+      setInner('expo-external-no-agent', '-');
+      setInner('expo-alerts-count', '-');
 
-      document.getElementById('exposure-alerts-container').style.display = 'none';
+      const alertsEl = document.getElementById('exposure-alerts-container');
+      if (alertsEl) alertsEl.style.display = 'none';
 
       const isPending = msg.toLowerCase().includes('pendente') || msg.toLowerCase().includes('unknown');
       const assetsMsg = isPending ? msg : `Superfície de ataque indisponível: ${msg}`;
       const generalMsg = isPending ? msg : `Indisponível: ${msg}`;
       const chartMsg = isPending ? msg : `Gráfico indisponível: ${msg}`;
 
-      document.getElementById('expo-top-assets-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`;
-      document.getElementById('expo-missing-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
-      document.getElementById('expo-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
-      document.getElementById('expo-external-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
+      const setTbody = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      };
+      setTbody('expo-top-assets-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`);
+      setTbody('expo-missing-tbody', `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      setTbody('expo-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
+      setTbody('expo-external-tbody', `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
 
       const charts = ['assets-chart-exposure', 'assets-chart-services'];
       charts.forEach(id => {
