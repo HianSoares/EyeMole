@@ -889,7 +889,9 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
                 fail(400, "exposure inválida.")
                 return
             updates["exposure"] = expo
+            updates["exposure_level"] = expo
             changed_fields.append("exposure")
+            changed_fields.append("exposure_level")
 
         if "is_critical_service" in payload:
             ics = payload["is_critical_service"]

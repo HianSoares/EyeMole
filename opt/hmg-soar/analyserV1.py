@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 analyserV1.py - Versão Refatorada e Segura
 
@@ -418,6 +418,24 @@ def get_exposure_context(exposure_data: dict, agent_id: str, agent_name: str) ->
             return _merge_exposure_context(val, defaults)
 
     return defaults.copy()
+
+def get_asset_exposure_combined(expo_ctx: dict, asset_ctx: dict) -> str:
+    """Retorna a exposição consolidada e normalizada de um ativo.
+    Prioridade de leitura:
+    1. expo_ctx['exposure_level']
+    2. expo_ctx['exposure']
+    3. asset_ctx['exposure_level']
+    4. asset_ctx['exposure']
+    5. 'unknown'
+    """
+    for ctx in (expo_ctx, asset_ctx):
+        if not ctx:
+            continue
+        for key in ("exposure_level", "exposure"):
+            val = ctx.get(key)
+            if val and val != "unknown":
+                return str(val).lower().strip()
+    return "unknown"
 
 # Caminhos da Gestão de Exceções / Risk Acceptance (Fase 3E)
 RISK_ACCEPTANCE_PATH_PREF = Path("/opt/hmg-soar/config/risk_acceptance.json")
@@ -945,7 +963,7 @@ def calculate_agent_risk_modifiers(agent_id: str, agent_name: str, assets_data: 
 
     # 2. Exposure Context Score (Fase 3C)
     expo_ctx = get_exposure_context(exposure_data, agent_id, agent_name)
-    expo_level = expo_ctx.get("exposure_level", "unknown")
+    expo_level = get_asset_exposure_combined(expo_ctx, ctx_info)
     net_zone = expo_ctx.get("network_zone", "unknown")
 
     level_weight = WEIGHT_EXPOSURE_LEVEL.get(expo_level, WEIGHT_EXPOSURE_LEVEL["unknown"])
@@ -1456,7 +1474,7 @@ def generate_risk_intelligence(
                 "tags": context.get("tags", []),
                 "hostname": context.get("asset_name", r.agent_name),
                 # Campos da Fase 3C
-                "exposure_level": expo_ctx.get("exposure_level", "unknown"),
+                "exposure_level": get_asset_exposure_combined(expo_ctx, context),
                 "network_zone": expo_ctx.get("network_zone", "unknown"),
                 "internet_facing": bool(expo_ctx.get("internet_facing", False)),
                 "dmz": bool(expo_ctx.get("dmz", False)),
@@ -1914,7 +1932,7 @@ def generate_risk_intelligence(
                     "tags": best_asset_ctx.get("tags", [])
                 },
                 "exposure_context": {
-                    "exposure_level": best_expo_ctx.get("exposure_level", "unknown"),
+                    "exposure_level": get_asset_exposure_combined(best_expo_ctx, best_asset_ctx),
                     "network_zone": best_expo_ctx.get("network_zone", "unknown"),
                     "internet_facing": bool(best_expo_ctx.get("internet_facing", False)),
                     "dmz": bool(best_expo_ctx.get("dmz", False)),
@@ -2187,7 +2205,7 @@ def generate_risk_intelligence(
                     "agent_name": aname
                 })
 
-            expo_level = expo_ctx.get("exposure_level", "unknown")
+            expo_level = get_asset_exposure_combined(expo_ctx, asset_ctx)
             if expo_level == "internet":
                 internet_facing_count += 1
             elif expo_level == "dmz":
@@ -2381,8 +2399,9 @@ def generate_risk_intelligence(
         critical_exposed_svcs_affected = 0
 
         for aid, aname in unique_agents_seen.items():
+            asset_ctx = get_asset_context(assets_data, aid, aname)
             expo_ctx = get_exposure_context(exposure_data, aid, aname)
-            expo_level = expo_ctx.get("exposure_level", "unknown")
+            expo_level = get_asset_exposure_combined(expo_ctx, asset_ctx)
             if expo_level == "internet" or expo_ctx.get("internet_facing", False):
                 internet_facing_affected += 1
             elif expo_level == "dmz" or expo_ctx.get("dmz", False):
@@ -5155,7 +5174,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
             "asset_type": context.get("asset_type", "unknown"),
             "tags": context.get("tags", []),
             "hostname": context.get("asset_name", r.agent_name),
-            "exposure_level": expo_context.get("exposure_level", "unknown"),
+            "exposure_level": get_asset_exposure_combined(expo_context, context),
             "network_zone": expo_context.get("network_zone", "unknown"),
             "internet_facing": bool(expo_context.get("internet_facing", False)),
             "dmz": bool(expo_context.get("dmz", False)),
@@ -5413,44 +5432,46 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Painel Interativo de Vulnerabilidades - HMG Wazuh SOAR</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
     :root {
       /* EyeMole Palette (Logo Core) */
-      --eyemole-bg-deep: #030711;
-      --eyemole-bg-panel: #0b1220;
-      --eyemole-surface: #101827;
-      --eyemole-surface-soft: #131d2e;
+      --eyemole-bg-deep: #030712;
+      --eyemole-bg-panel: #0a1120;
+      --eyemole-surface: #0e1726;
+      --eyemole-surface-soft: #121c2e;
 
       --eyemole-cyan: #78f7ff;
-      --eyemole-cyan-strong: #2de2f2;
+      --eyemole-cyan-strong: #00f0ff;
       --eyemole-aqua: #9afcff;
 
-      --eyemole-magenta: #f59df4;
-      --eyemole-pink: #ff6fd8;
-      --eyemole-violet: #9b7cff;
-      --eyemole-blue: #3b82f6;
+      --eyemole-magenta: #ff84f6;
+      --eyemole-pink: #ff54cf;
+      --eyemole-violet: #8e68ff;
+      --eyemole-blue: #2563eb;
 
-      --eyemole-border: rgba(120, 247, 255, 0.16);
-      --eyemole-border-pink: rgba(245, 157, 244, 0.14);
-      --eyemole-glow-cyan: rgba(120, 247, 255, 0.12);
-      --eyemole-glow-pink: rgba(245, 157, 244, 0.10);
+      --eyemole-border: rgba(0, 240, 255, 0.15);
+      --eyemole-border-pink: rgba(255, 84, 207, 0.12);
+      --eyemole-glow-cyan: rgba(0, 240, 255, 0.08);
+      --eyemole-glow-pink: rgba(255, 84, 207, 0.06);
 
-      /* Tons harmonizados de alerta da marca */
-      --eyemole-alert: #ffb86b;
-      --eyemole-critical: #ff6f91;
+      /* Tons de alerta da marca */
+      --eyemole-alert: #ffb057;
+      --eyemole-critical: #ff547b;
 
       /* Theme Mapping */
       --bg-color: var(--eyemole-bg-deep);
       --card-bg: var(--eyemole-bg-panel);
       --border-color: var(--eyemole-border);
-      --text-main: #f1f5f9;
+      --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --primary: var(--eyemole-cyan-strong);
 
       /* Semantic Severity Colors */
-      --p1plus: #ef4444;
+      --p1plus: #f43f5e;
       --p1: #f97316;
-      --p2: #eab308;
-      --p3: #22d3ee;
+      --p2: #f59e0b;
+      --p3: #06b6d4;
       --p4: #10b981;
 
       /* Design tokens — spacing */
@@ -5462,15 +5483,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --space-2xl: 3rem;
 
       /* Design tokens — border-radius */
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 14px;
-      --radius-xl: 20px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
 
       /* Design tokens — shadows & glows */
-      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
       --shadow-glow-blue: 0 0 16px rgba(120, 247, 255, 0.08);
       --shadow-glow-purple: 0 0 16px rgba(155, 124, 255, 0.08);
       --shadow-glow-red: 0 0 16px rgba(239, 68, 68, 0.08);
@@ -5499,7 +5517,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         radial-gradient(circle at 50% -10%, var(--eyemole-glow-cyan), transparent 35%),
         radial-gradient(circle at 80% 8%, var(--eyemole-glow-pink), transparent 30%);
       color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       line-height: 1.5;
       padding: 2rem;
       min-height: 100vh;
@@ -6079,6 +6097,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button class="tab-btn" data-tab="trends" onclick="activateTab('trends')"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendências</span></button>
       <button class="tab-btn" data-tab="treatment" onclick="activateTab('treatment')"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Plano de Tratativa</span></button>
       <button class="tab-btn" data-tab="status" onclick="activateTab('status')"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
+      <button class="tab-btn" id="btn-global-reload" onclick="reloadAllData()" style="margin-left: auto; color: var(--eyemole-cyan-strong); font-weight: 700;">
+        <svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="stroke: var(--eyemole-cyan-strong); opacity: 1;">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+        <span>Recarregar Dados</span>
+      </button>
     </nav>
 
     <main>
@@ -6274,7 +6298,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🎯 Priorização Inteligente de Risco</h2>
-        <button class="btn" id="btn-refresh-risk" onclick="refreshRiskIntelligence()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-risk" onclick="refreshRiskIntelligence()" style="display: none;">
           🔄 Atualizar risco
         </button>
       </div>
@@ -6446,7 +6470,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🖥️ Contexto de Ativos e Criticidade</h2>
-        <button class="btn" id="btn-refresh-assets" onclick="refreshAssetContext()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-assets" onclick="refreshAssetContext()" style="display: none;">
           🔄 Atualizar contexto
         </button>
       </div>
@@ -6553,6 +6577,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </table>
         </div>
       </div>
+
+      <!-- Nova Tabela: Todos os Ativos -->
+      <div class="table-container" style="margin-top: 1.5rem;">
+        <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2); display: flex; justify-content: space-between; align-items: center;">
+          <span>🖥️ Todos os Ativos</span>
+          <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);" id="assets-total-count-badge">0 total</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nome / Hostname</th>
+              <th>Criticidade</th>
+              <th>Exposição</th>
+              <th>Ambiente</th>
+              <th>Dono Técnico</th>
+              <th style="text-align: center;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="assets-all-tbody">
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando todos os ativos...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
         <!-- Modal de Classificação de Ativo (somente edita JSON local via API) -->
     <div id="classify-modal-overlay" class="classify-overlay" style="display: none;">
@@ -6631,7 +6681,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🌐 Contexto de Exposição e Superfície de Ataque</h2>
-        <button class="btn" id="btn-refresh-exposure" onclick="refreshExposureContext()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-exposure" onclick="refreshExposureContext()" style="display: none;">
           🔄 Atualizar exposição
         </button>
       </div>
@@ -6776,7 +6826,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🕒 SLA, Aging e Backlog Operacional</h2>
-        <button class="btn" id="btn-refresh-sla" onclick="refreshSlaSummary()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-sla" onclick="refreshSlaSummary()" style="display: none;">
           🔄 Atualizar SLA
         </button>
       </div>
@@ -7022,7 +7072,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🛡️ Risk Acceptance e Gestão de Exceções</h2>
-        <button class="btn" id="btn-refresh-ra" onclick="refreshRiskAcceptance()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-ra" onclick="refreshRiskAcceptance()" style="display: none;">
           🔄 Atualizar Exceções
         </button>
       </div>
@@ -7309,7 +7359,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">📈 Trend Analytics e Evolução do Risco</h2>
-        <button class="btn" id="btn-refresh-trend" onclick="refreshTrendSummary()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-trend" onclick="refreshTrendSummary()" style="display: none;">
           🔄 Atualizar Tendências
         </button>
       </div>
@@ -7584,7 +7634,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">📋 Plano de Tratativa e Workload Operacional</h2>
-        <button class="btn" id="btn-refresh-treatment" onclick="refreshTreatmentPlan()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-treatment" onclick="refreshTreatmentPlan()" style="display: none;">
           🔄 Atualizar Plano
         </button>
       </div>
@@ -7815,7 +7865,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🤖 Status Operacional da Automação</h2>
-        <button class="btn" id="btn-refresh-status" onclick="refreshOperationalStatus()" style="font-weight: 600;">
+        <button class="btn" id="btn-refresh-status" onclick="refreshOperationalStatus()" style="display: none;">
           🔄 Atualizar status
         </button>
       </div>
@@ -7874,6 +7924,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </main>
   </div>
 <script>
+    window.currentAssetsData = {};
+
+    async function reloadAllData() {
+      const btn = document.getElementById('btn-global-reload');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Carregando...';
+      }
+
+      try {
+        await Promise.all([
+          refreshOperationalStatus(),
+          refreshRiskIntelligence(),
+          refreshAssetContext(),
+          refreshExposureContext(),
+          refreshSlaSummary(),
+          refreshRiskAcceptance(),
+          refreshTreatmentPlan(),
+          refreshTrendSummary()
+        ]);
+      } catch (err) {
+        console.error('Erro ao recarregar dados:', err);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="stroke: var(--eyemole-cyan-strong); opacity: 1;">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Recarregar Dados</span>
+          `;
+        }
+      }
+    }
+
     const rawData = {{VULN_DATA}};
     const scanMeta = { genTime: "{{GEN_TIME}}", cvssThresh: {{CVSS_THRESH}}, epssThresh: {{EPSS_THRESH}} };
 
@@ -8823,15 +8908,35 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
     function openClassifyModal(agentId, agentName) {
       classifyCurrentAgentId = agentId;
+      const asset = window.currentAssetsData && window.currentAssetsData[agentId];
+
       document.getElementById('classify-agent-id').value = agentId || '';
-      document.getElementById('classify-agent-name').value = agentName || '';
-      document.getElementById('classify-criticality').value = 'unknown';
-      document.getElementById('classify-environment').value = 'unknown';
-      document.getElementById('classify-exposure').value = 'unknown';
-      document.getElementById('classify-technical-owner').value = '';
-      document.getElementById('classify-business-owner').value = '';
-      document.getElementById('classify-critical-service').value = 'false';
-      document.getElementById('classify-notes').value = '';
+      document.getElementById('classify-agent-name').value = agentName || (asset ? asset.agent_name : '');
+
+      const modalTitle = document.getElementById('classify-modal-title');
+      const isPending = !asset || asset.criticality === 'unknown';
+      if (modalTitle) {
+        modalTitle.textContent = isPending ? '🏷️ Classificar Ativo' : '⚙️ Editar Contexto do Ativo';
+      }
+
+      if (asset) {
+        document.getElementById('classify-criticality').value = asset.criticality || 'unknown';
+        document.getElementById('classify-environment').value = asset.environment || 'unknown';
+        document.getElementById('classify-exposure').value = asset.exposure || 'unknown';
+        document.getElementById('classify-technical-owner').value = asset.technical_owner && asset.technical_owner !== 'unknown' ? asset.technical_owner : '';
+        document.getElementById('classify-business-owner').value = asset.business_owner && asset.business_owner !== 'unknown' ? asset.business_owner : '';
+        document.getElementById('classify-critical-service').value = asset.is_critical_service ? 'true' : 'false';
+        document.getElementById('classify-notes').value = asset.notes || '';
+      } else {
+        document.getElementById('classify-criticality').value = 'unknown';
+        document.getElementById('classify-environment').value = 'unknown';
+        document.getElementById('classify-exposure').value = 'unknown';
+        document.getElementById('classify-technical-owner').value = '';
+        document.getElementById('classify-business-owner').value = '';
+        document.getElementById('classify-critical-service').value = 'false';
+        document.getElementById('classify-notes').value = '';
+      }
+
       const msg = document.getElementById('classify-modal-msg');
       msg.style.display = 'none'; msg.textContent = ''; msg.className = 'classify-msg';
       document.getElementById('classify-save-btn').disabled = false;
@@ -8908,6 +9013,18 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       if (btn) btn.disabled = true;
 
       try {
+        // 1. Fetch live assets-context config
+        const ctxResp = await fetch('/soar-api/assets-context', {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        let configAgents = {};
+        if (ctxResp.ok) {
+          const ctxData = await ctxResp.json();
+          configAgents = ctxData.agents || {};
+        }
+
+        // 2. Fetch asset-context summary
         const response = await fetch('/soar-api/asset-context', {
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -8919,49 +9036,124 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             const assets = data.assets || {};
             const expo = data.exposure || {};
 
-            document.getElementById('assets-total').textContent = assets.total_seen !== undefined ? assets.total_seen : '-';
-            document.getElementById('assets-classified').textContent = assets.classified !== undefined ? assets.classified : '-';
-            document.getElementById('assets-unclassified').textContent = assets.unclassified !== undefined ? assets.unclassified : '-';
-            document.getElementById('assets-critical-count').textContent = assets.critical !== undefined ? assets.critical : '-';
-            document.getElementById('assets-unknown-crit').textContent = assets.unknown !== undefined ? assets.unknown : '-';
+            // Construct global combined assets cache
+            window.currentAssetsData = {};
 
-            const exposed = (expo.internet || 0) + (expo.dmz || 0);
-            document.getElementById('assets-exposed-count').textContent = exposed;
+            // Add all configured agents
+            Object.keys(configAgents).forEach(aid => {
+              const a = configAgents[aid];
+              window.currentAssetsData[aid] = {
+                agent_id: aid,
+                agent_name: a.asset_name || a.hostname || `agent-${aid}`,
+                criticality: a.criticality || 'unknown',
+                exposure: a.exposure || 'unknown',
+                environment: a.environment || 'unknown',
+                technical_owner: a.technical_owner || 'unknown',
+                business_owner: a.business_owner || 'unknown',
+                is_critical_service: a.is_critical_service || false,
+                notes: a.notes || '',
+                status: 'classified'
+              };
+            });
+
+            // Add unclassified/pending agents from summary if not present
+            const summaryPending = data.unclassified_assets || [];
+            summaryPending.forEach(a => {
+              if (!window.currentAssetsData[a.agent_id]) {
+                window.currentAssetsData[a.agent_id] = {
+                  agent_id: a.agent_id,
+                  agent_name: a.agent_name || `agent-${a.agent_id}`,
+                  criticality: 'unknown',
+                  exposure: 'unknown',
+                  environment: 'unknown',
+                  technical_owner: 'unknown',
+                  business_owner: 'unknown',
+                  is_critical_service: false,
+                  notes: '',
+                  status: 'pending'
+                };
+              }
+            });
+
+            // Dynamic calculation of counters from combined window.currentAssetsData to be accurate instantly
+            let totalSeen = 0;
+            let classifiedCount = 0;
+            let unclassifiedCount = 0;
+            let criticalCount = 0;
+            let unknownCrit = 0;
+            let exposedCount = 0;
+
+            const allAssetsList = Object.values(window.currentAssetsData);
+            allAssetsList.forEach(a => {
+              totalSeen++;
+              if (a.criticality && a.criticality !== 'unknown') {
+                classifiedCount++;
+              } else {
+                unclassifiedCount++;
+                unknownCrit++;
+              }
+              if (a.criticality === 'critical') {
+                criticalCount++;
+              }
+              if (a.exposure === 'internet' || a.exposure === 'dmz') {
+                exposedCount++;
+              }
+            });
+
+            document.getElementById('assets-total').textContent = totalSeen;
+            document.getElementById('assets-classified').textContent = classifiedCount;
+            document.getElementById('assets-unclassified').textContent = unclassifiedCount;
+            document.getElementById('assets-critical-count').textContent = criticalCount;
+            document.getElementById('assets-unknown-crit').textContent = unknownCrit;
+            document.getElementById('assets-exposed-count').textContent = exposedCount;
 
             const alertEl = document.getElementById('assets-alerts-container');
-            if (assets.unclassified > 0) {
+            if (unclassifiedCount > 0) {
               alertEl.style.display = 'block';
             } else {
               alertEl.style.display = 'none';
             }
 
+            // Render top risky assets
             const riskTbody = document.getElementById('assets-risk-tbody');
             riskTbody.innerHTML = '';
             const topAssets = data.top_risky_assets || [];
-            if (topAssets.length === 0 || assets.classified === 0) {
-              riskTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Ativo pendente de classificação</td></tr>';
+            if (topAssets.length === 0 || classifiedCount === 0) {
+              riskTbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Ativo pendente de classificação</td></tr>';
             } else {
               topAssets.forEach(a => {
                 const tr = document.createElement('tr');
+                const live = window.currentAssetsData[a.agent_id] || {};
+                const criticality = live.criticality || a.criticality || 'unknown';
+                const exposure = live.exposure || a.exposure || 'unknown';
+
                 let critColor = 'var(--text-muted)';
-                if (a.criticality === 'critical') critColor = '#f87171';
-                else if (a.criticality === 'high') critColor = '#fb923c';
+                if (criticality === 'critical') critColor = '#f87171';
+                else if (criticality === 'high') critColor = '#fb923c';
 
                 tr.innerHTML = `
                   <td><code>${a.agent_id}</code></td>
                   <td style="font-weight: 600;">${a.agent_name}</td>
-                  <td><span style="font-weight:600; color:${critColor}">${a.criticality}</span></td>
-                  <td><code>${a.exposure}</code></td>
-                  <td><code>${a.asset_type}</code></td>
+                  <td><span style="font-weight:600; color:${critColor}">${criticality}</span></td>
+                  <td><code>${exposure}</code></td>
+                  <td><code>${a.asset_type || live.asset_type || 'unknown'}</code></td>
                   <td style="text-align: right; font-weight:700; color:#fb923c">${a.risk_score}</td>
+                  <td style="text-align: center;">
+                    <button type="button" class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">⚙️ Editar</button>
+                  </td>
                 `;
                 riskTbody.appendChild(tr);
               });
             }
 
+            // Render pending assets (filtering by live data)
             const pendingTbody = document.getElementById('assets-pending-tbody');
             pendingTbody.innerHTML = '';
-            const pendingAssets = data.unclassified_assets || [];
+            const pendingAssets = summaryPending.filter(a => {
+              const live = window.currentAssetsData[a.agent_id];
+              return !live || live.criticality === 'unknown';
+            });
+
             if (pendingAssets.length === 0) {
               pendingTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight:600;">✓ Todos os ativos estão devidamente classificados!</td></tr>';
             } else {
@@ -8982,12 +9174,12 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 tdStatus.innerHTML = '<span class="badge badge-p2" style="background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3);">Pendente</span>';
 
                 const tdAction = document.createElement('td');
-                const btn = document.createElement('button');
-                btn.className = 'btn';
-                btn.style.cssText = 'padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;';
-                btn.textContent = '🏷️ Classificar';
-                btn.addEventListener('click', () => openClassifyModal(a.agent_id, a.agent_name || ''));
-                tdAction.appendChild(btn);
+                const btnAction = document.createElement('button');
+                btnAction.className = 'btn btn-run';
+                btnAction.style.cssText = 'padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;';
+                btnAction.textContent = '🏷️ Classificar';
+                btnAction.addEventListener('click', () => openClassifyModal(a.agent_id, a.agent_name || ''));
+                tdAction.appendChild(btnAction);
 
                 tr.appendChild(tdId);
                 tr.appendChild(tdName);
@@ -8995,6 +9187,47 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 tr.appendChild(tdAction);
                 pendingTbody.appendChild(tr);
               });
+            }
+
+            // Render Todos os Ativos table
+            const allTbody = document.getElementById('assets-all-tbody');
+            if (allTbody) {
+              allTbody.innerHTML = '';
+              // Sort list of all assets by agent_id
+              allAssetsList.sort((a, b) => a.agent_id.localeCompare(b.agent_id));
+
+              const allCountBadge = document.getElementById('assets-total-count-badge');
+              if (allCountBadge) {
+                allCountBadge.textContent = `${allAssetsList.length} total`;
+              }
+
+              if (allAssetsList.length === 0) {
+                allTbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum ativo registrado.</td></tr>';
+              } else {
+                allAssetsList.forEach(a => {
+                  const tr = document.createElement('tr');
+                  let critColor = 'var(--text-muted)';
+                  if (a.criticality === 'critical') critColor = '#f87171';
+                  else if (a.criticality === 'high') critColor = '#fb923c';
+
+                  const isPending = a.criticality === 'unknown';
+                  const btnLabel = isPending ? '🏷️ Classificar' : '⚙️ Editar';
+                  const btnClass = isPending ? 'btn btn-run' : 'btn';
+
+                  tr.innerHTML = `
+                    <td><code>${a.agent_id}</code></td>
+                    <td style="font-weight: 600;">${a.agent_name}</td>
+                    <td><span style="font-weight:600; color:${critColor}">${a.criticality}</span></td>
+                    <td><code>${a.exposure}</code></td>
+                    <td><code>${a.environment}</code></td>
+                    <td>${a.technical_owner && a.technical_owner !== 'unknown' ? a.technical_owner : '<span style="color:var(--text-muted);">n/a</span>'}</td>
+                    <td style="text-align: center;">
+                      <button type="button" class="${btnClass}" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">${btnLabel}</button>
+                    </td>
+                  `;
+                  allTbody.appendChild(tr);
+                });
+              }
             }
 
             // ==========================================
@@ -9057,8 +9290,10 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       const generalMsg = isPending ? msg : `Indisponível: ${msg}`;
       const chartMsg = isPending ? msg : `Gráfico indisponível: ${msg}`;
 
-      document.getElementById('assets-risk-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`;
+      document.getElementById('assets-risk-tbody').innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${assetsMsg}</td></tr>`;
       document.getElementById('assets-pending-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
+      const allTbody = document.getElementById('assets-all-tbody');
+      if (allTbody) allTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`;
 
       const charts = ['assets-chart-criticality', 'assets-chart-top-risk'];
       charts.forEach(id => {
