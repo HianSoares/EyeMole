@@ -5434,15 +5434,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <title>EyeMole - Gestão de Vulnerabilidades e Exposição</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
-
     :root {
       /* EyeMole Palette (SaaS Clean Dark Mode) */
-      --eyemole-bg-deep: #080c14;
-      --eyemole-bg-sidebar: #0b0f19;
-      --eyemole-bg-panel: #0f172a;
-      --eyemole-surface: #1e293b;
-      --eyemole-surface-soft: #334155;
+      --eyemole-bg-deep: #07111f;
+      --eyemole-bg-sidebar: #08111f;
+      --eyemole-bg-panel: #0d1a2b;
+      --eyemole-surface: #122239;
+      --eyemole-surface-soft: #1d2b3d;
 
       --eyemole-cyan: #22d3ee;
       --eyemole-cyan-strong: #06b6d4;
@@ -5453,8 +5451,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --eyemole-violet: #8b5cf6;
       --eyemole-blue: #3b82f6;
 
-      --eyemole-border: rgba(255, 255, 255, 0.06);
-      --eyemole-border-accent: rgba(6, 182, 212, 0.2);
+      --eyemole-border: #1d2b3d;
+      --eyemole-border-accent: rgba(34, 211, 238, 0.22);
       --eyemole-glow-cyan: rgba(6, 182, 212, 0.05);
 
       /* Tons de alerta corporativo */
@@ -5465,8 +5463,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --bg-color: var(--eyemole-bg-deep);
       --card-bg: var(--eyemole-bg-panel);
       --border-color: var(--eyemole-border);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
+      --text-main: #eef6ff;
+      --text-muted: #8fa6bf;
       --primary: var(--eyemole-cyan);
 
       /* Semantic Severity Colors */
@@ -5486,9 +5484,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       /* Radius */
       --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 14px;
-      --radius-xl: 20px;
+      --radius-md: 8px;
+      --radius-lg: 8px;
+      --radius-xl: 8px;
 
       /* Transitions */
       --transition-fast: 0.12s ease;
@@ -5503,9 +5501,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     body {
       background-color: var(--bg-color);
       background-image:
-        radial-gradient(circle at 80% 10%, var(--eyemole-glow-cyan), transparent 45%);
+        linear-gradient(180deg, rgba(13, 26, 43, 0.92), rgba(7, 17, 31, 1) 360px);
       color: var(--text-main);
-      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
       line-height: 1.5;
       min-height: 100vh;
       overflow-x: hidden;
@@ -6159,6 +6157,47 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         justify-content: flex-start;
       }
     }
+    /* EyeMole corporate VM shell refresh */
+    .app-layout { grid-template-columns: 268px minmax(0, 1fr); }
+    .sidebar { background: linear-gradient(180deg, #08111f 0%, #06101d 100%); padding: 1.25rem 0.85rem; }
+    .sidebar-header { align-items: flex-start; text-align: left; padding: 0.2rem 0.55rem 1rem; }
+    .brand-logo { height: 54px; max-width: 168px; object-fit: contain; }
+    .brand-info h2 { font-size: 1.1rem; margin-top: 0; letter-spacing: 0; }
+    .sidebar-status { display: grid; gap: 0.45rem; margin-top: 0.75rem; }
+    .status-chip { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.6rem; border: 1px solid var(--eyemole-border); border-radius: 8px; background: rgba(13, 26, 43, 0.72); color: var(--text-muted); font-size: 0.74rem; }
+    .status-chip strong { color: var(--text-main); font-size: 0.72rem; font-weight: 700; text-align: right; }
+    .content-wrapper { padding: 1.35rem clamp(1rem, 2.2vw, 2.3rem) 2rem; }
+    .content-header { align-items: flex-start; margin-bottom: 1rem; padding: 0 0 1rem; }
+    .breadcrumb { color: var(--text-muted); font-size: 0.72rem; margin-bottom: 0.45rem; letter-spacing: 0; }
+    .hero-text h1 { font-size: clamp(1.55rem, 2vw, 2.05rem); letter-spacing: 0; }
+    .meta-badge { background: rgba(13, 26, 43, 0.78); border-color: var(--eyemole-border); border-radius: 999px; }
+    .global-filterbar { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)) auto auto; gap: 0.65rem; align-items: end; margin-bottom: 1.15rem; padding: 0.85rem; border: 1px solid var(--eyemole-border); border-radius: 8px; background: rgba(8, 17, 31, 0.78); }
+    .filter-field { display: grid; gap: 0.32rem; min-width: 0; }
+    .filter-field label { color: var(--text-muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .filter-field select { width: 100%; min-height: 34px; color: var(--text-main); background: #0b1728; border: 1px solid var(--eyemole-border); border-radius: 6px; padding: 0.42rem 0.55rem; font: inherit; font-size: 0.78rem; }
+    .filter-field select:focus { outline: 1px solid rgba(34, 211, 238, 0.55); border-color: rgba(34, 211, 238, 0.6); }
+    .panel-title { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 1.15rem 0 0.7rem; }
+    .panel-title h2, .panel-title h3 { margin: 0; color: var(--text-main); font-size: 1rem; font-weight: 750; letter-spacing: 0; }
+    .panel-title span { color: var(--text-muted); font-size: 0.78rem; }
+    .grid-metrics { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .metric-card, .risk-card { background: linear-gradient(180deg, rgba(13, 26, 43, 0.96), rgba(9, 20, 35, 0.96)); border: 1px solid var(--eyemole-border); border-radius: 8px; box-shadow: none; padding: 0.95rem; }
+    .risk-card { position: relative; overflow: hidden; }
+    .metric-card:hover, .risk-card:hover { transform: translateY(-1px); border-color: rgba(34, 211, 238, 0.32); box-shadow: none; }
+    .metric-title { font-size: 0.68rem; letter-spacing: 0.04em; }
+    .metric-value { font-size: 1.55rem; letter-spacing: 0; }
+    .table-container { background: rgba(8, 17, 31, 0.82); border-radius: 8px; box-shadow: none; }
+    th, td { padding: 0.72rem 0.85rem; }
+    th { background: rgba(13, 26, 43, 0.88); letter-spacing: 0.04em; }
+    .toolbar { background: rgba(8, 17, 31, 0.78); border-radius: 8px; padding: 0.8rem; }
+    .btn { min-height: 34px; border-radius: 6px; padding: 0.48rem 0.78rem; }
+    .btn-run { background: #22d3ee; color: #06101d; border: none; font-weight: 800; }
+    .section-title { border-bottom: none; font-size: 1rem !important; margin-top: 1.35rem !important; }
+    .chart-card { min-height: 236px; }
+    .classify-overlay { background: rgba(3, 8, 15, 0.82); }
+    .classify-modal { border-radius: 8px; background: #08111f; }
+    .classify-modal-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 1260px) { .global-filterbar { grid-template-columns: repeat(3, minmax(150px, 1fr)); } }
+    @media (max-width: 720px) { .global-filterbar { grid-template-columns: 1fr 1fr; } .classify-modal-body { grid-template-columns: 1fr; } .content-wrapper { padding: 1rem; } }
   </style>
 </head>
 <body>
@@ -6172,19 +6211,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
 
-      <nav class="sidebar-nav">
-        <button class="tab-btn active" data-tab="overview"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Visão Geral</span></button>
-        <button class="tab-btn" data-tab="risk"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/><circle cx="12" cy="12" r="2.5"/></svg><span>Vulnerabilidades</span></button>
-        <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Ativos & Exposição</span></button>
-        <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg><span>SLA & Backlog</span></button>
-        <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Governança & Exceções</span></button>
-        <button class="tab-btn" data-tab="trends"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendências</span></button>
-        <button class="tab-btn" data-tab="treatment"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Plano de Tratativa</span></button>
-        <button class="tab-btn" data-tab="status"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
+      <nav class="sidebar-nav" aria-label="Menu principal EyeMole">
+        <button class="tab-btn active" data-tab="overview"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Dashboard</span></button>
+        <button class="tab-btn" data-tab="risk"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3L12 3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>Vulnerabilidades</span></button>
+        <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos</span></button>
+        <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Exposicao</span></button>
+        <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorizacao</span></button>
+        <button class="tab-btn" data-tab="treatment"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Tratamento</span></button>
+        <button class="tab-btn" data-tab="trends"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendencias</span></button>
+        <button class="tab-btn" data-tab="status"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
       </nav>
 
       <div class="sidebar-footer">
-        <button id="btn-global-reload" class="btn btn-primary" onclick="reloadAllData()" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;">
+        <div class="sidebar-status">
+          <div class="status-chip"><span>Modo Seguro</span><strong id="footer-safe-mode">Ativo</strong></div>
+          <div class="status-chip"><span>API Online</span><strong id="footer-status-api">Verificando</strong></div>
+          <div class="status-chip"><span>Timer Ativo</span><strong id="footer-status-timer">Verificando</strong></div>
+          <div class="status-chip"><span>Relatorio</span><strong id="footer-report-date">{{GEN_TIME}}</strong></div>
+        </div>
+        <button id="btn-global-reload" class="btn btn-primary" onclick="reloadAllData()" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; margin-top: 0.75rem;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
@@ -6196,8 +6241,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="content-wrapper">
       <header class="content-header">
         <div class="hero-text">
-          <h1>Gestão de Vulnerabilidades e Exposição</h1>
-          <p class="subtitle">Priorização de risco, exposição e contexto de ativos para apoiar decisões de correção.</p>
+          <div class="breadcrumb">Dashboards &amp; Reports &gt; EyeMole</div><h1>Vulnerability Management</h1>
+          <p class="subtitle">Priorizacao de risco, exposicao e contexto de ativos para apoiar decisoes de correcao.</p>
         </div>
         <div class="meta-badges">
           <div class="meta-badge">Gerado: <strong id="generation-time">-</strong></div>
@@ -6210,6 +6255,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </header>
 
+
+      <section class="global-filterbar" aria-label="Filtros visuais do dashboard">
+        <div class="filter-field"><label for="filter-agent-ui">Fonte / Agente</label><select id="filter-agent-ui"><option>Todos os agentes</option></select></div>
+        <div class="filter-field"><label for="filter-severity-ui">Severidade</label><select id="filter-severity-ui"><option>Todas</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>
+        <div class="filter-field"><label for="filter-criticality-ui">Criticidade</label><select id="filter-criticality-ui"><option>Todas</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-exposure-ui">Exposicao</label><select id="filter-exposure-ui"><option>Todas</option><option>internet</option><option>dmz</option><option>internal</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-env-ui">Ambiente</label><select id="filter-env-ui"><option>Todos</option><option>production</option><option>hmg</option><option>development</option><option>lab</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-status-ui">Status</label><select id="filter-status-ui"><option>Todos</option><option>Dentro do SLA</option><option>Proximo SLA</option><option>Vencido</option></select></div>
+        <button class="btn" type="button" onclick="resetVisualFilters()">Reset Filters</button>
+        <button class="btn btn-primary" type="button" onclick="applyVisualFilters()">Aplicar</button>
+      </section>
       <main>
       <!-- Aba 1: Visão Geral -->
       <section id="tab-overview" class="tab-panel active">
@@ -8266,14 +8322,68 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       applyFilters();
     }
 
-    function onSearchChange() { searchTerm = document.getElementById('search-box').value.trim().toLowerCase(); applyFilters(); }
-    function onRansomwareToggle() { filterRansomwareOnly = document.getElementById('filter-ransomware').checked; applyFilters(); }
+    function onSearchChange() {
+      const box = document.getElementById('search-box');
+      searchTerm = box ? box.value.trim().toLowerCase() : '';
+      applyFilters();
+    }
+    function onRansomwareToggle() {
+      const flag = document.getElementById('filter-ransomware');
+      filterRansomwareOnly = flag ? flag.checked : false;
+      applyFilters();
+    }
 
     function resetFilters() {
-      document.getElementById('search-box').value = '';
-      document.getElementById('filter-ransomware').checked = false;
+      const searchBox = document.getElementById('search-box');
+      const ransomFilter = document.getElementById('filter-ransomware');
+      if (searchBox) searchBox.value = '';
+      if (ransomFilter) ransomFilter.checked = false;
       searchTerm = ''; filterRansomwareOnly = false;
       filterByPriority('ALL');
+    }
+
+    function populateVisualFilters() {
+      const agentSelect = document.getElementById('filter-agent-ui');
+      if (!agentSelect) return;
+      const agents = Array.from(new Set(rawData.map(item => `${item.agent_id || '-'} - ${item.agent_name || item.hostname || 'sem nome'}`))).sort();
+      agentSelect.innerHTML = '<option value="ALL">Todos os agentes</option>' + agents.map(agent => `<option value="${agent}">${agent}</option>`).join('');
+    }
+
+    function resetVisualFilters() {
+      ['filter-agent-ui', 'filter-severity-ui', 'filter-criticality-ui', 'filter-exposure-ui', 'filter-env-ui', 'filter-status-ui'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.selectedIndex = 0;
+      });
+      resetFilters();
+    }
+
+    function applyVisualFilters() {
+      const read = id => {
+        const el = document.getElementById(id);
+        return el ? el.value : 'ALL';
+      };
+      const agent = read('filter-agent-ui');
+      const severity = read('filter-severity-ui').toLowerCase();
+      const criticality = read('filter-criticality-ui').toLowerCase();
+      const exposure = read('filter-exposure-ui').toLowerCase();
+      const env = read('filter-env-ui').toLowerCase();
+      const status = read('filter-status-ui').toLowerCase();
+
+      filteredData = rawData.filter(item => {
+        const agentLabel = `${item.agent_id || '-'} - ${item.agent_name || item.hostname || 'sem nome'}`;
+        if (agent !== 'ALL' && agent !== 'Todos os agentes' && agentLabel !== agent) return false;
+        if (severity !== 'todas' && severity !== 'all' && String(item.severity || '').toLowerCase() !== severity) return false;
+        if (criticality !== 'todas' && criticality !== 'all' && String(item.criticality || 'unknown').toLowerCase() !== criticality) return false;
+        const itemExposure = String(getAssetExposure(item) || item.exposure || 'unknown').toLowerCase();
+        if (exposure !== 'todas' && exposure !== 'all' && itemExposure !== exposure) return false;
+        if (env !== 'todos' && env !== 'all' && String(item.environment || 'unknown').toLowerCase() !== env) return false;
+        if (status.includes('vencido') && item.sla_status !== 'overdue') return false;
+        if (status.includes('proximo') && item.sla_status !== 'due_soon') return false;
+        if (status.includes('dentro') && item.sla_status !== 'within_sla') return false;
+        return true;
+      });
+      currentPage = 1;
+      sortData();
     }
 
     function applyFilters() {
@@ -8749,6 +8859,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
 
 
+      const footerDate = document.getElementById('footer-report-date');
+      const footerApi = document.getElementById('footer-status-api');
+      const footerTimer = document.getElementById('footer-status-timer');
+      const headerApi = document.getElementById('header-status-api');
+      const headerTimer = document.getElementById('header-status-timer');
+      if (footerDate) footerDate.textContent = scanMeta.genTime || '-';
+      if (footerApi && headerApi) footerApi.innerHTML = headerApi.innerHTML;
+      if (footerTimer && headerTimer) footerTimer.innerHTML = headerTimer.innerHTML;
       const ovStatApi = document.getElementById('overview-status-api');
       const ovStatSvc = document.getElementById('overview-status-service');
       if (ovStatApi && ovStatSvc) {
@@ -10921,7 +11039,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             }));
             if (document.getElementById('overview-chart-trend')) {
               renderTrendSvgChart('overview-chart-trend', [
-                { key: 'total', label: 'Risco Geral', color: '#60a5fa' }
+                { key: 'critical', label: 'Criticas', color: '#f43f7f' },
+                { key: 'high', label: 'Altas', color: '#f59e0b' }
               ], { data: totalTrendData });
             }
 
