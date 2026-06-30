@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 analyserV1.py - Versão Refatorada e Segura
 
@@ -5913,7 +5913,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     .tab-panel {
-      display: none !important;
+      display: none;
     }
     .tab-panel.active {
       display: block !important;
@@ -8027,6 +8027,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return 'unknown';
     }
 
+    function showTabFallback(tabId, errorMsg) {
+      const panel = document.getElementById(`tab-${tabId}`);
+      if (panel) {
+        panel.innerHTML = `
+          <div class="widget-error" style="padding: 3rem; text-align: center; color: var(--eyemole-critical); background: rgba(239, 68, 68, 0.05); border: 1px dashed var(--eyemole-critical); border-radius: var(--radius-lg); margin: var(--space-lg) 0; grid-column: 1 / -1;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; display: inline-block;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--eyemole-critical);">Não foi possível carregar esta seção.</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">${errorMsg || 'Erro interno ou falha de comunicação com a API.'}</p>
+          </div>
+        `;
+      }
+    }
+
+    async function safeRefresh(func, tabId, label) {
+      try {
+        await func();
+      } catch (err) {
+        console.error(`Erro ao carregar aba ${tabId} (${label}):`, err);
+        showTabFallback(tabId, err.message || err);
+      }
+    }
+
     async function reloadAllData() {
       const btn = document.getElementById('btn-global-reload');
       if (btn) {
@@ -8036,14 +8058,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       try {
         await Promise.all([
-          refreshOperationalStatus(),
-          refreshRiskIntelligence(),
-          refreshAssetContext(),
-          refreshExposureContext(),
-          refreshSlaSummary(),
-          refreshRiskAcceptance(),
-          refreshTreatmentPlan(),
-          refreshTrendSummary()
+          safeRefresh(refreshOperationalStatus, 'status', 'Status & Auditoria'),
+          safeRefresh(refreshRiskIntelligence, 'risk', 'Vulnerabilidades'),
+          safeRefresh(refreshAssetContext, 'assets', 'Ativos & Exposição'),
+          safeRefresh(refreshExposureContext, 'assets', 'Ativos & Exposição'),
+          safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog'),
+          safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções'),
+          safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa'),
+          safeRefresh(refreshTrendSummary, 'trends', 'Tendências')
         ]);
       } catch (err) {
         console.error('Erro ao recarregar dados:', err);
@@ -8176,14 +8198,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (epssLimitEl) epssLimitEl.innerText = (scanMeta.epssThresh * 100).toFixed(0);
       calculateMetrics();
       applyFilters();
-      refreshOperationalStatus();
-      refreshRiskIntelligence();
-      refreshAssetContext();
-      refreshExposureContext();
-      refreshSlaSummary();
-      refreshRiskAcceptance();
-      refreshTrendSummary();
-      refreshTreatmentPlan();
+      safeRefresh(refreshOperationalStatus, 'status', 'Status & Auditoria');
+      safeRefresh(refreshRiskIntelligence, 'risk', 'Vulnerabilidades');
+      safeRefresh(refreshAssetContext, 'assets', 'Ativos & Exposição');
+      safeRefresh(refreshExposureContext, 'assets', 'Ativos & Exposição');
+      safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog');
+      safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções');
+      safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
+      safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa');
     });
 
     window.addEventListener('hashchange', () => {
