@@ -6198,6 +6198,352 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .classify-modal-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     @media (max-width: 1260px) { .global-filterbar { grid-template-columns: repeat(3, minmax(150px, 1fr)); } }
     @media (max-width: 720px) { .global-filterbar { grid-template-columns: 1fr 1fr; } .classify-modal-body { grid-template-columns: 1fr; } .content-wrapper { padding: 1rem; } }
+
+    /* =====================================================================
+       EYEMOLE ENTERPRISE REDESIGN v2 — Vulnerability Management Platform
+       (bloco final: vence a cascata; system fonts; sem CDN; sem imagens externas)
+       ===================================================================== */
+    :root {
+      --vm-bg-0: #060b14;
+      --vm-bg-1: #0a1220;
+      --vm-panel: #0e1a2b;
+      --vm-panel-2: #11213a;
+      --vm-stroke: rgba(148, 178, 214, 0.14);
+      --vm-stroke-soft: rgba(148, 178, 214, 0.08);
+      --vm-text: #eaf2ff;
+      --vm-muted: #93a7c4;
+      --vm-faint: #6f83a1;
+      --vm-accent: #4f8cff;
+      --vm-accent-2: #22d3ee;
+      --vm-crit: #fb3b6e;
+      --vm-high: #f5924b;
+      --vm-med: #eab308;
+      --vm-low: #34d399;
+      --vm-info: #60a5fa;
+      --vm-kev: #f43f5e;
+      --vm-epss: #a78bfa;
+    }
+    body {
+      background-color: var(--vm-bg-0) !important;
+      background-image:
+        radial-gradient(1200px 620px at 82% -8%, rgba(79, 140, 255, 0.10), transparent 60%),
+        radial-gradient(1000px 560px at -6% 4%, rgba(34, 211, 238, 0.07), transparent 55%),
+        linear-gradient(180deg, #0a1220 0%, #060b14 640px) !important;
+      color: var(--vm-text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .sidebar { background: linear-gradient(180deg, #0a1424 0%, #070d18 100%) !important; border-right: 1px solid var(--vm-stroke) !important; }
+    .content-header { backdrop-filter: blur(8px); }
+
+    /* ---- HERO ---- */
+    .vm-hero {
+      position: relative; overflow: hidden;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 20px;
+      background:
+        radial-gradient(900px 380px at 88% -30%, rgba(79,140,255,0.22), transparent 60%),
+        radial-gradient(600px 300px at 6% 120%, rgba(244,63,94,0.14), transparent 55%),
+        linear-gradient(135deg, #0f1d33 0%, #0b1626 60%, #0a1322 100%);
+      padding: 2.4rem 2.4rem 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 24px 60px -32px rgba(0,0,0,0.75);
+    }
+    .vm-hero::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
+      background-size: 34px 34px; mask-image: radial-gradient(720px 340px at 85% 0%, #000 20%, transparent 72%);
+    }
+    .vm-hero-eyebrow { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--vm-accent-2); background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.2); padding: 0.32rem 0.7rem; border-radius: 999px; }
+    .vm-hero h1 { position: relative; font-size: clamp(1.8rem, 3vw, 2.7rem); line-height: 1.06; font-weight: 850; letter-spacing: -0.02em; margin: 1rem 0 0.7rem; background: linear-gradient(92deg, #ffffff, #cfe0ff 60%, #9dc2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; max-width: 22ch; }
+    .vm-hero-sub { position: relative; font-size: 1.02rem; color: #cddcf3; max-width: 62ch; margin-bottom: 0.5rem; }
+    .vm-hero-desc { position: relative; font-size: 0.9rem; color: var(--vm-muted); max-width: 70ch; }
+    .vm-hero-chips { position: relative; display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1.4rem; }
+    .vm-chip { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; color: var(--vm-text); background: rgba(255,255,255,0.045); border: 1px solid var(--vm-stroke); padding: 0.45rem 0.8rem; border-radius: 10px; }
+    .vm-chip b { color: #fff; font-weight: 800; }
+    .vm-chip .dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
+    .dot-ok { background: var(--vm-low); } .dot-warn { background: var(--vm-high); } .dot-info { background: var(--vm-accent); } .dot-crit { background: var(--vm-crit); }
+
+    /* ---- SECTION TITLES ---- */
+    .vm-sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin: 2rem 0 1rem; }
+    .vm-sec-head h2 { font-size: 1.22rem; font-weight: 820; letter-spacing: -0.01em; color: #fff; }
+    .vm-sec-head p { font-size: 0.84rem; color: var(--vm-muted); margin-top: 0.15rem; }
+    .vm-kicker { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--vm-accent); }
+
+    /* ---- RISK COMMAND CENTER ---- */
+    .cc-grid { display: grid; grid-template-columns: 1.15fr 2fr; gap: 1rem; margin-bottom: 0.5rem; }
+    .cc-score {
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 18px; padding: 1.6rem;
+      background: radial-gradient(420px 240px at 20% -20%, rgba(251,59,110,0.18), transparent 60%), linear-gradient(160deg, #14101d, #0d1526);
+      display: flex; flex-direction: column; justify-content: space-between; min-height: 236px;
+    }
+    .cc-score .lbl { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
+    .cc-score .val { font-size: 4.1rem; font-weight: 860; line-height: 1; letter-spacing: -0.03em; background: linear-gradient(180deg,#fff,#ffd7e3); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .cc-score .cap { font-size: 0.86rem; color: var(--vm-muted); }
+    .cc-gauge { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 0.5rem; }
+    .cc-gauge > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--vm-low), var(--vm-med) 45%, var(--vm-high) 72%, var(--vm-crit)); }
+    .cc-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .cc-card {
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1rem 1rem 0.9rem;
+      background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0)) , var(--vm-panel);
+      display: flex; flex-direction: column; gap: 0.35rem; transition: transform .15s ease, border-color .15s ease;
+      overflow: hidden;
+    }
+    .cc-card::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 100%; background: var(--accent, var(--vm-accent)); opacity: 0.85; }
+    .cc-card:hover { transform: translateY(-2px); border-color: rgba(148,178,214,0.28); }
+    .cc-card .t { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
+    .cc-card .n { font-size: 2rem; font-weight: 840; letter-spacing: -0.02em; color: #fff; }
+    .cc-card .c { font-size: 0.74rem; color: var(--vm-faint); }
+    .cc-card .spark { margin-top: 0.2rem; height: 26px; }
+    .cc-crit { --accent: var(--vm-crit); } .cc-high { --accent: var(--vm-high); } .cc-kev { --accent: var(--vm-kev); }
+    .cc-epss { --accent: var(--vm-epss); } .cc-exp { --accent: var(--vm-accent-2); } .cc-asset { --accent: var(--vm-info); }
+    .cc-sla { --accent: var(--vm-high); } .cc-total { --accent: var(--vm-accent); }
+
+    /* ---- VALIDATION FUNNEL ---- */
+    .vm-funnel { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; }
+    .fn-step {
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.95rem 0.8rem;
+      background: linear-gradient(180deg, var(--vm-panel-2), var(--vm-panel));
+      display: flex; flex-direction: column; gap: 0.35rem; min-height: 118px; overflow: hidden;
+    }
+    .fn-step .stage { font-size: 0.66rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vm-faint); font-weight: 700; }
+    .fn-step .fn-n { font-size: 1.7rem; font-weight: 840; color: #fff; letter-spacing: -0.02em; }
+    .fn-step .fn-l { font-size: 0.76rem; color: var(--vm-muted); font-weight: 600; line-height: 1.2; }
+    .fn-step .fn-bar { margin-top: auto; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+    .fn-step .fn-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--fn, var(--vm-accent)); }
+    .fn-step::after { content: ""; position: absolute; right: -7px; top: 50%; transform: translateY(-50%) rotate(45deg); width: 12px; height: 12px; background: var(--vm-panel); border-top: 1px solid var(--vm-stroke); border-right: 1px solid var(--vm-stroke); z-index: 2; }
+    .vm-funnel .fn-step:last-child::after { display: none; }
+    .fn-1 { --fn: var(--vm-crit); } .fn-2 { --fn: var(--vm-kev); } .fn-3 { --fn: var(--vm-epss); }
+    .fn-4 { --fn: var(--vm-low); } .fn-5 { --fn: var(--vm-accent-2); } .fn-6 { --fn: var(--vm-info); } .fn-7 { --fn: var(--vm-high); }
+
+    /* ---- PANELS / EXEC CHARTS ---- */
+    .vm-panel { border: 1px solid var(--vm-stroke); border-radius: 16px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--vm-panel); padding: 1.25rem; }
+    .vm-panel h4 { font-size: 0.82rem; font-weight: 750; color: #dbe7fb; letter-spacing: 0.02em; margin-bottom: 0.9rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--vm-stroke-soft); display: flex; align-items: center; justify-content: space-between; }
+    .vm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .vm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    .vm-chart-lg { width: 100%; height: 210px; }
+    .vm-empty { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 120px; color: var(--vm-faint); font-size: 0.82rem; text-align: center; padding: 1rem; }
+
+    /* ---- CARD / TABLE / BADGE REFINEMENT (aplica a todo o dashboard) ---- */
+    .metric-card { background: linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0)), var(--vm-panel) !important; border: 1px solid var(--vm-stroke) !important; border-radius: 14px !important; box-shadow: none !important; }
+    .metric-title { color: var(--vm-muted) !important; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.72rem !important; font-weight: 700 !important; }
+    .metric-value { letter-spacing: -0.02em; font-weight: 840 !important; }
+    .table-container { border: 1px solid var(--vm-stroke) !important; border-radius: 14px !important; background: var(--vm-panel) !important; overflow: hidden; }
+    table th { background: rgba(255,255,255,0.02) !important; color: var(--vm-muted) !important; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.7rem !important; font-weight: 700 !important; border-bottom: 1px solid var(--vm-stroke) !important; }
+    table td { border-bottom: 1px solid var(--vm-stroke-soft) !important; }
+    table tbody tr { transition: background .12s ease; }
+    table tbody tr:hover { background: rgba(79,140,255,0.06) !important; }
+    .vm-pill { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 750; border: 1px solid transparent; }
+    .vm-pill-score { background: rgba(79,140,255,0.12); color: #9dc2ff; border-color: rgba(79,140,255,0.28); font-variant-numeric: tabular-nums; }
+
+    /* ---- TAB PANEL VISIBILITY (robustez) ---- */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block !important; visibility: visible !important; opacity: 1 !important; min-height: 400px; }
+
+    /* ---- PREMIUM MODAL POLISH ---- */
+    .classify-overlay { background: rgba(4,8,15,0.74) !important; backdrop-filter: blur(4px); }
+    .classify-modal { background: linear-gradient(180deg, #0f1c30, #0b1524) !important; border: 1px solid var(--vm-stroke) !important; border-radius: 16px !important; box-shadow: 0 30px 80px -30px rgba(0,0,0,0.8) !important; }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 1180px) {
+      .cc-grid { grid-template-columns: 1fr; }
+      .cc-cards { grid-template-columns: repeat(4, 1fr); }
+      .vm-funnel { grid-template-columns: repeat(4, 1fr); }
+      .vm-funnel .fn-step::after { display: none; }
+      .vm-grid-4 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 760px) {
+      .vm-hero { padding: 1.5rem; border-radius: 16px; }
+      .cc-cards { grid-template-columns: 1fr 1fr; }
+      .vm-funnel { grid-template-columns: 1fr 1fr; }
+      .vm-grid-2, .vm-grid-4 { grid-template-columns: 1fr; }
+    }
+
+    /* =====================================================================
+       COMPONENTES DE ABA (reconstrução das telas internas) — v2
+       ===================================================================== */
+    .tab-hero {
+      position: relative; overflow: hidden;
+      border: 1px solid var(--vm-stroke); border-radius: 16px;
+      background: radial-gradient(700px 220px at 92% -40%, rgba(79,140,255,0.16), transparent 60%), linear-gradient(135deg, #0f1c31, #0b1524);
+      padding: 1.5rem 1.7rem; margin-bottom: 1.4rem;
+    }
+    .tab-hero .vm-kicker { color: var(--vm-accent-2); }
+    .tab-hero h2 { font-size: clamp(1.35rem, 2vw, 1.7rem); font-weight: 840; letter-spacing: -0.02em; margin: 0.4rem 0 0.35rem; color: #fff; }
+    .tab-hero p { font-size: 0.92rem; color: var(--vm-muted); max-width: 74ch; }
+
+    /* Faixa de stats premium */
+    .vm-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; margin-bottom: 1.4rem; }
+    .vm-stat { position: relative; border: 1px solid var(--vm-stroke); border-radius: 13px; padding: 0.9rem 1rem; background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)), var(--vm-panel); overflow: hidden; }
+    .vm-stat::before { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--sc, var(--vm-accent)); opacity: 0.9; }
+    .vm-stat .t { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
+    .vm-stat .n { font-size: 1.75rem; font-weight: 840; letter-spacing: -0.02em; color: #fff; margin-top: 0.15rem; }
+    .vm-stat .c { font-size: 0.72rem; color: var(--vm-faint); }
+    .sc-crit { --sc: var(--vm-crit); } .sc-high { --sc: var(--vm-high); } .sc-med { --sc: var(--vm-med); }
+    .sc-ok { --sc: var(--vm-low); } .sc-info { --sc: var(--vm-info); } .sc-accent { --sc: var(--vm-accent); }
+    .sc-kev { --sc: var(--vm-kev); } .sc-epss { --sc: var(--vm-epss); } .sc-exp { --sc: var(--vm-accent-2); }
+
+    /* Barras horizontais */
+    .hbar-row { display: grid; grid-template-columns: 120px 1fr 46px; align-items: center; gap: 0.7rem; padding: 0.4rem 0; }
+    .hbar-row .lab { font-size: 0.8rem; color: var(--vm-muted); font-weight: 600; text-transform: capitalize; }
+    .hbar-track { height: 10px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
+    .hbar-fill { display: block; height: 100%; border-radius: 999px; background: var(--hc, var(--vm-accent)); }
+    .hbar-row .val { font-size: 0.82rem; font-weight: 750; color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Matriz de risco (criticidade x exposição) */
+    .rmatrix { display: grid; grid-template-columns: 92px repeat(4, 1fr); gap: 6px; }
+    .rmatrix .rm-h { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vm-faint); font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0.35rem 0; }
+    .rmatrix .rm-y { font-size: 0.72rem; color: var(--vm-muted); font-weight: 700; display: flex; align-items: center; padding-left: 0.2rem; }
+    .rm-cell { border-radius: 9px; min-height: 46px; display: flex; align-items: center; justify-content: center; font-weight: 820; font-size: 1.05rem; color: #fff; border: 1px solid var(--vm-stroke-soft); background: rgba(255,255,255,0.03); }
+    .rm-l0 { background: rgba(255,255,255,0.03); color: var(--vm-faint); }
+    .rm-l1 { background: rgba(52,211,153,0.14); color: #6ee7b7; }
+    .rm-l2 { background: rgba(234,179,8,0.16); color: #fcd34d; }
+    .rm-l3 { background: rgba(245,146,75,0.18); color: #fdba74; }
+    .rm-l4 { background: rgba(251,59,110,0.22); color: #fda4c0; border-color: rgba(251,59,110,0.4); }
+
+    /* Driver chips */
+    .rchip { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; font-weight: 750; padding: 0.22rem 0.55rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+    .rchip-kev { background: rgba(244,63,94,0.14); color: #fda4af; border-color: rgba(244,63,94,0.32); }
+    .rchip-epss { background: rgba(167,139,250,0.14); color: #c4b5fd; border-color: rgba(167,139,250,0.32); }
+    .rchip-cvss { background: rgba(251,59,110,0.12); color: #fda4c0; border-color: rgba(251,59,110,0.3); }
+    .rchip-exp { background: rgba(34,211,238,0.12); color: #7ee7f5; border-color: rgba(34,211,238,0.3); }
+    .rchip-asset { background: rgba(96,165,250,0.14); color: #bfdbfe; border-color: rgba(96,165,250,0.32); }
+    .rchip-sla { background: rgba(245,146,75,0.14); color: #fdba74; border-color: rgba(245,146,75,0.32); }
+    .rchip-fix { background: rgba(52,211,153,0.14); color: #6ee7b7; border-color: rgba(52,211,153,0.32); }
+
+    /* Queue / remediation cards */
+    .queue-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; }
+    .queue-card { border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1rem 1.1rem; background: var(--vm-panel); border-top: 3px solid var(--qc, var(--vm-accent)); }
+    .queue-card .q-t { font-size: 0.78rem; font-weight: 750; color: #dbe7fb; }
+    .queue-card .q-n { font-size: 2.1rem; font-weight: 850; color: #fff; letter-spacing: -0.02em; }
+    .queue-card .q-c { font-size: 0.74rem; color: var(--vm-faint); }
+    .qc-p0 { --qc: var(--vm-crit); } .qc-p1 { --qc: var(--vm-high); } .qc-p2 { --qc: var(--vm-med); } .qc-p3 { --qc: var(--vm-info); }
+
+    /* Owner workload rows */
+    .owner-row { display: grid; grid-template-columns: 1fr 90px 120px; align-items: center; gap: 0.8rem; padding: 0.7rem 0.2rem; border-bottom: 1px solid var(--vm-stroke-soft); }
+    .owner-row .o-name { font-weight: 700; color: #eaf2ff; font-size: 0.9rem; }
+    .owner-row .o-sub { font-size: 0.74rem; color: var(--vm-faint); }
+    .owner-row .o-count { font-weight: 820; color: #fff; text-align: center; font-size: 1.1rem; }
+
+    /* Recommended action / insight list */
+    .action-item { display: flex; gap: 0.85rem; align-items: flex-start; padding: 0.85rem 0; border-bottom: 1px solid var(--vm-stroke-soft); }
+    .action-ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; background: rgba(79,140,255,0.12); border: 1px solid rgba(79,140,255,0.28); }
+    .action-item .a-t { font-weight: 700; color: #eaf2ff; font-size: 0.9rem; }
+    .action-item .a-d { font-size: 0.8rem; color: var(--vm-muted); }
+    .insight-card { border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.1rem; background: var(--vm-panel); border-left: 3px solid var(--ic, var(--vm-accent)); }
+    .insight-card .i-t { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vm-muted); font-weight: 700; }
+    .insight-card .i-v { font-size: 1.1rem; font-weight: 800; color: #fff; margin: 0.3rem 0; }
+    .insight-card .i-d { font-size: 0.82rem; color: var(--vm-faint); }
+
+    /* Timeline (auditoria) */
+    .vm-timeline { position: relative; padding-left: 1.4rem; }
+    .vm-timeline::before { content: ""; position: absolute; left: 6px; top: 4px; bottom: 4px; width: 2px; background: var(--vm-stroke); }
+    .tl-item { position: relative; padding: 0 0 1.1rem 0.4rem; }
+    .tl-item::before { content: ""; position: absolute; left: -1.4rem; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--tlc, var(--vm-accent)); box-shadow: 0 0 0 3px rgba(79,140,255,0.15); }
+    .tl-item.ok::before { --tlc: var(--vm-low); box-shadow: 0 0 0 3px rgba(52,211,153,0.15); }
+    .tl-item.fail::before { --tlc: var(--vm-crit); box-shadow: 0 0 0 3px rgba(251,59,110,0.15); }
+    .tl-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+    .tl-head .tl-act { font-weight: 750; color: #eaf2ff; font-size: 0.88rem; }
+    .tl-head .tl-time { font-size: 0.74rem; color: var(--vm-faint); }
+    .tl-meta { font-size: 0.78rem; color: var(--vm-muted); margin-top: 0.2rem; }
+
+    /* Security mode card */
+    .secmode { border: 1px solid rgba(52,211,153,0.28); border-radius: 14px; padding: 1.2rem 1.3rem; background: linear-gradient(180deg, rgba(52,211,153,0.06), transparent), var(--vm-panel); }
+    .secmode h4 { color: #6ee7b7; font-size: 0.9rem; font-weight: 800; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.5rem; }
+    .secmode ul { list-style: none; display: grid; gap: 0.4rem; }
+    .secmode li { font-size: 0.84rem; color: var(--vm-muted); display: flex; gap: 0.5rem; align-items: flex-start; }
+    .secmode li::before { content: "✓"; color: var(--vm-low); font-weight: 800; }
+
+    /* Empty state bonito */
+    .empty-pretty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2.4rem 1rem; text-align: center; color: var(--vm-faint); border: 1px dashed var(--vm-stroke); border-radius: 14px; background: rgba(255,255,255,0.012); }
+    .empty-pretty .ep-ic { font-size: 1.6rem; opacity: 0.7; }
+    .empty-pretty .ep-t { font-size: 0.9rem; font-weight: 700; color: var(--vm-muted); }
+    .empty-pretty .ep-d { font-size: 0.8rem; }
+
+    /* util */
+    .vm-hide { display: none !important; }
+    .vm-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.4rem; }
+    .vm-btn { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 10px; border: 1px solid var(--vm-stroke); background: rgba(255,255,255,0.03); color: #eaf2ff; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+    .vm-btn:hover { border-color: rgba(79,140,255,0.5); background: rgba(79,140,255,0.08); }
+    .vm-btn-primary { background: linear-gradient(135deg, #2563eb, #4f8cff); border-color: transparent; color: #fff; }
+    @media (max-width: 900px) { .rmatrix { grid-template-columns: 74px repeat(4, 1fr); } .owner-row { grid-template-columns: 1fr 70px 90px; } }
+
+    /* --- NEW ENTERPRISE REDESIGN v2 COMPONENTS --- */
+    /* Prioritized Vulnerability Queue */
+    .vuln-queue-container { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; }
+    .vuln-queue-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--vm-panel);
+      border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.15rem 1.3rem;
+      display: grid; grid-template-columns: 1.2fr 1fr 180px 100px; gap: 1.2rem; align-items: center;
+      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .vuln-queue-card:hover { transform: translateY(-1px); border-color: rgba(148, 178, 214, 0.24); box-shadow: 0 10px 25px -10px rgba(0,0,0,0.5); }
+    .vuln-queue-card .col-vuln { display: flex; flex-direction: column; gap: 0.35rem; }
+    .vuln-queue-card .col-asset { display: flex; flex-direction: column; gap: 0.3rem; }
+    .vuln-queue-card .col-metrics { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+    .vuln-queue-card .col-actions { display: flex; justify-content: flex-end; }
+    .vuln-queue-card .cve-id { font-size: 1.05rem; font-weight: 800; color: #fff; text-decoration: none; }
+    .vuln-queue-card .cve-id:hover { color: var(--vm-accent-2); text-decoration: underline; }
+    .vuln-queue-card .pkg-name { font-size: 0.8rem; color: var(--vm-muted); font-family: monospace; }
+    .vuln-queue-card .host-name { font-size: 0.95rem; font-weight: 700; color: var(--vm-text); }
+    .vuln-queue-card .agent-id { font-size: 0.76rem; color: var(--vm-faint); font-family: monospace; }
+
+    /* SaaS list cards for Treatment Plan & SLA */
+    .saas-list-container { display: flex; flex-direction: column; gap: 0.6rem; }
+    .saas-list-card {
+      background: var(--vm-panel); border: 1px solid var(--vm-stroke); border-radius: 12px;
+      padding: 0.9rem 1.1rem; display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center;
+      transition: border-color 0.12s ease;
+    }
+    .saas-list-card:hover { border-color: rgba(148, 178, 214, 0.2); }
+    .saas-list-card .c-info { display: flex; flex-direction: column; gap: 0.25rem; }
+    .saas-list-card .c-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .saas-list-card .c-val { text-align: right; }
+
+    /* Workload Profiles */
+    .workload-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .workload-profile-card {
+      background: var(--vm-panel); border: 1px solid var(--vm-stroke); border-radius: 14px;
+      padding: 1.25rem; display: flex; flex-direction: column; gap: 0.8rem;
+    }
+    .workload-profile-card .prof-hdr { display: flex; justify-content: space-between; align-items: flex-start; }
+    .workload-profile-card .prof-name { font-size: 1rem; font-weight: 800; color: #fff; }
+    .workload-profile-card .prof-sub { font-size: 0.76rem; color: var(--vm-faint); }
+    .workload-profile-card .prof-meter { display: flex; flex-direction: column; gap: 0.25rem; }
+    .workload-profile-card .prof-meter-lbl { display: flex; justify-content: space-between; font-size: 0.74rem; font-weight: 700; color: var(--vm-muted); }
+    .workload-profile-card .prof-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; display: flex; }
+    .workload-profile-card .prof-bar-segment { height: 100%; transition: width 0.3s ease; }
+    .workload-profile-card .prof-details { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.78rem; color: var(--vm-muted); border-top: 1px solid var(--vm-stroke-soft); padding-top: 0.6rem; }
+    .workload-profile-card .prof-item { display: flex; flex-direction: column; gap: 0.1rem; }
+    .workload-profile-card .prof-item-val { font-weight: 750; color: #fff; }
+
+    /* Work Queue Pending Cards */
+    .workqueue-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.85rem; }
+    .workqueue-card {
+      background: linear-gradient(180deg, rgba(249, 115, 22, 0.03), transparent), var(--vm-panel);
+      border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.1rem;
+      display: flex; flex-direction: column; gap: 0.7rem; position: relative;
+    }
+    .workqueue-card::before { content: ""; position: absolute; left: 0; top: 0; width: 4px; height: 100%; background: var(--vm-high); border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+    .workqueue-card .wq-title { font-size: 0.95rem; font-weight: 800; color: #fff; }
+    .workqueue-card .wq-id { font-size: 0.76rem; color: var(--vm-faint); font-family: monospace; }
+    .workqueue-card .wq-reason { font-size: 0.78rem; color: var(--vm-muted); line-height: 1.35; }
+    .workqueue-card .wq-badge-group { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.2rem; }
+    .workqueue-card .wq-action { margin-top: auto; padding-top: 0.5rem; }
+
+    /* Compact horizontal bars for SLA Backlog distribution */
+    .sla-progress-row { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.6rem 0; border-bottom: 1px solid var(--vm-stroke-soft); }
+    .sla-progress-row .spr-lbl { display: flex; justify-content: space-between; font-size: 0.84rem; font-weight: 700; color: #eaf2ff; }
+    .sla-progress-row .spr-sub { font-size: 0.74rem; color: var(--vm-faint); }
+    .sla-progress-row .spr-track { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; display: flex; }
+    .sla-progress-row .spr-segment { height: 100%; }
+
+    /* Compact list adjustments */
+    @media (max-width: 960px) {
+      .vuln-queue-card { grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+      .vuln-queue-card .col-metrics { align-items: flex-start; }
+      .vuln-queue-card .col-actions { justify-content: flex-start; grid-column: 1 / -1; }
+    }
   </style>
 </head>
 <body>
@@ -6214,9 +6560,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <nav class="sidebar-nav" aria-label="Menu principal EyeMole">
         <button class="tab-btn active" data-tab="overview"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Dashboard</span></button>
         <button class="tab-btn" data-tab="risk"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3L12 3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>Vulnerabilidades</span></button>
-        <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos</span></button>
-        <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Exposicao</span></button>
-        <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorizacao</span></button>
+        <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos &amp; Exposição</span></button>
+        <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Tratamento &amp; SLA</span></button>
+        <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorização</span></button>
         <button class="tab-btn" data-tab="treatment"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Tratamento</span></button>
         <button class="tab-btn" data-tab="trends"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendencias</span></button>
         <button class="tab-btn" data-tab="status"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
@@ -6269,8 +6615,73 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <main>
       <!-- Aba 1: Visão Geral -->
       <section id="tab-overview" class="tab-panel active">
-        <!-- Cards Principais Executivos -->
-        <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 2rem; gap: 1rem;">
+        <!-- ===== HERO ===== -->
+        <div class="vm-hero">
+          <span class="vm-hero-eyebrow">EyeMole · Vulnerability Management</span>
+          <h1>Gestão de Vulnerabilidades e Exposição</h1>
+          <p class="vm-hero-sub">Detecte, priorize e acompanhe vulnerabilidades com contexto de ativos, exposição e risco operacional.</p>
+          <p class="vm-hero-desc">O EyeMole consolida CVEs, criticidade de ativos, exposição, KEV, EPSS e SLA para apoiar decisões de correção baseadas em risco.</p>
+          <div class="vm-hero-chips">
+            <span class="vm-chip"><span class="dot dot-info"></span>Modo: <b id="hero-mode">audit</b></span>
+            <span class="vm-chip"><span class="dot dot-ok"></span>API: <b id="hero-api">—</b></span>
+            <span class="vm-chip"><span class="dot dot-ok"></span>Timer: <b id="hero-timer">—</b></span>
+            <span class="vm-chip"><span class="dot dot-info"></span>Agentes: <b id="hero-agents">—</b></span>
+            <span class="vm-chip"><span class="dot dot-warn"></span>CVEs únicos: <b id="hero-cves">—</b></span>
+            <span class="vm-chip"><span class="dot dot-info"></span>Última geração: <b id="hero-lastgen">—</b></span>
+          </div>
+        </div>
+
+        <!-- ===== RISK COMMAND CENTER ===== -->
+        <div class="vm-sec-head">
+          <div>
+            <div class="vm-kicker">Command Center</div>
+            <h2>Risk Command Center</h2>
+            <p>Postura de risco consolidada do último snapshot, priorizada por contexto.</p>
+          </div>
+        </div>
+        <div class="cc-grid">
+          <div class="cc-score">
+            <div>
+              <div class="lbl">Risk Score Contextual</div>
+              <div class="val" id="ccv-score">—</div>
+            </div>
+            <div>
+              <div class="cc-gauge"><span id="ccv-gauge" style="width:4%"></span></div>
+              <div class="cap" id="ccv-score-cap" style="margin-top:0.6rem;">Calculando postura de risco…</div>
+            </div>
+          </div>
+          <div class="cc-cards">
+            <div class="cc-card cc-total"><div class="t">CVEs únicos</div><div class="n" id="ccv-total">—</div><div class="c">ativos no snapshot</div></div>
+            <div class="cc-card cc-crit"><div class="t">Críticas</div><div class="n" id="ccv-crit">—</div><div class="c">severidade crítica</div></div>
+            <div class="cc-card cc-high"><div class="t">Altas</div><div class="n" id="ccv-high">—</div><div class="c">severidade alta</div></div>
+            <div class="cc-card cc-kev"><div class="t">KEV</div><div class="n" id="ccv-kev">—</div><div class="c">exploradas conhecidas</div></div>
+            <div class="cc-card cc-epss"><div class="t">EPSS alto</div><div class="n" id="ccv-epss">—</div><div class="c">&ge; limiar de exploração</div></div>
+            <div class="cc-card cc-exp"><div class="t">Ativos expostos</div><div class="n" id="ccv-exposed">—</div><div class="c">internet / DMZ</div></div>
+            <div class="cc-card cc-asset"><div class="t">Sem classificação</div><div class="n" id="ccv-unclass">—</div><div class="c">contexto pendente</div></div>
+            <div class="cc-card cc-sla"><div class="t">Backlog / SLA</div><div class="n" id="ccv-sla">—</div><div class="c">vencido / próximo</div></div>
+          </div>
+        </div>
+
+        <!-- ===== VULNERABILITY VALIDATION FUNNEL ===== -->
+        <div class="vm-sec-head">
+          <div>
+            <div class="vm-kicker">Priorização</div>
+            <h2>Vulnerability Issues Validation</h2>
+            <p>Redução de ruído: da severidade bruta ao que realmente exige correção.</p>
+          </div>
+        </div>
+        <div class="vm-funnel" style="margin-bottom: 0.5rem;">
+          <div class="fn-step fn-1"><span class="stage">Etapa 1</span><span class="fn-n" id="fnv-1">—</span><span class="fn-l">Critical &amp; High</span><span class="fn-bar"><span id="fnb-1" style="width:0%"></span></span></div>
+          <div class="fn-step fn-2"><span class="stage">Etapa 2</span><span class="fn-n" id="fnv-2">—</span><span class="fn-l">Known Exploited / KEV</span><span class="fn-bar"><span id="fnb-2" style="width:0%"></span></span></div>
+          <div class="fn-step fn-3"><span class="stage">Etapa 3</span><span class="fn-n" id="fnv-3">—</span><span class="fn-l">EPSS &ge; 20%</span><span class="fn-bar"><span id="fnb-3" style="width:0%"></span></span></div>
+          <div class="fn-step fn-4"><span class="stage">Etapa 4</span><span class="fn-n" id="fnv-4">—</span><span class="fn-l">Fix Available</span><span class="fn-bar"><span id="fnb-4" style="width:0%"></span></span></div>
+          <div class="fn-step fn-5"><span class="stage">Etapa 5</span><span class="fn-n" id="fnv-5">—</span><span class="fn-l">Internet Exposed</span><span class="fn-bar"><span id="fnb-5" style="width:0%"></span></span></div>
+          <div class="fn-step fn-6"><span class="stage">Etapa 6</span><span class="fn-n" id="fnv-6">—</span><span class="fn-l">Critical Asset</span><span class="fn-bar"><span id="fnb-6" style="width:0%"></span></span></div>
+          <div class="fn-step fn-7"><span class="stage">Etapa 7</span><span class="fn-n" id="fnv-7">—</span><span class="fn-l">SLA Risk</span><span class="fn-bar"><span id="fnb-7" style="width:0%"></span></span></div>
+        </div>
+
+        <!-- Cards Principais Executivos (sinais detalhados; ocultos, alimentam a lógica existente) -->
+        <div class="grid-metrics" id="overview-legacy-grid" style="display: none; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 2rem; gap: 1rem;">
 
           <!-- Total de Vulnerabilidades -->
           <div class="metric-card all" style="border-left: 4px solid var(--text-muted);">
@@ -6365,7 +6776,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- Fase 3H.2 - Dashboard Executivo Visão Geral -->
-        <h3 class="section-title" style="margin-top: 2rem; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 800; color: var(--text-main);">Dashboard Executivo</h3>
+        <div class="vm-sec-head">
+          <div>
+            <div class="vm-kicker">Visão Executiva</div>
+            <h2>Panorama de Risco</h2>
+            <p>Distribuição por severidade, SLA operacional, tratativa e tendência.</p>
+          </div>
+        </div>
+        <h3 class="section-title" style="display:none;">Dashboard Executivo</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
           <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
             <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Severidade</h4>
@@ -6416,6 +6834,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 2: Risco & Prioridades -->
       <section id="tab-risk" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Vulnerabilities</div>
+          <h2>Vulnerabilidades Priorizadas</h2>
+          <p>Ordenadas por severidade, exploração conhecida (KEV), probabilidade (EPSS) e contexto do ativo. Filtre para focar no que realmente exige correção.</p>
+        </div>
+        <div class="vm-strip">
+          <div class="vm-stat sc-accent"><div class="t">Total</div><div class="n" id="vs-total">—</div><div class="c">vulnerabilidades ativas</div></div>
+          <div class="vm-stat sc-crit"><div class="t">Críticas</div><div class="n" id="vs-crit">—</div><div class="c">severidade crítica</div></div>
+          <div class="vm-stat sc-high"><div class="t">Altas</div><div class="n" id="vs-high">—</div><div class="c">severidade alta</div></div>
+          <div class="vm-stat sc-kev"><div class="t">KEV</div><div class="n" id="vs-kev">—</div><div class="c">exploradas conhecidas</div></div>
+          <div class="vm-stat sc-epss"><div class="t">EPSS alto</div><div class="n" id="vs-epss">—</div><div class="c">&ge; limiar de exploração</div></div>
+          <div class="vm-stat sc-ok"><div class="t">Fix disponível</div><div class="n" id="vs-fix">—</div><div class="c">com versão corrigida</div></div>
+        </div>
+        <div class="vm-kicker" style="margin: 0.2rem 0 0.6rem;">Filtrar por prioridade</div>
         <div class="grid-metrics">
       <div class="metric-card all active" onclick="filterByPriority('ALL')">
         <div class="metric-title">Total de Vulnerabilidades</div>
@@ -6455,8 +6887,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <button class="btn btn-primary" onclick="exportFilteredCSV()">📥 Exportar CSV Filtrado</button>
       </div>
     </div>
-        <!-- Priorização Inteligente de Risco (Fase 3A) -->
-    <div style="margin-top: 2rem; margin-bottom: 2rem;">
+        <!-- Priorização Inteligente de Risco (Fase 3A) — legado oculto (dados mantidos p/ JS) -->
+    <div class="vm-hide" style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
         <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🎯 Priorização Inteligente de Risco</h2>
         <button class="btn" id="btn-refresh-risk" onclick="refreshRiskIntelligence()" style="display: none;">
@@ -6565,6 +6997,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
 
         <!-- Fase 3H.2 - Dashboards Risco & Prioridades -->
+        <div class="vm-sec-head"><div><div class="vm-kicker">Analytics</div><h2>Distribuições &amp; Concentração de Risco</h2><p>Severidade, prioridade, KEV×EPSS, pacotes e agentes com maior exposição.</p></div></div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; margin-bottom: 2rem;">
           <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
             <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Severidade</h4>
@@ -6588,25 +7021,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-        <div class="table-container">
-      <table id="vuln-table">
-        <thead>
-          <tr>
-            <th onclick="sortTable('priority')">Prioridade ↕</th>
-            <th onclick="sortTable('agent_id')">Agente ↕</th>
-            <th onclick="sortTable('cve')">CVE ↕</th>
-            <th onclick="sortTable('package')">Pacote ↕</th>
-            <th>Versão</th>
-            <th onclick="sortTable('cvss')">CVSS ↕</th>
-            <th onclick="sortTable('epss')">EPSS ↕</th>
-            <th onclick="sortTable('severity')">Severidade ↕</th>
-            <th>Tag / Detalhe</th>
-          </tr>
-        </thead>
-        <tbody id="vuln-table-body"></tbody>
-      </table>
-      <div id="empty-state-msg" class="empty-state" style="display: none;">Nenhum registro encontrado com os filtros atuais.</div>
-    </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Findings</div><h2>Registros Priorizados</h2><p>Lista detalhada com CVSS, EPSS, KEV, ransomware e prioridade. Ordene pelas colunas.</p></div></div>
+        <!-- Prioritized Vulnerability Queue Container -->
+        <div class="vuln-queue-container" id="vuln-table" style="margin-bottom: 1.5rem;">
+          <!-- Header with sorting links -->
+          <div style="background: rgba(255,255,255,0.025); border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.8rem 1.3rem; display: grid; grid-template-columns: 1.2fr 1fr 180px 100px; gap: 1.2rem; font-size: 0.72rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vm-muted);">
+            <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('cve')"><span>Vulnerabilidade &amp; Pacote</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
+            <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('agent_id')"><span>Ativo Afetado</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
+            <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem; justify-content: flex-end;" onclick="sortTable('cvss')"><span>Risco &amp; SLA</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
+            <div style="text-align: right;">Ação</div>
+          </div>
+          <!-- Card List Body (acting as our tbody) -->
+          <div id="vuln-table-body" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem;"></div>
+          <div id="empty-state-msg" class="empty-pretty" style="display: none; padding: 3rem 1rem;">
+            <div class="ep-ic" style="font-size: 2.2rem; margin-bottom: 0.5rem;">🛡️</div>
+            <div class="ep-t" style="font-size: 1.05rem; font-weight: 700; color: #fff;">Sem vulnerabilidades encontradas</div>
+            <div class="ep-d">Não existem registros correspondentes para a seleção de filtros atual.</div>
+          </div>
+        </div>
 
     <div class="pagination-bar">
       <div>
@@ -6626,6 +7058,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 3: Ativos & Exposição -->
       <section id="tab-assets" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Asset Exposure Management</div>
+          <h2>Exposição &amp; Contexto de Ativos</h2>
+          <p>Entenda quais ativos concentram risco, exposição e pendências de classificação — e aja direto pela interface.</p>
+        </div>
+        <div class="vm-strip">
+          <div class="vm-stat sc-accent"><div class="t">Total de ativos</div><div class="n" id="ax-total">—</div><div class="c">no inventário</div></div>
+          <div class="vm-stat sc-ok"><div class="t">Classificados</div><div class="n" id="ax-classified">—</div><div class="c">com contexto</div></div>
+          <div class="vm-stat sc-high"><div class="t">Pendentes</div><div class="n" id="ax-pending">—</div><div class="c">sem contexto</div></div>
+          <div class="vm-stat sc-crit"><div class="t">Críticos</div><div class="n" id="ax-critical">—</div><div class="c">criticidade crítica</div></div>
+          <div class="vm-stat sc-exp"><div class="t">Internet-facing</div><div class="n" id="ax-internet">—</div><div class="c">exposição internet</div></div>
+          <div class="vm-stat sc-high"><div class="t">DMZ</div><div class="n" id="ax-dmz">—</div><div class="c">zona intermediária</div></div>
+          <div class="vm-stat sc-info"><div class="t">Internal</div><div class="n" id="ax-internal">—</div><div class="c">rede interna</div></div>
+          <div class="vm-stat sc-med"><div class="t">Unknown</div><div class="n" id="ax-unknown">—</div><div class="c">exposição indefinida</div></div>
+        </div>
+        <div class="vm-grid-2" style="margin-bottom: 1.4rem;">
+          <div class="vm-panel">
+            <h4>Exposure Distribution</h4>
+            <div id="ax-expo-bars"><div class="vm-empty">Carregando exposição…</div></div>
+          </div>
+          <div class="vm-panel">
+            <h4>Asset Criticality Matrix <span style="font-size:0.68rem;color:var(--vm-faint);font-weight:600;text-transform:none;letter-spacing:0;">criticidade × exposição</span></h4>
+            <div id="ax-matrix"><div class="vm-empty">Carregando matriz…</div></div>
+          </div>
+        </div>
+        <div class="vm-panel" style="margin-bottom: 1.4rem;">
+          <h4>Top Assets by Contextual Risk</h4>
+          <div id="ax-top-assets"><div class="vm-empty">Carregando ranking de ativos…</div></div>
+        </div>
+
         <!-- Contexto de Ativos e Criticidade (Fase 3B) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -6642,8 +7104,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Cards de Métricas de Ativos -->
-      <div class="grid-risk-seven" style="margin-bottom: 1.5rem;">
+      <!-- Cards de Métricas de Ativos (legado oculto; dados mantidos p/ JS) -->
+      <div class="grid-risk-seven vm-hide" style="margin-bottom: 1.5rem;">
         <div class="risk-card total">
           <div class="metric-title" style="font-size: 0.75rem;">Total de Ativos</div>
           <div class="metric-value" id="assets-total" style="font-size: 1.6rem; margin-top: 0.25rem;">-</div>
@@ -6670,8 +7132,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
 
-        <!-- Fase 3H.2 - Dashboards Ativos & Exposição -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
+        <!-- Fase 3H.2 - Dashboards Ativos & Exposição (legado oculto; substituído por bars/matrix acima) -->
+        <div class="vm-hide" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
           <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
             <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Ativos por Criticidade</h4>
             <div id="assets-chart-criticality" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
@@ -6690,69 +7152,39 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Top Ativos por Risco -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            🔥 Top Ativos por Risco (VMDR)
+      <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+        <!-- Top Ativos por Risco (VMDR) -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>🔥 Top Ativos por Risco (VMDR)</h4>
+          <div id="assets-risk-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; justify-content: center; min-height: 120px;">
+            <div class="vm-empty">Carregando top ativos por risco...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Nome / Hostname</th>
-                <th>Criticidade</th>
-                <th>Exposição</th>
-                <th>Tipo</th>
-                <th style="text-align: right;">Risco total</th>
-              </tr>
-            </thead>
-            <tbody id="assets-risk-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando top ativos por risco...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
 
-        <!-- Tabela Ativos Pendentes de Classificação -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            ⚠️ Ativos Pendentes de Classificação (Sem Contexto)
+        <!-- Classification Work Queue — Ativos Pendentes -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>📋 Classification Work Queue — Ativos Pendentes</h4>
+          <div id="assets-pending-tbody" class="workqueue-grid" style="margin-top: 0.8rem; min-height: 120px; align-content: center;">
+            <div class="vm-empty">Carregando ativos pendentes...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Nome / Hostname</th>
-                <th>Status</th>
-                <th>Ação Recomendada</th>
-              </tr>
-            </thead>
-            <tbody id="assets-pending-tbody">
-              <tr>
-                <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando ativos pendentes...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
-      <!-- Nova Tabela: Todos os Ativos -->
+      <!-- Nova Tabela: Todos os Ativos (SaaS Premium Table) -->
       <div class="table-container" style="margin-top: 1.5rem;">
         <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2); display: flex; justify-content: space-between; align-items: center;">
-          <span>🖥️ Todos os Ativos</span>
+          <span>Asset Inventory — Inventário de Ativos</span>
           <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);" id="assets-total-count-badge">0 total</span>
         </div>
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Nome / Hostname</th>
-              <th>Criticidade</th>
-              <th>Exposição</th>
-              <th>Ambiente</th>
-              <th>Dono Técnico</th>
+              <th>Hostname / Agente ID</th>
+              <th style="text-align: center;">Criticidade</th>
+              <th style="text-align: center;">Exposição</th>
+              <th style="text-align: center;">Ambiente</th>
+              <th>Dono Técnico / Negócio</th>
+              <th style="text-align: center;">Serviço Crítico</th>
               <th style="text-align: center;">Ações</th>
             </tr>
           </thead>
@@ -6983,6 +7415,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 4: SLA & Backlog -->
       <section id="tab-sla" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Remediation Operations</div>
+          <h2>Tratamento &amp; SLA</h2>
+          <p>Acompanhe backlog, vencimentos e volume de correção por prioridade para reduzir risco no prazo.</p>
+        </div>
+        <div class="vm-strip">
+          <div class="vm-stat sc-ok"><div class="t">Dentro do prazo</div><div class="n" id="sx-within">—</div><div class="c">SLA saudável</div></div>
+          <div class="vm-stat sc-high"><div class="t">Próximo do prazo</div><div class="n" id="sx-soon">—</div><div class="c">atenção</div></div>
+          <div class="vm-stat sc-crit"><div class="t">Vencido</div><div class="n" id="sx-over">—</div><div class="c">SLA estourado</div></div>
+          <div class="vm-stat sc-med"><div class="t">Sem owner</div><div class="n" id="sx-noowner">—</div><div class="c">ativo não classificado</div></div>
+          <div class="vm-stat sc-accent"><div class="t">Backlog total</div><div class="n" id="sx-backlog">—</div><div class="c">itens acionáveis</div></div>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Remediation Queue</div><h2>Fila por Prioridade</h2><p>Volume de correção por nível de prioridade de tratativa.</p></div></div>
+        <div class="queue-grid" style="margin-bottom: 1.4rem;">
+          <div class="queue-card qc-p0"><div class="q-t">Priority 1+</div><div class="q-n" id="qx-p0">—</div><div class="q-c">KEV ativo / risco máximo</div></div>
+          <div class="queue-card qc-p1"><div class="q-t">Priority 1</div><div class="q-n" id="qx-p1">—</div><div class="q-c">alto CVSS &amp; EPSS</div></div>
+          <div class="queue-card qc-p2"><div class="q-t">Priority 2</div><div class="q-n" id="qx-p2">—</div><div class="q-c">CVSS alto</div></div>
+          <div class="queue-card qc-p3"><div class="q-t">Priority 3</div><div class="q-n" id="qx-p3">—</div><div class="q-c">EPSS alto</div></div>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Backlog detalhado</div><h2>SLA &amp; Vencimentos</h2><p>Detalhamento operacional do backlog e prazos.</p></div></div>
         <!-- SLA, Aging e Backlog Operacional (Fase 3D) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -7057,150 +7509,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Top Vulnerabilidades Vencidas -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            🚨 Top Vulnerabilidades Vencidas (Overdue)
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+        <!-- Overdue Vulnerabilities (Vencidos) -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>🚨 Top Vulnerabilidades Vencidas (Overdue)</h4>
+          <div id="sla-overdue-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando vencimentos...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>CVE</th>
-                <th>Ativo</th>
-                <th>Pacote</th>
-                <th>Severidade</th>
-                <th style="text-align: right;">Atraso (Dias)</th>
-                <th>Prazo Limite</th>
-              </tr>
-            </thead>
-            <tbody id="sla-overdue-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando vulnerabilidades vencidas...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
 
-        <!-- Tabela Próximas do Vencimento -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            ⏳ Próximas do Vencimento (Due Soon)
+        <!-- Due Soon (Próximos) -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>⏳ Próximas do Vencimento (Due Soon)</h4>
+          <div id="sla-due-soon-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando próximos vencimentos...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>CVE</th>
-                <th>Ativo</th>
-                <th>Pacote</th>
-                <th>Severidade</th>
-                <th style="text-align: right;">Restante (Dias)</th>
-                <th>Prazo Limite</th>
-              </tr>
-            </thead>
-            <tbody id="sla-due-soon-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando vulnerabilidades próximas do vencimento...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Top CVEs Persistentes -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            ⚠️ Top CVEs Persistentes (Aging &gt;= 30 Dias)
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+        <!-- Top CVEs Persistentes -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>⚠️ Top CVEs Persistentes (Aging &ge; 30 Dias)</h4>
+          <div id="sla-persistent-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando persistentes...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>CVE</th>
-                <th>Ativo</th>
-                <th>Pacote</th>
-                <th>Severidade</th>
-                <th style="text-align: right;">Aging (Dias)</th>
-              </tr>
-            </thead>
-            <tbody id="sla-persistent-tbody">
-              <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando CVEs persistentes...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
 
-        <!-- Tabela Top CVEs Recorrentes -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            🔄 Top CVEs Recorrentes (Aparições &gt;= 3 Snapshots)
+        <!-- Top CVEs Recorrentes -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>🔄 Top CVEs Recorrentes (Aparições &ge; 3 Snapshots)</h4>
+          <div id="sla-recurring-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando recorrentes...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>CVE</th>
-                <th>Ativo</th>
-                <th>Pacote</th>
-                <th>Severidade</th>
-                <th style="text-align: right;">Snapshots</th>
-              </tr>
-            </thead>
-            <tbody id="sla-recurring-tbody">
-              <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando CVEs recorrentes...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Backlog por Ativo -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            🖥️ Backlog de Vulnerabilidades por Ativo
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+        <!-- Backlog de Vulnerabilidades por Ativo -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>🖥️ Backlog de Vulnerabilidades por Ativo</h4>
+          <div id="sla-backlog-asset-tbody" style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando backlog por ativo...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Ativo</th>
-                <th>Total</th>
-                <th style="color:#f87171;">Vencidas</th>
-                <th style="color:#fb923c;">Próximas</th>
-                <th style="color:#34d399;">No SLA</th>
-              </tr>
-            </thead>
-            <tbody id="sla-backlog-asset-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando backlog por ativo...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
 
-        <!-- Tabela Backlog por Owner Técnico -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            👥 Backlog de Vulnerabilidades por Owner Técnico
+        <!-- Backlog de Vulnerabilidades por Owner Técnico -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>👥 Backlog de Vulnerabilidades por Owner Técnico</h4>
+          <div id="sla-backlog-owner-tbody" style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando backlog por owner...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Owner Técnico</th>
-                <th>Total</th>
-                <th style="color:#f87171;">Vencidas</th>
-                <th style="color:#fb923c;">Próximas</th>
-                <th style="color:#34d399;">No SLA</th>
-              </tr>
-            </thead>
-            <tbody id="sla-backlog-owner-tbody">
-              <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando backlog por owner...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -7229,6 +7588,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 5: Governança & Exceções -->
       <section id="tab-governance" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Risk-Based Prioritization</div>
+          <h2>Priorização Contextual</h2>
+          <p>Ordene vulnerabilidades por severidade, exploração conhecida, probabilidade, exposição e criticidade do ativo.</p>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Prioritization Drivers</div><h2>Fatores que Elevam o Risco</h2><p>Sinais que promovem uma vulnerabilidade para tratamento imediato.</p></div></div>
+        <div class="vm-strip">
+          <div class="vm-stat sc-kev"><div class="t">KEV</div><div class="n" id="pd-kev">—</div><div class="c">exploradas conhecidas</div></div>
+          <div class="vm-stat sc-epss"><div class="t">EPSS alto</div><div class="n" id="pd-epss">—</div><div class="c">&ge; limiar</div></div>
+          <div class="vm-stat sc-crit"><div class="t">CVSS crítico</div><div class="n" id="pd-cvss">—</div><div class="c">&ge; 9.0</div></div>
+          <div class="vm-stat sc-exp"><div class="t">Exposto</div><div class="n" id="pd-exp">—</div><div class="c">internet / DMZ</div></div>
+          <div class="vm-stat sc-info"><div class="t">Ativo crítico</div><div class="n" id="pd-asset">—</div><div class="c">criticidade crítica</div></div>
+          <div class="vm-stat sc-high"><div class="t">SLA em risco</div><div class="n" id="pd-sla">—</div><div class="c">vencido / próximo</div></div>
+        </div>
+        <div class="vm-panel" style="margin-bottom:1.4rem;">
+          <h4>Top Prioritized Findings <span style="font-size:0.68rem;color:var(--vm-faint);font-weight:600;text-transform:none;letter-spacing:0;">com fatores de risco (why this matters)</span></h4>
+          <div id="pd-top"><div class="vm-empty">Carregando prioridades…</div></div>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Exceções &amp; Governança</div><h2>Aceitação de Risco</h2><p>Regras declaradas de exceção e falso-positivo aplicadas à priorização.</p></div></div>
         <!-- Risk Acceptance e Gestão de Exceções (Fase 3E) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -7516,6 +7894,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 6: Tendências -->
       <section id="tab-trends" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Intelligence</div>
+          <h2>Tendências &amp; Inteligência</h2>
+          <p>Monitore a evolução do risco, exposição e backlog ao longo do tempo, com sinais de KEV, EPSS, ransomware e correção.</p>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Intelligence Signals</div><h2>Sinais de Inteligência</h2><p>Indicadores que orientam a urgência de correção.</p></div></div>
+        <div class="vm-strip">
+          <div class="vm-stat sc-kev"><div class="t">KEV</div><div class="n" id="ti-kev">—</div><div class="c">exploradas conhecidas</div></div>
+          <div class="vm-stat sc-epss"><div class="t">EPSS alto</div><div class="n" id="ti-epss">—</div><div class="c">alta probabilidade</div></div>
+          <div class="vm-stat sc-crit"><div class="t">Ransomware</div><div class="n" id="ti-ransom">—</div><div class="c">associadas a ransomware</div></div>
+          <div class="vm-stat sc-ok"><div class="t">Fix disponível</div><div class="n" id="ti-fix">—</div><div class="c">com correção</div></div>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Trend Insights</div><h2>Conclusões</h2><p>Leitura executiva do momento atual do risco.</p></div></div>
+        <div class="vm-grid-4" id="trend-insights" style="margin-bottom:1.4rem;"><div class="vm-empty" style="grid-column:1/-1;">Gerando conclusões…</div></div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Séries temporais</div><h2>Evolução ao Longo do Tempo</h2><p>Risco, exposição e backlog por período — requer histórico de execuções.</p></div></div>
         <!-- Trend Analytics e Evolução do Risco (Fase 3F) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -7791,6 +8184,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 7: Plano de Tratativa -->
       <section id="tab-treatment" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Remediation Plan</div>
+          <h2>Plano de Tratativa</h2>
+          <p>O que corrigir primeiro, quem é o dono e qual o próximo passo recomendado para reduzir risco.</p>
+        </div>
+        <div class="vm-grid-2" style="margin-bottom:1.4rem;">
+          <div class="vm-panel"><h4>Recommended Actions</h4><div id="rec-list"><div class="vm-empty">Analisando ações recomendadas…</div></div></div>
+          <div class="vm-panel"><h4>Owner Workload <span style="font-size:0.68rem;color:var(--vm-faint);font-weight:600;text-transform:none;letter-spacing:0;">carga por dono técnico</span></h4><div id="owner-list"><div class="vm-empty">Agrupando por dono…</div></div></div>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Treatment Plan</div><h2>Itens de Tratativa</h2><p>Detalhamento das ações priorizadas por dono, ativo e SLA.</p></div></div>
         <!-- Plano de Tratativa e Workload Operacional (Fase 3G) -->
     <div style="margin-top: 2rem; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
@@ -7859,131 +8262,47 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-      <!-- Tabelas de Priorização e Cargas de Trabalho -->
-      <div class="table-container">
-        <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-          🔥 Top Itens para Tratativa Operacional (Fase 3G)
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>CVE</th>
-              <th>Ativo</th>
-              <th>Pacote</th>
-              <th>Dono Técnico</th>
-              <th>Criticidade / Exposição</th>
-              <th style="text-align: center;">Prioridade Operacional</th>
-              <th>Balde / Ação Sugerida</th>
-              <th>Complexidade (Esforço)</th>
-              <th>Motivo da Priorização</th>
-            </tr>
-          </thead>
-          <tbody id="treatment-top-tbody">
-            <tr>
-              <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando plano de tratativa...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Workload por Owner -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            👥 Distribuição de Carga de Trabalho (Workload) por Owner Técnico
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Owner Técnico</th>
-                <th>Total Ativo</th>
-                <th>Bucket Now (Imediato)</th>
-                <th>Próximos 7d / 15d / 30d</th>
-                <th>SLA Overdue / Due Soon</th>
-                <th>Críticas / Altas</th>
-                <th>Esforço (Baixo / Médio / Alto)</th>
-                <th>Top Ativos / Top CVEs Afetados</th>
-              </tr>
-            </thead>
-            <tbody id="treatment-workload-tbody">
-              <tr>
-                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando workload por owner...</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- Top Itens para Tratativa Operacional -->
+      <div class="vm-panel" style="margin-top: 1.5rem;">
+        <h4>🔥 Top Itens para Tratativa Operacional (Fase 3G)</h4>
+        <div id="treatment-top-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+          <div class="vm-empty">Carregando plano de tratativa...</div>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Quick Wins -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: #10b981; border-bottom: 1px solid var(--border-color); background: rgba(16, 185, 129, 0.05);">
-            🎯 Quick Wins (Ações de Baixo Esforço e Alto Impacto)
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Ação Recomendada</th>
-                <th>Dono Técnico</th>
-                <th>Ativos Afetados</th>
-                <th>Janela Sugerida</th>
-                <th style="text-align: center;">Score</th>
-                <th>Justificativa</th>
-              </tr>
-            </thead>
-            <tbody id="treatment-wins-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando quick wins...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Tabela Mudança Planejada / Alta Complexidade -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: #eab308; border-bottom: 1px solid var(--border-color); background: rgba(234, 179, 8, 0.05);">
-            ⚙️ Janelas de Mudança Planejada (Alta Complexidade / Impacto)
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Plano de Mudança</th>
-                <th>Dono Técnico</th>
-                <th>Ativos Afetados</th>
-                <th>Esforço Estimado</th>
-                <th>Status Janela</th>
-                <th>Detalhamento Técnico</th>
-              </tr>
-            </thead>
-            <tbody id="treatment-change-tbody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando janela de mudanças...</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- Workload por Owner Técnico -->
+      <div class="vm-panel" style="margin-top: 1.5rem;">
+        <h4>👥 Distribuição de Carga de Trabalho (Workload) por Owner Técnico</h4>
+        <div id="treatment-workload-tbody" class="workload-grid" style="margin-top: 1rem; min-height: 120px; align-content: center;">
+          <div class="vm-empty">Carregando workload por owner...</div>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-        <!-- Tabela Alertas de Tratativa -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            🚨 Alertas do Plano de Tratativa
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
+        <!-- Quick Wins -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4 style="color: #10b981;">🎯 Quick Wins (Ações de Baixo Esforço e Alto Impacto)</h4>
+          <div id="treatment-wins-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando quick wins...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 120px;">Gravidade</th>
-                <th>Alerta Operacional</th>
-                <th>Descrição Detalhada do Alerta</th>
-              </tr>
-            </thead>
-            <tbody id="treatment-plan-alerts-tbody">
-              <tr>
-                <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Carregando alertas do plano...</td>
-              </tr>
-            </tbody>
-          </table>
+        </div>
+
+        <!-- Janelas de Mudança Planejada -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4 style="color: #eab308;">⚙️ Janelas de Mudança Planejada (Alta Complexidade / Impacto)</h4>
+          <div id="treatment-change-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando janelas de mudanças...</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+        <!-- Alertas de Tratativa -->
+        <div class="vm-panel" style="margin-bottom: 0;">
+          <h4>🚨 Alertas do Plano de Tratativa</h4>
+          <div id="treatment-plan-alerts-tbody" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando alertas...</div>
+          </div>
         </div>
 
         <!-- Tabela Agrupamentos Buckets & Esforço -->
@@ -8012,6 +8331,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <!-- Aba 8: Status & Auditoria -->
       <section id="tab-status" class="tab-panel">
+        <div class="tab-hero">
+          <div class="vm-kicker">Operations</div>
+          <h2>Operação &amp; Auditoria</h2>
+          <p>Status operacional do EyeMole, modo seguro e trilha de alterações de contexto.</p>
+        </div>
+        <div class="secmode" style="margin-bottom:1.4rem;">
+          <h4>🔒 Modo Seguro Ativo</h4>
+          <ul>
+            <li>Execução manual via Web bloqueada — nenhum disparo de análise pela interface.</li>
+            <li>Edição de contexto de ativos permitida (apenas JSON local autorizado).</li>
+            <li>Sem sudoers e sem NOPASSWD; nenhuma ação administrativa via Web.</li>
+            <li>API local somente em 127.0.0.1:8765, atrás de Basic Auth do Nginx.</li>
+            <li>Alterações de contexto auditadas em /opt/hmg-soar/audit/audit_actions.jsonl.</li>
+          </ul>
+        </div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Operational Health</div><h2>Saúde Operacional</h2><p>API, serviço de relatório, agendamento e último relatório.</p></div></div>
         <!-- Painel de Execução Manual -->
     <div class="toolbar" style="justify-content: flex-start; gap: 1.5rem; align-items: center;">
       <button class="btn btn-run" id="btn-run-analysis" onclick="runAnalysis()">
@@ -8055,30 +8390,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Tabela de Auditoria -->
-      <div class="table-container" style="margin-bottom: 0;">
-        <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: rgba(10, 14, 23, 0.2);">
-          <span>📋 Últimas 10 Execuções Auditadas</span>
-          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;" id="audit-last-checked"></span>
+      <!-- Audit Timeline (Vertical timeline layout) -->
+      <div class="vm-panel" style="margin-bottom: 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--vm-stroke); padding-bottom: 0.6rem; margin-bottom: 1.2rem;">
+          <h4 style="margin: 0;">Timeline de Auditoria — Últimas Ações Auditadas</h4>
+          <span style="font-size: 0.8rem; color: var(--vm-faint);" id="audit-last-checked"></span>
         </div>
-        <table id="audit-table">
-          <thead>
-            <tr>
-              <th>Data/Hora (UTC)</th>
-              <th>Operador</th>
-              <th>IP Origem</th>
-              <th>Ação</th>
-              <th>Resultado</th>
-              <th>Status / Exit</th>
-              <th>Mensagem</th>
-            </tr>
-          </thead>
-          <tbody id="audit-table-body">
-            <tr>
-              <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando dados de auditoria...</td>
-            </tr>
-          </tbody>
-        </table>
+        <div id="audit-table" class="vm-timeline">
+          <div id="audit-table-body" style="display: flex; flex-direction: column; gap: 0.20rem;">
+            <div class="vm-empty">Carregando dados de auditoria...</div>
+          </div>
+        </div>
       </div>
     </div>
       </section>
@@ -8158,6 +8480,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa'),
           safeRefresh(refreshTrendSummary, 'trends', 'Tendências')
         ]);
+        try { renderCommandCenter(); } catch (e) { /* silencioso */ }
+        try { renderTabsExtras(); } catch (e) { /* silencioso */ }
       } catch (err) {
         console.error('Erro ao recarregar dados:', err);
       } finally {
@@ -8175,6 +8499,249 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     const rawData = {{VULN_DATA}};
     const scanMeta = { genTime: "{{GEN_TIME}}", cvssThresh: {{CVSS_THRESH}}, epssThresh: {{EPSS_THRESH}} };
+
+    // ======================================================================
+    // RISK COMMAND CENTER + VALIDATION FUNNEL + HERO CHIPS
+    // Apenas leitura/derivação de dados já carregados (rawData). Sem rede,
+    // sem execução, sem chamadas administrativas.
+    // ======================================================================
+    function renderCommandCenter() {
+      try {
+        const data = Array.isArray(rawData) ? rawData : [];
+        const total = data.length;
+        const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
+        let crit = 0, high = 0, kev = 0, epss = 0, exposed = 0, critAsset = 0, slaRisk = 0, fix = 0;
+        const agents = new Set();
+
+        data.forEach(v => {
+          if (!v) return;
+          const sev = String(v.severity || '').toLowerCase();
+          if (sev === 'critical') crit++;
+          else if (sev === 'high') high++;
+          if (v.is_kev) kev++;
+          const ep = (v.epss == null) ? 0 : Number(v.epss);
+          if (!isNaN(ep) && ep >= th) epss++;
+          const expo = String(v.exposure || v.exposure_level || v.network_zone || '').toLowerCase();
+          if (expo === 'internet' || expo === 'dmz' || expo === 'internet-facing' || expo === 'internet_facing') exposed++;
+          if (String(v.criticality || '').toLowerCase() === 'critical') critAsset++;
+          const sla = String(v.sla_status || '').toLowerCase();
+          if (sla === 'overdue' || sla === 'due_soon' || sla === 'vencido' || sla === 'due-soon') slaRisk++;
+          const ver = String(v.version || '').trim().toLowerCase();
+          if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') fix++;
+          if (v.agent_id) agents.add(v.agent_id);
+        });
+
+        let score = 0;
+        if (total > 0) {
+          const raw = (crit * 3 + high * 1.5 + kev * 4 + epss * 2 + exposed * 2 + critAsset * 2.5) / total;
+          score = Math.max(0, Math.min(100, Math.round(raw * 12)));
+        }
+
+        const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+        const bar = (id, pct) => { const e = document.getElementById(id); if (e) e.style.width = Math.max(0, Math.min(100, pct)) + '%'; };
+
+        set('ccv-total', total); set('ccv-crit', crit); set('ccv-high', high);
+        set('ccv-kev', kev); set('ccv-epss', epss); set('ccv-exposed', exposed);
+        set('ccv-sla', slaRisk);
+        set('ccv-score', score);
+        const cap = score >= 70 ? 'Risco elevado' : score >= 40 ? 'Risco moderado' : 'Risco controlado';
+        set('ccv-score-cap', cap + ' · ' + total + ' CVEs no snapshot');
+        bar('ccv-gauge', Math.max(4, score));
+
+        set('hero-cves', total);
+        set('hero-agents', agents.size);
+
+        const steps = [crit + high, kev, epss, fix, exposed, critAsset, slaRisk];
+        const denom = Math.max(total, 1);
+        for (let i = 0; i < 7; i++) {
+          set('fnv-' + (i + 1), steps[i]);
+          bar('fnb-' + (i + 1), Math.round(steps[i] / denom * 100));
+        }
+
+        // Espelha estado operacional (API/timer/geração) quando já carregado.
+        const clean = (t) => String(t || '').replace(/^[●•\\s]+/, '').trim();
+        const apiEl = document.getElementById('overview-status-api');
+        if (apiEl) { const t = clean(apiEl.textContent); if (t && t !== '-') set('hero-api', t); }
+        const timerEl = document.getElementById('status-timer');
+        if (timerEl) { const t = clean(timerEl.textContent); if (t && t !== '-') set('hero-timer', t); }
+        const genEl = document.getElementById('overview-generation-time');
+        if (genEl) { const t = (genEl.textContent || '').replace('Gerado em:', '').trim(); if (t && t !== '-') set('hero-lastgen', t); }
+
+        // Ativos sem classificação: derivado assíncrono via /assets-context (best-effort).
+        try { updateUnclassifiedCount(); } catch (e) { /* silencioso */ }
+      } catch (e) {
+        console.warn('[EyeMole] renderCommandCenter falhou:', e);
+      }
+    }
+
+    // Deriva uma visão por ativo a partir das vulnerabilidades (rawData).
+    function vmDeriveAssets() {
+      const map = {};
+      const critRank = { unknown: 0, low: 1, medium: 2, high: 3, critical: 4 };
+      const expoRank = { unknown: 0, internal: 1, dmz: 2, internet: 3 };
+      (Array.isArray(rawData) ? rawData : []).forEach(v => {
+        if (!v) return;
+        const id = v.agent_id || v.agent_name || 'unknown';
+        if (!map[id]) map[id] = { id, host: v.agent_name || id, crit: 'unknown', expo: 'unknown', env: (v.environment || 'unknown'), tech: (v.technical_owner || ''), biz: (v.business_owner || ''), critsvc: !!v.is_critical_service, cls: (v.classification_status || ''), vulns: 0, score: 0 };
+        const a = map[id];
+        a.vulns++;
+        const c = String(v.criticality || 'unknown').toLowerCase();
+        if ((critRank[c] || 0) > (critRank[a.crit] || 0)) a.crit = c;
+        let e = String(v.exposure || v.exposure_level || v.network_zone || 'unknown').toLowerCase();
+        if (e === 'internet-facing' || e === 'internet_facing') e = 'internet';
+        if ((expoRank[e] || 0) > (expoRank[a.expo] || 0)) a.expo = e;
+        const sev = String(v.severity || '').toLowerCase();
+        let w = sev === 'critical' ? 4 : sev === 'high' ? 2.5 : sev === 'medium' ? 1 : 0.4;
+        if (v.is_kev) w += 3;
+        const ep = Number(v.epss || 0); if (!isNaN(ep) && ep >= 0.2) w += 1.5;
+        a.score += w;
+        if (v.technical_owner && !a.tech) a.tech = v.technical_owner;
+        if (v.business_owner && !a.biz) a.biz = v.business_owner;
+        if (v.classification_status && !a.cls) a.cls = v.classification_status;
+      });
+      return Object.values(map);
+    }
+
+    // Popula todos os novos componentes das abas internas (somente leitura de rawData).
+    function renderTabsExtras() {
+      try {
+        const data = Array.isArray(rawData) ? rawData : [];
+        const total = data.length;
+        const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
+        const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        const setH = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h; };
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        let crit = 0, high = 0, kev = 0, epss = 0, fix = 0, cvssCrit = 0, exposed = 0, critAsset = 0, ransom = 0, slaRisk = 0;
+        const pcount = { 'Priority 1+': 0, 'Priority 1': 0, 'Priority 2': 0, 'Priority 3': 0, 'Priority 4': 0 };
+        let hasSla = false, slaWithin = 0, slaSoon = 0, slaOver = 0;
+        data.forEach(v => {
+          const sev = String(v.severity || '').toLowerCase();
+          if (sev === 'critical') crit++; else if (sev === 'high') high++;
+          if (v.is_kev) kev++;
+          const ep = Number(v.epss || 0); if (!isNaN(ep) && ep >= th) epss++;
+          const cv = Number(v.cvss || 0); if (!isNaN(cv) && cv >= 9) cvssCrit++;
+          const ver = String(v.version || '').trim().toLowerCase(); if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') fix++;
+          const expo = String(v.exposure || v.exposure_level || '').toLowerCase(); if (expo === 'internet' || expo === 'dmz' || expo === 'internet-facing' || expo === 'internet_facing') exposed++;
+          if (String(v.criticality || '').toLowerCase() === 'critical') critAsset++;
+          if (v.is_ransomware) ransom++;
+          const sla = String(v.sla_status || '').toLowerCase();
+          if (sla) { hasSla = true; if (sla === 'overdue' || sla === 'vencido') { slaOver++; slaRisk++; } else if (sla === 'due_soon' || sla === 'due-soon') { slaSoon++; slaRisk++; } else slaWithin++; }
+          if (v.priority && pcount[v.priority] != null) pcount[v.priority]++;
+        });
+
+        setT('vs-total', total); setT('vs-crit', crit); setT('vs-high', high); setT('vs-kev', kev); setT('vs-epss', epss); setT('vs-fix', fix);
+
+        const assets = vmDeriveAssets();
+        const noOwner = assets.filter(a => !a.tech).length;
+        setT('sx-within', hasSla ? slaWithin : '—'); setT('sx-soon', hasSla ? slaSoon : '—'); setT('sx-over', hasSla ? slaOver : '—');
+        setT('sx-noowner', noOwner); setT('sx-backlog', pcount['Priority 1+'] + pcount['Priority 1'] + pcount['Priority 2']);
+        setT('qx-p0', pcount['Priority 1+']); setT('qx-p1', pcount['Priority 1']); setT('qx-p2', pcount['Priority 2']); setT('qx-p3', pcount['Priority 3']);
+
+        setT('pd-kev', kev); setT('pd-epss', epss); setT('pd-cvss', cvssCrit); setT('pd-exp', exposed); setT('pd-asset', critAsset); setT('pd-sla', slaRisk);
+        setT('ti-kev', kev); setT('ti-epss', epss); setT('ti-ransom', ransom); setT('ti-fix', fix);
+
+        let aClass = 0, aPend = 0, aCrit = 0, aInet = 0, aDmz = 0, aInternal = 0, aUnknown = 0;
+        assets.forEach(a => {
+          const pend = a.cls ? a.cls.toLowerCase() === 'pending' : a.crit === 'unknown';
+          if (pend) aPend++; else aClass++;
+          if (a.crit === 'critical') aCrit++;
+          if (a.expo === 'internet') aInet++; else if (a.expo === 'dmz') aDmz++; else if (a.expo === 'internal') aInternal++; else aUnknown++;
+        });
+        setT('ax-total', assets.length); setT('ax-classified', aClass); setT('ax-pending', aPend); setT('ax-critical', aCrit);
+        setT('ax-internet', aInet); setT('ax-dmz', aDmz); setT('ax-internal', aInternal); setT('ax-unknown', aUnknown);
+
+        const expoData = [['internet', aInet, 'var(--vm-crit)'], ['dmz', aDmz, 'var(--vm-high)'], ['internal', aInternal, 'var(--vm-info)'], ['unknown', aUnknown, 'var(--vm-med)']];
+        const maxE = Math.max(1, ...expoData.map(d => d[1]));
+        setH('ax-expo-bars', expoData.map(d => `<div class="hbar-row"><span class="lab">${d[0]}</span><div class="hbar-track"><span class="hbar-fill" style="width:${Math.round(d[1] / maxE * 100)}%;background:${d[2]}"></span></div><span class="val">${d[1]}</span></div>`).join('') || '<div class="vm-empty">Sem dados</div>');
+
+        const crits = ['critical', 'high', 'medium', 'low'];
+        const expos = ['internet', 'dmz', 'internal', 'unknown'];
+        const cellc = {};
+        assets.forEach(a => { const k = a.crit + '|' + a.expo; cellc[k] = (cellc[k] || 0) + 1; });
+        let mh = '<div class="rmatrix"><div class="rm-h"></div>' + expos.map(e => `<div class="rm-h">${e}</div>`).join('');
+        crits.forEach(c => {
+          mh += `<div class="rm-y">${c}</div>`;
+          expos.forEach(e => {
+            const n = cellc[c + '|' + e] || 0;
+            let lvl = 0;
+            if (n > 0) lvl = (c === 'critical' && (e === 'internet' || e === 'dmz')) ? 4 : (c === 'critical' || e === 'internet') ? 3 : (c === 'high' || e === 'dmz') ? 2 : 1;
+            mh += `<div class="rm-cell rm-l${lvl}">${n || ''}</div>`;
+          });
+        });
+        mh += '</div>';
+        setH('ax-matrix', mh);
+
+        const topA = assets.slice().sort((a, b) => b.score - a.score).slice(0, 8);
+        const maxS = Math.max(1, ...topA.map(a => a.score));
+        if (topA.length) {
+          setH('ax-top-assets', topA.map(a => {
+            const cc = a.crit === 'critical' ? 'var(--vm-crit)' : a.crit === 'high' ? 'var(--vm-high)' : a.crit === 'medium' ? 'var(--vm-med)' : 'var(--vm-info)';
+            const idJ = JSON.stringify(String(a.id)); const hoJ = JSON.stringify(String(a.host));
+            return `<div class="hbar-row" style="grid-template-columns:150px 1fr 60px 128px;"><span class="lab" title="${esc(a.host)}">${esc(a.host)}</span><div class="hbar-track"><span class="hbar-fill" style="width:${Math.round(a.score / maxS * 100)}%;background:${cc}"></span></div><span class="val">${Math.round(a.score)}</span><span style="text-align:right;"><button class="vm-btn" style="padding:0.3rem 0.6rem;font-size:0.72rem;" onclick='openClassifyModal(${idJ},${hoJ})'>Editar contexto</button></span></div>`;
+          }).join(''));
+        } else setH('ax-top-assets', '<div class="empty-pretty"><div class="ep-ic">🖥️</div><div class="ep-t">Sem ativos</div><div class="ep-d">Nenhum ativo derivado das vulnerabilidades atuais.</div></div>');
+
+        const pr = { 'Priority 1+': 0, 'Priority 1': 1, 'Priority 2': 2, 'Priority 3': 3, 'Priority 4': 4 };
+        const findings = data.slice().sort((a, b) => ((pr[a.priority] == null ? 9 : pr[a.priority]) - (pr[b.priority] == null ? 9 : pr[b.priority])) || (Number(b.cvss || 0) - Number(a.cvss || 0))).slice(0, 8);
+        if (findings.length) {
+          setH('pd-top', findings.map(v => {
+            const chips = [];
+            if (v.is_kev) chips.push('<span class="rchip rchip-kev">KEV</span>');
+            if (Number(v.epss || 0) >= th) chips.push('<span class="rchip rchip-epss">EPSS alto</span>');
+            if (Number(v.cvss || 0) >= 9) chips.push('<span class="rchip rchip-cvss">CVSS ' + Number(v.cvss).toFixed(1) + '</span>');
+            const expo = String(v.exposure || v.exposure_level || '').toLowerCase(); if (expo === 'internet' || expo === 'dmz') chips.push('<span class="rchip rchip-exp">Internet Exposed</span>');
+            if (String(v.criticality || '').toLowerCase() === 'critical') chips.push('<span class="rchip rchip-asset">Critical Asset</span>');
+            if (v.is_ransomware) chips.push('<span class="rchip rchip-sla">Ransomware</span>');
+            const ver = String(v.version || '').trim().toLowerCase(); if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') chips.push('<span class="rchip rchip-fix">Fix Available</span>');
+            return `<div style="padding:0.7rem 0;border-bottom:1px solid var(--vm-stroke-soft);display:grid;grid-template-columns:1fr auto;gap:0.6rem;align-items:start;"><div><div style="font-weight:750;color:#eaf2ff;">${esc(v.cve || '-')} <span style="color:var(--vm-faint);font-weight:600;">· ${esc(v.package || '')}</span></div><div style="font-size:0.78rem;color:var(--vm-muted);margin:0.15rem 0 0.4rem;">Ativo ${esc(v.agent_name || v.agent_id || '-')} · ${esc(v.priority || '')}</div><div style="display:flex;flex-wrap:wrap;gap:0.35rem;">${chips.join('') || '<span class="rchip" style="color:var(--vm-faint);border-color:var(--vm-stroke);">Sem fatores adicionais</span>'}</div></div><div style="text-align:right;"><span class="vm-pill vm-pill-score">CVSS ${v.cvss != null ? Number(v.cvss).toFixed(1) : '-'}</span></div></div>`;
+          }).join(''));
+        } else setH('pd-top', '<div class="vm-empty">Sem findings priorizados.</div>');
+
+        const recs = [];
+        if (kev > 0) recs.push(['🛡️', 'Corrigir vulnerabilidades KEV', kev + ' vulnerabilidade(s) explorada(s) conhecida(s) exigem correção imediata.']);
+        if (aPend > 0) recs.push(['🏷️', 'Classificar ativos pendentes', aPend + ' ativo(s) sem contexto reduzem a precisão da priorização.']);
+        if (slaRisk > 0) recs.push(['⏰', 'Tratar SLA vencido/próximo', slaRisk + ' item(ns) com risco de SLA.']);
+        if (exposed > 0) recs.push(['🌐', 'Revisar ativos expostos', exposed + ' item(ns) em ativos internet/DMZ.']);
+        if (!recs.length) recs.push(['✅', 'Nenhuma ação crítica pendente', 'O backlog atual está sob controle.']);
+        setH('rec-list', recs.map(r => `<div class="action-item"><div class="action-ic">${r[0]}</div><div><div class="a-t">${esc(r[1])}</div><div class="a-d">${esc(r[2])}</div></div></div>`).join(''));
+
+        const owners = {};
+        data.forEach(v => { const o = (v.technical_owner || '').trim() || 'Sem dono'; if (!owners[o]) owners[o] = { n: 0, score: 0 }; owners[o].n++; const sev = String(v.severity || '').toLowerCase(); owners[o].score += sev === 'critical' ? 4 : sev === 'high' ? 2.5 : 1; });
+        const ownerArr = Object.entries(owners).sort((a, b) => b[1].score - a[1].score).slice(0, 6);
+        if (ownerArr.length && !(ownerArr.length === 1 && ownerArr[0][0] === 'Sem dono')) {
+          setH('owner-list', ownerArr.map(([name, d]) => `<div class="owner-row"><div><div class="o-name">${esc(name)}</div><div class="o-sub">${d.n} item(ns)</div></div><div class="o-count">${d.n}</div><div style="text-align:right;"><span class="vm-pill vm-pill-score">risco ${Math.round(d.score)}</span></div></div>`).join(''));
+        } else setH('owner-list', '<div class="empty-pretty"><div class="ep-ic">👤</div><div class="ep-t">Sem donos definidos</div><div class="ep-d">Classifique ativos para atribuir donos técnicos.</div></div>');
+
+        const insights = [
+          ['var(--vm-crit)', 'Severidade alta', (crit + high) + ' crít./altas', (crit + high) > 0 ? 'Concentre a correção nas severidades mais altas.' : 'Sem críticas/altas no snapshot.'],
+          ['var(--vm-high)', 'Ativos pendentes', aPend + ' pendente(s)', aPend > 0 ? 'Classifique para melhorar a priorização contextual.' : 'Todos os ativos classificados.'],
+          ['var(--vm-kev)', 'Exploração ativa', kev + ' KEV', kev > 0 ? 'Vulnerabilidades exploradas conhecidas presentes.' : 'Nenhuma KEV detectada.'],
+          ['var(--vm-accent)', 'Backlog urgente', (pcount['Priority 1+'] + pcount['Priority 1']) + ' itens', 'Prioridade máxima aguardando tratativa.']
+        ];
+        setH('trend-insights', insights.map(i => `<div class="insight-card" style="--ic:${i[0]}"><div class="i-t">${esc(i[1])}</div><div class="i-v">${esc(i[2])}</div><div class="i-d">${esc(i[3])}</div></div>`).join(''));
+      } catch (e) {
+        console.warn('[EyeMole] renderTabsExtras falhou:', e);
+      }
+    }
+
+    async function updateUnclassifiedCount() {
+      try {
+        const resp = await fetch('/soar-api/assets-context', { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const agentsObj = (data && data.agents) ? data.agents : {};
+        let pending = 0, totalA = 0;
+        Object.keys(agentsObj).forEach(k => {
+          totalA++;
+          const a = agentsObj[k] || {};
+          const st = String(a.classification_status || '').toLowerCase();
+          const crit = String(a.criticality || 'unknown').toLowerCase();
+          if (st === 'pending' || (!st && crit === 'unknown')) pending++;
+        });
+        const e = document.getElementById('ccv-unclass'); if (e) e.textContent = pending;
+      } catch (e) { /* best-effort */ }
+    }
 
     function safeGetEl(id) {
       return document.getElementById(id);
@@ -8284,6 +8851,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       try { calculateMetrics(); } catch(e) { console.error('Erro calculateMetrics:', e); }
       try { applyFilters(); } catch(e) { console.error('Erro applyFilters:', e); }
+      try { renderCommandCenter(); } catch(e) { console.error('Erro renderCommandCenter:', e); }
+      try { renderTabsExtras(); } catch(e) { console.error('Erro renderTabsExtras:', e); }
 
       await safeRefresh(refreshOperationalStatus, 'status', 'Status & Auditoria');
       await safeRefresh(refreshRiskIntelligence, 'risk', 'Vulnerabilidades');
@@ -8293,6 +8862,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções');
       await safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
       await safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa');
+
+      // Reexecuta após o status operacional carregar (espelha API/Timer no hero).
+      try { renderCommandCenter(); } catch(e) { /* silencioso */ }
+      try { renderTabsExtras(); } catch(e) { /* silencioso */ }
+
+      // Modal de contexto: ESC fecha; clique no overlay (fora do painel) fecha.
+      try {
+        document.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Escape') {
+            const ov = document.getElementById('classify-modal-overlay');
+            if (ov && ov.style.display !== 'none' && typeof closeClassifyModal === 'function') closeClassifyModal();
+          }
+        });
+        const ov = document.getElementById('classify-modal-overlay');
+        if (ov) ov.addEventListener('click', (ev) => {
+          if (ev.target === ov && typeof closeClassifyModal === 'function') closeClassifyModal();
+        });
+      } catch (e) { /* silencioso */ }
     });
 
     window.addEventListener('hashchange', () => {
@@ -8425,8 +9012,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function renderTable() {
-      const tbody = document.getElementById('vuln-table-body');
-      tbody.innerHTML = ''; const totalCount = filteredData.length;
+      const container = document.getElementById('vuln-table-body');
+      container.innerHTML = ''; const totalCount = filteredData.length;
       document.getElementById('pagination-total').innerText = totalCount;
 
       if (totalCount === 0) {
@@ -8438,7 +9025,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
 
       document.getElementById('empty-state-msg').style.display = 'none';
-      document.getElementById('vuln-table').style.display = 'table';
+      document.getElementById('vuln-table').style.display = 'flex';
 
       const maxPage = Math.ceil(totalCount / pageSize) || 1;
       if (currentPage > maxPage) currentPage = maxPage;
@@ -8450,7 +9037,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById('pagination-end').innerText = endIndex;
 
       filteredData.slice(startIndex, endIndex).forEach(item => {
-        const tr = document.createElement('tr');
+        const card = document.createElement('div');
+        card.className = 'vuln-queue-card';
+
         let pClass = 'badge-p4';
         if (item.priority === 'Priority 1+') pClass = 'badge-p1plus';
         else if (item.priority === 'Priority 1') pClass = 'badge-p1';
@@ -8467,69 +9056,75 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const cvssStr = item.cvss !== null ? item.cvss.toFixed(1) : 'N/A';
         const epssStr = item.epss !== null ? (item.epss * 100).toFixed(2) + '%' : '0.00%';
 
-        let tagsHtml = '';
-        if (item.is_kev) tagsHtml += `<span class="badge badge-kev" style="margin-right: 0.25rem;">KEV</span>`;
-        if (item.is_ransomware) tagsHtml += `<span class="badge badge-ransomware" style="margin-right: 0.25rem;">Ransomware</span>`;
+        // Risk drivers list
+        let driversHtml = '';
+        if (item.is_kev) driversHtml += `<span class="rchip rchip-kev">CISA KEV</span>`;
+        if (item.is_ransomware) driversHtml += `<span class="rchip rchip-kev">Ransomware</span>`;
 
-        if (item.criticality && item.criticality !== 'unknown') {
-          let critClass = 'badge-p4';
-          if (item.criticality === 'critical') critClass = 'badge-p1plus';
-          else if (item.criticality === 'high') critClass = 'badge-p1';
-          else if (item.criticality === 'medium') critClass = 'badge-p2';
-          tagsHtml += `<span class="badge ${critClass}" style="margin-right: 0.25rem; font-size: 0.7rem; text-transform: capitalize;">${item.criticality}</span>`;
-        }
-        if (item.environment && item.environment !== 'unknown') {
-          tagsHtml += `<span class="badge badge-p3" style="margin-right: 0.25rem; font-size: 0.7rem; text-transform: capitalize;">${item.environment}</span>`;
-        }
         const expLevel = getAssetExposure(item);
-        if (expLevel !== 'unknown') {
-          let expoColor = 'rgba(255,255,255,0.05)';
-          let expoText = '#9ca3af';
-          if (expLevel === 'internet') { expoColor = 'rgba(239, 68, 68, 0.12)'; expoText = '#f87171'; }
-          else if (expLevel === 'dmz') { expoColor = 'rgba(249, 115, 22, 0.12)'; expoText = '#fb923c'; }
-          else if (expLevel === 'internal') { expoColor = 'rgba(16, 185, 129, 0.12)'; expoText = '#34d399'; }
-          tagsHtml += `<span class="badge" style="margin-right: 0.25rem; font-size: 0.7rem; text-transform: capitalize; background: ${expoColor}; color: ${expoText}; border: 1px solid ${expoText}50;">exp: ${expLevel}</span>`;
-        }
-        if (item.network_zone && item.network_zone !== 'unknown') {
-          tagsHtml += `<span class="badge" style="margin-right: 0.25rem; font-size: 0.7rem; text-transform: capitalize; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">${item.network_zone.replace('_', ' ')}</span>`;
-        }
-        if (item.top_services && item.top_services.length > 0) {
-          item.top_services.forEach(svc => {
-            tagsHtml += `<span class="badge" style="margin-right: 0.25rem; font-size: 0.7rem; background: rgba(167, 139, 250, 0.1); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.2);">${svc}</span>`;
-          });
-        }
-        if (item.asset_type && item.asset_type !== 'unknown') {
-          tagsHtml += `<span class="badge" style="margin-right: 0.25rem; font-size: 0.7rem; text-transform: capitalize; background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3);">${item.asset_type.replace('_', ' ')}</span>`;
+        if (expLevel === 'internet' || expLevel === 'dmz') {
+          driversHtml += `<span class="rchip rchip-exp" style="text-transform:capitalize;">Exposto: ${expLevel}</span>`;
         }
 
+        if (item.criticality === 'critical' || item.criticality === 'high') {
+          driversHtml += `<span class="rchip rchip-asset" style="text-transform:capitalize;">Ativo: ${item.criticality}</span>`;
+        }
+
+        const ver = String(item.version || '').trim().toLowerCase();
+        const hasFix = ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-';
+        if (hasFix) {
+          driversHtml += `<span class="rchip rchip-fix">Fix Available</span>`;
+        }
+
+        // SLA status
+        let slaHtml = '';
         if (item.sla_status && item.sla_status !== 'no_sla' && item.sla_status !== 'unknown') {
-          let slaClass = 'badge-within-sla';
-          let slaLabel = 'Dentro do SLA';
-          if (item.sla_status === 'overdue') { slaClass = 'badge-overdue'; slaLabel = 'Vencido'; }
-          else if (item.sla_status === 'due_soon') { slaClass = 'badge-due-soon'; slaLabel = 'Vence Logo'; }
-          tagsHtml += `<span class="badge ${slaClass}" style="margin-right: 0.25rem; font-size: 0.7rem;">SLA: ${slaLabel}</span>`;
-        }
-        if (item.persistent) {
-          tagsHtml += `<span class="badge badge-persistent" style="margin-right: 0.25rem; font-size: 0.7rem;">Persistente</span>`;
-        }
-        if (item.recurring) {
-          tagsHtml += `<span class="badge badge-recurring" style="margin-right: 0.25rem; font-size: 0.7rem;">Recorrente</span>`;
+          let slaClass = 'rchip-fix';
+          let slaLabel = 'SLA OK';
+          if (item.sla_status === 'overdue') { slaClass = 'rchip-kev'; slaLabel = 'SLA Vencido'; }
+          else if (item.sla_status === 'due_soon') { slaClass = 'rchip-sla'; slaLabel = 'SLA Expirando'; }
+          slaHtml = `<span class="rchip ${slaClass}">${slaLabel}</span>`;
         }
 
-        if (!tagsHtml) tagsHtml = `<span style="color: var(--text-muted); font-style: italic;">Nenhum</span>`;
+        const verStr = hasFix ? `v${item.version}` : 'N/A';
+        const actionRec = item.is_kev ? 'Recomendação: Aplicar patch urgente (CISA KEV ativo).' :
+                          item.priority === 'Priority 1' ? 'Recomendação: Remediação imediata via ciclo emergencial.' :
+                          hasFix ? 'Recomendação: Atualizar pacote na próxima janela de manutenção.' : 'Recomendação: Monitorar e aplicar controle compensatório.';
 
-        tr.innerHTML = `
-          <td><span class="badge ${pClass}">${item.priority}</span></td>
-          <td><div style="font-weight: 600;">${item.agent_id}</div><div style="font-size: 0.75rem; color: var(--text-muted);">${item.agent_name}</div></td>
-          <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${item.cve}" target="_blank">${item.cve}</a></td>
-          <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.package}">${item.package}</td>
-          <td><code style="font-size: 0.75rem; color: var(--text-muted);">${item.version}</code></td>
-          <td><span class="score ${cvssClass}">${cvssStr}</span></td>
-          <td><span style="font-weight: 500;">${epssStr}</span></td>
-          <td><span>${item.severity}</span></td>
-          <td>${tagsHtml}</td>
+        const escAgentId = JSON.stringify(String(item.agent_id));
+        const escAgentName = JSON.stringify(String(item.agent_name));
+
+        card.innerHTML = `
+          <div class="col-vuln">
+            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <a class="cve-id" href="https://nvd.nist.gov/vuln/detail/${item.cve}" target="_blank">${item.cve}</a>
+              <span class="badge ${pClass}">${item.priority}</span>
+            </div>
+            <div class="pkg-name">${item.package} <span style="color:var(--vm-faint); font-weight:normal;">(${verStr})</span></div>
+            <div style="font-size:0.76rem; color:var(--vm-muted); margin-top:0.15rem; font-style:italic;">${actionRec}</div>
+          </div>
+          <div class="col-asset">
+            <div class="host-name" title="${item.agent_name}">${item.agent_name}</div>
+            <div class="agent-id">ID: ${item.agent_id} · <span style="text-transform:capitalize;">${item.environment || 'unknown'}</span></div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.2rem;">
+              <span class="badge" style="font-size:0.7rem; text-transform:capitalize; background:rgba(255,255,255,0.04); color:var(--vm-muted); border:1px solid var(--vm-stroke);">Z: ${item.network_zone || expLevel}</span>
+            </div>
+          </div>
+          <div class="col-metrics">
+            <div style="display:flex; align-items:center; gap:0.4rem; justify-content:flex-end;">
+              <span class="score ${cvssClass}" style="padding:0.25rem 0.5rem; font-size:0.8rem; font-weight:800; border-radius:6px;">CVSS ${cvssStr}</span>
+            </div>
+            <div style="font-size:0.74rem; color:var(--vm-muted); font-weight:600;">EPSS: <span style="color:#fff;">${epssStr}</span></div>
+            <div style="display:flex; gap:0.25rem; margin-top:0.15rem; flex-wrap:wrap; justify-content:flex-end;">
+              ${driversHtml}
+              ${slaHtml}
+            </div>
+          </div>
+          <div class="col-actions">
+            <button class="vm-btn" style="padding:0.4rem 0.75rem; font-size:0.74rem; font-weight:750;" onclick='openClassifyModal(${escAgentId}, ${escAgentName})'>⚙️ Editar Contexto</button>
+          </div>
         `;
-        tbody.appendChild(tr);
+        container.appendChild(card);
       });
       renderPagination(maxPage);
     }
@@ -8824,38 +9419,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           document.getElementById('audit-last-checked').textContent = 'Atualizado em: ' + new Date().toLocaleTimeString();
 
           if (actions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum registro de auditoria encontrado.</td></tr>';
+            tbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">🛡️</div>
+                <div class="ep-t">Nenhum registro de auditoria</div>
+                <div class="ep-d">Nenhuma ação recente foi gravada no log de auditoria.</div>
+              </div>`;
           } else {
             actions.forEach(act => {
-              const tr = document.createElement('tr');
+              const div = document.createElement('div');
               const actTime = act.timestamp ? new Date(act.timestamp).toLocaleString() : 'N/A';
 
-              let resBadge = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-color);">Desconhecido</span>';
-              if (act.result === 'success') {
-                resBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Sucesso</span>';
-              } else if (act.result === 'rejected') {
-                resBadge = '<span class="badge" style="background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3);">Rejeitado</span>';
-              } else if (act.result === 'error') {
-                resBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">Erro</span>';
+              let statusClass = 'ok';
+              if (act.result === 'error' || act.result === 'rejected') {
+                statusClass = 'fail';
               }
 
-              const exitVal = act.exit_code !== undefined ? act.exit_code : '-';
+              let resultText = 'Desconhecido';
+              if (act.result === 'success') resultText = 'Sucesso';
+              else if (act.result === 'rejected') resultText = 'Rejeitado';
+              else if (act.result === 'error') resultText = 'Erro';
 
-              tr.innerHTML = `
-                <td>${actTime}</td>
-                <td style="font-weight: 600;">${act.remote_user || 'unknown'}</td>
-                <td><code>${act.client_ip || 'unknown'}</code></td>
-                <td><code>${act.action || 'run-analysis'}</code></td>
-                <td>${resBadge}</td>
-                <td><code>${exitVal}</code></td>
-                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${act.message || ''}">${act.message || '-'}</td>
+              const exitVal = act.exit_code !== undefined ? act.exit_code : '-';
+              const user = act.remote_user || 'unknown';
+              const ip = act.client_ip || 'unknown';
+              const actionName = act.action || 'run-analysis';
+
+              div.className = `tl-item ${statusClass}`;
+              div.innerHTML = `
+                <div class="tl-head">
+                  <span class="tl-act">${actionName}</span>
+                  <span class="tl-time">${actTime}</span>
+                  <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-text); border:1px solid var(--vm-stroke); font-size: 0.68rem; padding: 0.1rem 0.35rem; margin-left: auto;">Exit: ${exitVal}</span>
+                </div>
+                <div class="tl-meta">
+                  Operador: <strong style="color: #eaf2ff;">${user}</strong> (${ip}) &middot; Status: <strong style="color: ${statusClass === 'ok' ? '#34d399' : '#f87171'}">${resultText}</strong>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--vm-muted); margin-top: 0.35rem; font-style: italic;">
+                  ${act.message || 'Sem detalhes adicionais fornecidos.'}
+                </div>
               `;
-              tbody.appendChild(tr);
+              tbody.appendChild(div);
             });
           }
         }
       } catch (err) {
-        document.getElementById('audit-table-body').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 1.5rem;">Falha ao carregar registros de auditoria.</td></tr>';
+        document.getElementById('audit-table-body').innerHTML = `
+          <div class="empty-pretty" style="border-color: var(--vm-crit); background: rgba(239,68,68,0.02);">
+            <div class="ep-ic" style="color: var(--vm-crit);">⚠</div>
+            <div class="ep-t">Falha ao carregar registros de auditoria</div>
+            <div class="ep-d">${err.message || err}</div>
+          </div>`;
       }
 
 
@@ -9415,30 +10029,46 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             riskTbody.innerHTML = '';
             const topAssets = data.top_risky_assets || [];
             if (topAssets.length === 0 || classifiedCount === 0) {
-              riskTbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Ativo pendente de classificação</td></tr>';
+              riskTbody.innerHTML = `
+                <div class="empty-pretty">
+                  <div class="ep-ic">🖥️</div>
+                  <div class="ep-t">Nenhum ativo classificado</div>
+                  <div class="ep-d">Classifique ativos para gerar a análise de risco contextual.</div>
+                </div>`;
             } else {
+              const maxScore = Math.max(...topAssets.map(a => a.risk_score || 0), 1);
               topAssets.forEach(a => {
-                const tr = document.createElement('tr');
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'saas-list-card';
                 const live = window.currentAssetsData[a.agent_id] || {};
                 const criticality = live.criticality || a.criticality || 'unknown';
                 const exposure = live.exposure || a.exposure || 'unknown';
+                const pct = Math.round((a.risk_score / maxScore) * 100);
 
-                let critColor = 'var(--text-muted)';
-                if (criticality === 'critical') critColor = '#f87171';
-                else if (criticality === 'high') critColor = '#fb923c';
+                let critClass = 'badge-p4';
+                if (criticality === 'critical') critClass = 'badge-p1plus';
+                else if (criticality === 'high') critClass = 'badge-p1';
+                else if (criticality === 'medium') critClass = 'badge-p2';
 
-                tr.innerHTML = `
-                  <td><code>${a.agent_id}</code></td>
-                  <td style="font-weight: 600;">${a.agent_name}</td>
-                  <td><span style="font-weight:600; color:${critColor}">${criticality}</span></td>
-                  <td><code>${exposure}</code></td>
-                  <td><code>${a.asset_type || live.asset_type || 'unknown'}</code></td>
-                  <td style="text-align: right; font-weight:700; color:#fb923c">${a.risk_score}</td>
-                  <td style="text-align: center;">
-                    <button type="button" class="btn" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">⚙️ Editar</button>
-                  </td>
+                itemDiv.innerHTML = `
+                  <div class="c-info">
+                    <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">${a.agent_name} <span style="font-family: monospace; font-size: 0.75rem; color: var(--vm-faint);">(${a.agent_id})</span></div>
+                    <div class="c-meta" style="margin-top: 0.25rem;">
+                      <span class="badge ${critClass}" style="text-transform: capitalize; font-size: 0.7rem;">${criticality}</span>
+                      <span class="badge badge-p3" style="text-transform: capitalize; font-size: 0.7rem;">exp: ${exposure}</span>
+                      <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-muted); border: 1px solid var(--vm-stroke); font-size:0.7rem;">${a.asset_type || live.asset_type || 'host'}</span>
+                    </div>
+                    <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; margin-top: 0.45rem;">
+                      <div style="width: ${pct}%; height: 100%; background: var(--vm-med); border-radius: 3px;"></div>
+                    </div>
+                  </div>
+                  <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+                    <div style="font-size: 1.25rem; font-weight: 850; color: var(--vm-high);">${a.risk_score}</div>
+                    <div style="font-size: 0.65rem; color: var(--vm-faint); font-weight: 700; text-transform: uppercase; letter-spacing:0.02em;">Score Risco</div>
+                    <button class="vm-btn" style="padding: 0.25rem 0.5rem; font-size: 0.68rem; margin-top: 0.35rem;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">⚙️ Contexto</button>
+                  </div>
                 `;
-                riskTbody.appendChild(tr);
+                riskTbody.appendChild(itemDiv);
               });
             }
 
@@ -9451,37 +10081,28 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             });
 
             if (pendingAssets.length === 0) {
-              pendingTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight:600;">✓ Todos os ativos estão devidamente classificados!</td></tr>';
+              pendingTbody.innerHTML = `
+                <div class="empty-pretty" style="grid-column: 1 / -1; width: 100%;">
+                  <div class="ep-ic">✓</div>
+                  <div class="ep-t">Fila de classificação vazia</div>
+                  <div class="ep-d">Todos os ativos estão classificados!</div>
+                </div>`;
             } else {
               pendingAssets.forEach(a => {
-                const tr = document.createElement('tr');
-                tr.setAttribute('data-agent-id', a.agent_id);
-
-                const tdId = document.createElement('td');
-                const code = document.createElement('code');
-                code.textContent = a.agent_id;
-                tdId.appendChild(code);
-
-                const tdName = document.createElement('td');
-                tdName.style.fontWeight = '600';
-                tdName.textContent = a.agent_name || '';
-
-                const tdStatus = document.createElement('td');
-                tdStatus.innerHTML = '<span class="badge badge-p2" style="background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3);">Pendente</span>';
-
-                const tdAction = document.createElement('td');
-                const btnAction = document.createElement('button');
-                btnAction.className = 'btn btn-run';
-                btnAction.style.cssText = 'padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;';
-                btnAction.textContent = '🏷️ Classificar';
-                btnAction.addEventListener('click', () => openClassifyModal(a.agent_id, a.agent_name || ''));
-                tdAction.appendChild(btnAction);
-
-                tr.appendChild(tdId);
-                tr.appendChild(tdName);
-                tr.appendChild(tdStatus);
-                tr.appendChild(tdAction);
-                pendingTbody.appendChild(tr);
+                const card = document.createElement('div');
+                card.className = 'workqueue-card';
+                card.innerHTML = `
+                  <div class="wq-title">${a.agent_name || 'Agente Sem Nome'}</div>
+                  <div class="wq-id">ID: ${a.agent_id}</div>
+                  <div class="wq-reason">Ativo detectado com vulnerabilidades, porém seu contexto de criticidade e exposição ainda não foi preenchido.</div>
+                  <div class="wq-badge-group">
+                    <span class="badge badge-p2">Pendente</span>
+                  </div>
+                  <div class="wq-action">
+                    <button class="vm-btn vm-btn-primary" style="width:100%; justify-content:center;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name || ''}')">🏷️ Classificar Agora</button>
+                  </div>
+                `;
+                pendingTbody.appendChild(card);
               });
             }
 
@@ -9503,22 +10124,37 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 allAssetsList.forEach(a => {
                   const tr = document.createElement('tr');
                   let critColor = 'var(--text-muted)';
-                  if (a.criticality === 'critical') critColor = '#f87171';
-                  else if (a.criticality === 'high') critColor = '#fb923c';
+                  let critBadgeClass = 'badge-p4';
+                  if (a.criticality === 'critical') { critColor = '#f87171'; critBadgeClass = 'badge-p1plus'; }
+                  else if (a.criticality === 'high') { critColor = '#fb923c'; critBadgeClass = 'badge-p1'; }
+                  else if (a.criticality === 'medium') { critColor = '#facc15'; critBadgeClass = 'badge-p2'; }
 
                   const isPending = a.criticality === 'unknown';
                   const btnLabel = isPending ? '🏷️ Classificar' : '⚙️ Editar';
-                  const btnClass = isPending ? 'btn btn-run' : 'btn';
+                  const btnClass = isPending ? 'vm-btn vm-btn-primary' : 'vm-btn';
+
+                  const techOwner = a.technical_owner && a.technical_owner !== 'unknown' ? a.technical_owner : '-';
+                  const bizOwner = a.business_owner && a.business_owner !== 'unknown' ? a.business_owner : '-';
+
+                  const svcCritBadge = a.is_critical_service ?
+                    '<span class="badge badge-p1plus" style="font-size: 0.72rem;">Sim (Crítico)</span>' :
+                    '<span class="badge" style="background: rgba(255,255,255,0.03); color: var(--vm-faint); border: 1px solid var(--vm-stroke); font-size: 0.72rem;">Não</span>';
 
                   tr.innerHTML = `
-                    <td><code>${a.agent_id}</code></td>
-                    <td style="font-weight: 600;">${a.agent_name}</td>
-                    <td><span style="font-weight:600; color:${critColor}">${a.criticality}</span></td>
-                    <td><code>${a.exposure}</code></td>
-                    <td><code>${a.environment}</code></td>
-                    <td>${a.technical_owner && a.technical_owner !== 'unknown' ? a.technical_owner : '<span style="color:var(--text-muted);">n/a</span>'}</td>
+                    <td>
+                      <div style="font-weight: 700; color: #fff; font-size: 0.9rem;">${a.agent_name}</div>
+                      <div style="font-size: 0.76rem; color: var(--vm-faint); font-family: monospace;">ID: ${a.agent_id}</div>
+                    </td>
+                    <td style="text-align: center;"><span class="badge ${critBadgeClass}" style="text-transform: capitalize; font-size:0.75rem;">${a.criticality}</span></td>
+                    <td style="text-align: center;"><span class="badge badge-p3" style="text-transform: capitalize; font-size:0.75rem;">${a.exposure}</span></td>
+                    <td style="text-align: center;"><span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-text); border: 1px solid var(--vm-stroke); text-transform: capitalize; font-size:0.75rem;">${a.environment}</span></td>
+                    <td>
+                      <div style="font-weight: 600; font-size: 0.82rem;">${techOwner}</div>
+                      <div style="font-size: 0.74rem; color: var(--vm-faint);">${bizOwner}</div>
+                    </td>
+                    <td style="text-align: center;">${svcCritBadge}</td>
                     <td style="text-align: center;">
-                      <button type="button" class="${btnClass}" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">${btnLabel}</button>
+                      <button type="button" class="${btnClass}" style="padding: 0.3rem 0.65rem; font-size: 0.72rem; font-weight:750;" onclick="openClassifyModal('${a.agent_id}', '${a.agent_name}')">${btnLabel}</button>
                     </td>
                   `;
                   allTbody.appendChild(tr);
@@ -9865,136 +10501,235 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             alertEl.style.display = 'none';
           }
 
-          // Render overdue table
+          // Render overdue list
           const overdueTbody = document.getElementById('sla-overdue-tbody');
           overdueTbody.innerHTML = '';
           if (topOverdue.length === 0) {
-            overdueTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight:600;">✓ Nenhuma vulnerabilidade vencida!</td></tr>';
+            overdueTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">✓</div>
+                <div class="ep-t">Nenhuma vulnerabilidade vencida</div>
+                <div class="ep-d">Excelente! Todos os prazos de SLA estão em dia.</div>
+              </div>`;
           } else {
             topOverdue.forEach(v => {
-              const tr = document.createElement('tr');
-              let sevColor = 'var(--text-muted)';
-              if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
-              else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              let sevClass = 'badge-p4';
+              if (String(v.severity).toLowerCase() === 'critical') sevClass = 'badge-p1plus';
+              else if (String(v.severity).toLowerCase() === 'high') sevClass = 'badge-p1';
+              else if (String(v.severity).toLowerCase() === 'medium') sevClass = 'badge-p2';
 
-              tr.innerHTML = `
-                <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
-                <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
-                <td><code>${v.package_name || '-'}</code></td>
-                <td><span style="font-weight:600; color:${sevColor}">${v.severity}</span></td>
-                <td style="text-align: right; font-weight: 700; color: #f87171;">${v.days_overdue}d</td>
-                <td><code style="font-size:0.75rem;">${v.due_date ? new Date(v.due_date).toLocaleString() : '-'}</code></td>
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                    <a class="cve-id" style="font-size:0.92rem;" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a>
+                    <span style="font-family: monospace; font-size: 0.76rem; color: var(--vm-faint);">(${v.package_name || '-'})</span>
+                  </div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge ${sevClass}">${v.severity}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Ativo: <strong style="color:#eaf2ff;">${v.agent_name}</strong> (${v.agent_id})</span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: var(--vm-faint); margin-top: 0.15rem;">Prazo Limite: ${v.due_date ? new Date(v.due_date).toLocaleDateString() : '-'}</div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <span class="badge badge-overdue" style="font-size: 0.82rem; padding: 0.3rem 0.6rem; font-weight:800;">${v.days_overdue} dias atrasado</span>
+                </div>
               `;
-              overdueTbody.appendChild(tr);
+              overdueTbody.appendChild(divCard);
             });
           }
 
-          // Render due soon table
+          // Render due soon list
           const dueSoonTbody = document.getElementById('sla-due-soon-tbody');
           dueSoonTbody.innerHTML = '';
           if (topDueSoon.length === 0) {
-            dueSoonTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhuma vulnerabilidade próxima do vencimento.</td></tr>';
+            dueSoonTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">✓</div>
+                <div class="ep-t">Nenhum vencimento iminente</div>
+                <div class="ep-d">Nenhum SLA expira nos próximos 7 dias.</div>
+              </div>`;
           } else {
             topDueSoon.forEach(v => {
-              const tr = document.createElement('tr');
-              let sevColor = 'var(--text-muted)';
-              if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
-              else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              let sevClass = 'badge-p4';
+              if (String(v.severity).toLowerCase() === 'critical') sevClass = 'badge-p1plus';
+              else if (String(v.severity).toLowerCase() === 'high') sevClass = 'badge-p1';
+              else if (String(v.severity).toLowerCase() === 'medium') sevClass = 'badge-p2';
 
-              tr.innerHTML = `
-                <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
-                <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
-                <td><code>${v.package_name || '-'}</code></td>
-                <td><span style="font-weight:600; color:${sevColor}">${v.severity}</span></td>
-                <td style="text-align: right; font-weight: 700; color: #fb923c;">${v.days_to_due}d</td>
-                <td><code style="font-size:0.75rem;">${v.due_date ? new Date(v.due_date).toLocaleString() : '-'}</code></td>
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                    <a class="cve-id" style="font-size:0.92rem;" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a>
+                    <span style="font-family: monospace; font-size: 0.76rem; color: var(--vm-faint);">(${v.package_name || '-'})</span>
+                  </div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge ${sevClass}">${v.severity}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Ativo: <strong style="color:#eaf2ff;">${v.agent_name}</strong> (${v.agent_id})</span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: var(--vm-faint); margin-top: 0.15rem;">Prazo Limite: ${v.due_date ? new Date(v.due_date).toLocaleDateString() : '-'}</div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <span class="badge badge-due-soon" style="font-size: 0.82rem; padding: 0.3rem 0.6rem; font-weight:800;">${v.days_to_due}d restantes</span>
+                </div>
               `;
-              dueSoonTbody.appendChild(tr);
+              dueSoonTbody.appendChild(divCard);
             });
           }
 
-          // Render persistent table
+          // Render persistent list
           const persistentTbody = document.getElementById('sla-persistent-tbody');
           persistentTbody.innerHTML = '';
           if (topPersistent.length === 0) {
-            persistentTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhuma vulnerabilidade persistente detectada.</td></tr>';
+            persistentTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">🛡️</div>
+                <div class="ep-t">Nenhum item persistente</div>
+                <div class="ep-d">Nenhuma vulnerabilidade tem idade superior a 30 dias.</div>
+              </div>`;
           } else {
             topPersistent.forEach(v => {
-              const tr = document.createElement('tr');
-              let sevColor = 'var(--text-muted)';
-              if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
-              else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              let sevClass = 'badge-p4';
+              if (String(v.severity).toLowerCase() === 'critical') sevClass = 'badge-p1plus';
+              else if (String(v.severity).toLowerCase() === 'high') sevClass = 'badge-p1';
+              else if (String(v.severity).toLowerCase() === 'medium') sevClass = 'badge-p2';
 
-              tr.innerHTML = `
-                <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
-                <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
-                <td><code>${v.package_name || '-'}</code></td>
-                <td><span style="font-weight:600; color:${sevColor}">${v.severity}</span></td>
-                <td style="text-align: right; font-weight: 700; color: #c084fc;">${v.age_days}d</td>
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                    <a class="cve-id" style="font-size:0.92rem;" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a>
+                    <span style="font-family: monospace; font-size: 0.76rem; color: var(--vm-faint);">(${v.package_name || '-'})</span>
+                  </div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge ${sevClass}">${v.severity}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Ativo: <strong style="color:#eaf2ff;">${v.agent_name}</strong> (${v.agent_id})</span>
+                  </div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <span class="badge badge-persistent" style="font-size: 0.82rem; padding: 0.3rem 0.6rem; font-weight:800;">Aging: ${v.age_days}d</span>
+                </div>
               `;
-              persistentTbody.appendChild(tr);
+              persistentTbody.appendChild(divCard);
             });
           }
 
-          // Render recurring table
+          // Render recurring list
           const recurringTbody = document.getElementById('sla-recurring-tbody');
           recurringTbody.innerHTML = '';
           if (topRecurring.length === 0) {
-            recurringTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhuma vulnerabilidade recorrente detectada.</td></tr>';
+            recurringTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">🛡️</div>
+                <div class="ep-t">Nenhum item recorrente</div>
+                <div class="ep-d">Nenhuma vulnerabilidade reincidente foi detectada.</div>
+              </div>`;
           } else {
             topRecurring.forEach(v => {
-              const tr = document.createElement('tr');
-              let sevColor = 'var(--text-muted)';
-              if (String(v.severity).toLowerCase() === 'critical') sevColor = '#f87171';
-              else if (String(v.severity).toLowerCase() === 'high') sevColor = '#fb923c';
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              let sevClass = 'badge-p4';
+              if (String(v.severity).toLowerCase() === 'critical') sevClass = 'badge-p1plus';
+              else if (String(v.severity).toLowerCase() === 'high') sevClass = 'badge-p1';
+              else if (String(v.severity).toLowerCase() === 'medium') sevClass = 'badge-p2';
 
-              tr.innerHTML = `
-                <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a></td>
-                <td><code>${v.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${v.agent_name}</span></td>
-                <td><code>${v.package_name || '-'}</code></td>
-                <td><span style="font-weight:600; color:${sevColor}">${v.severity}</span></td>
-                <td style="text-align: right; font-weight: 700; color: #60a5fa;">${v.snapshot_occurrences}</td>
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                    <a class="cve-id" style="font-size:0.92rem;" href="https://nvd.nist.gov/vuln/detail/${v.cve}" target="_blank">${v.cve}</a>
+                    <span style="font-family: monospace; font-size: 0.76rem; color: var(--vm-faint);">(${v.package_name || '-'})</span>
+                  </div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge ${sevClass}">${v.severity}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Ativo: <strong style="color:#eaf2ff;">${v.agent_name}</strong> (${v.agent_id})</span>
+                  </div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <span class="badge badge-recurring" style="font-size: 0.82rem; padding: 0.3rem 0.6rem; font-weight:800;">${v.snapshot_occurrences} snapshots</span>
+                </div>
               `;
-              recurringTbody.appendChild(tr);
+              recurringTbody.appendChild(divCard);
             });
           }
 
-          // Render backlog asset table
+          // Render backlog progressive bar list (Asset)
           const backlogAssetTbody = document.getElementById('sla-backlog-asset-tbody');
           backlogAssetTbody.innerHTML = '';
           if (backlogAssets.length === 0) {
-            backlogAssetTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum backlog por ativo listado.</td></tr>';
+            backlogAssetTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">🖥️</div>
+                <div class="ep-t">Sem Backlog por Ativo</div>
+              </div>`;
           } else {
             backlogAssets.forEach(a => {
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td><code>${a.agent_id}</code></td>
-                <td style="font-weight:600;">${a.agent_name}</td>
-                <td style="font-weight:700;">${a.total}</td>
-                <td style="font-weight:700; color:#f87171;">${a.overdue}</td>
-                <td style="font-weight:700; color:#fb923c;">${a.due_soon}</td>
-                <td style="font-weight:700; color:#34d399;">${a.within_sla}</td>
+              const rowDiv = document.createElement('div');
+              rowDiv.className = 'sla-progress-row';
+              const total = a.total || 1;
+              const overduePct = Math.round(((a.overdue || 0) / total) * 100);
+              const dueSoonPct = Math.round(((a.due_soon || 0) / total) * 100);
+              const withinSlaPct = Math.round(((a.within_sla || 0) / total) * 100);
+
+              rowDiv.innerHTML = `
+                <div class="spr-lbl">
+                  <span>${a.agent_name} <span style="font-size: 0.74rem; font-family: monospace; color: var(--vm-faint);">(${a.agent_id})</span></span>
+                  <span>${a.total} total</span>
+                </div>
+                <div class="spr-sub" style="margin-bottom:0.2rem;">
+                  <span style="color:#f87171; font-weight:700;">${a.overdue || 0} vencidas</span> ·
+                  <span style="color:#fb923c; font-weight:700;">${a.due_soon || 0} próximas</span> ·
+                  <span style="color:#34d399; font-weight:700;">${a.within_sla || 0} no prazo</span>
+                </div>
+                <div class="spr-track">
+                  <div class="spr-segment" style="width: ${overduePct}%; background: var(--vm-crit);"></div>
+                  <div class="spr-segment" style="width: ${dueSoonPct}%; background: var(--vm-high);"></div>
+                  <div class="spr-segment" style="width: ${withinSlaPct}%; background: var(--vm-low);"></div>
+                </div>
               `;
-              backlogAssetTbody.appendChild(tr);
+              backlogAssetTbody.appendChild(rowDiv);
             });
           }
 
-          // Render backlog owner table
+          // Render backlog progressive bar list (Owner)
           const backlogOwnerTbody = document.getElementById('sla-backlog-owner-tbody');
           backlogOwnerTbody.innerHTML = '';
-          if (backlogOwners.length === 0 || (backlogOwners.length === 1 && backlogOwners[0].technical_owner === 'unknown')) {
-            backlogOwnerTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Owner técnico pendente</td></tr>';
+          const filteredOwners = backlogOwners.filter(o => o.technical_owner !== 'unknown');
+          if (filteredOwners.length === 0) {
+            backlogOwnerTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">👥</div>
+                <div class="ep-t">Dono técnico pendente</div>
+                <div class="ep-d">Nenhum backlog atribuído a donos técnicos definidos.</div>
+              </div>`;
           } else {
-            backlogOwners.forEach(o => {
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td style="font-weight:600; color: var(--text-main);">${o.technical_owner}</td>
-                <td style="font-weight:700;">${o.total}</td>
-                <td style="font-weight:700; color:#f87171;">${o.overdue}</td>
-                <td style="font-weight:700; color:#fb923c;">${o.due_soon}</td>
-                <td style="font-weight:700; color:#34d399;">${o.within_sla}</td>
+            filteredOwners.forEach(o => {
+              const rowDiv = document.createElement('div');
+              rowDiv.className = 'sla-progress-row';
+              const total = o.total || 1;
+              const overduePct = Math.round(((o.overdue || 0) / total) * 100);
+              const dueSoonPct = Math.round(((o.due_soon || 0) / total) * 100);
+              const withinSlaPct = Math.round(((o.within_sla || 0) / total) * 100);
+
+              rowDiv.innerHTML = `
+                <div class="spr-lbl">
+                  <span>${o.technical_owner}</span>
+                  <span>${o.total} total</span>
+                </div>
+                <div class="spr-sub" style="margin-bottom:0.2rem;">
+                  <span style="color:#f87171; font-weight:700;">${o.overdue || 0} vencidas</span> ·
+                  <span style="color:#fb923c; font-weight:700;">${o.due_soon || 0} próximas</span> ·
+                  <span style="color:#34d399; font-weight:700;">${o.within_sla || 0} no prazo</span>
+                </div>
+                <div class="spr-track">
+                  <div class="spr-segment" style="width: ${overduePct}%; background: var(--vm-crit);"></div>
+                  <div class="spr-segment" style="width: ${dueSoonPct}%; background: var(--vm-high);"></div>
+                  <div class="spr-segment" style="width: ${withinSlaPct}%; background: var(--vm-low);"></div>
+                </div>
               `;
-              backlogOwnerTbody.appendChild(tr);
+              backlogOwnerTbody.appendChild(rowDiv);
             });
           }
 
@@ -10524,58 +11259,115 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             alertEl.style.display = 'none';
           }
 
-          // Render Top Items Table
+          // Render Top Items List
           const topTbody = document.getElementById('treatment-top-tbody');
           topTbody.innerHTML = '';
           if (topItems.length === 0) {
-            topTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum item pendente de tratativa!</td></tr>';
+            topTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">✓</div>
+                <div class="ep-t">Nenhum item pendente de tratativa</div>
+                <div class="ep-d">Excelente! Todos os itens do plano foram mitigados.</div>
+              </div>`;
           } else {
             topItems.forEach(i => {
-              const tr = document.createElement('tr');
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
               let scoreColor = '#34d399';
               if (i.treatment_score >= 80) scoreColor = '#f87171';
               else if (i.treatment_score >= 50) scoreColor = '#fb923c';
 
-              let effortBadge = '<span class="badge badge-p4">Baixo</span>';
-              if (i.effort === 'high') effortBadge = '<span class="badge badge-p1plus">Alto</span>';
-              else if (i.effort === 'medium') effortBadge = '<span class="badge badge-p2">Médio</span>';
+              let effortClass = 'badge-p4';
+              if (i.effort === 'high') effortClass = 'badge-p1plus';
+              else if (i.effort === 'medium') effortClass = 'badge-p2';
 
-              tr.innerHTML = `
-                <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${i.cve}" target="_blank">${i.cve}</a></td>
-                <td><code>${i.agent_id}</code><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${i.agent_name}</span></td>
-                <td><code>${i.package_name}</code></td>
-                <td><span style="font-size:0.85rem; font-weight:600;">${i.technical_owner}</span></td>
-                <td><span style="font-size:0.85rem; font-weight:600;">${i.asset_criticality}</span><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${i.exposure_level}</span></td>
-                <td style="text-align: center;"><span class="badge" style="font-weight: 800; background: rgba(255,255,255,0.05); color: ${scoreColor}; border: 1px solid ${scoreColor}50;">${i.treatment_score}</span></td>
-                <td><span class="badge ${i.treatment_bucket === 'now' ? 'badge-p1plus' : (i.treatment_bucket === 'next_7_days' ? 'badge-p1' : (i.treatment_bucket === 'next_15_days' ? 'badge-p2' : 'badge-p3'))}">${i.treatment_bucket}</span><br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${i.suggested_action_type}</span></td>
-                <td>${effortBadge}</td>
-                <td style="font-size:0.8rem; color: var(--text-muted); font-weight: 500;">${i.reason}</td>
+              let bucketClass = 'badge-p3';
+              if (i.treatment_bucket === 'now') bucketClass = 'badge-p1plus';
+              else if (i.treatment_bucket === 'next_7_days') bucketClass = 'badge-p1';
+              else if (i.treatment_bucket === 'next_15_days') bucketClass = 'badge-p2';
+
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                    <a class="cve-id" style="font-size:0.92rem;" href="https://nvd.nist.gov/vuln/detail/${i.cve}" target="_blank">${i.cve}</a>
+                    <span style="font-family: monospace; font-size: 0.76rem; color: var(--vm-faint);">(${i.package_name || '-'})</span>
+                  </div>
+                  <div class="c-meta" style="margin-top: 0.25rem;">
+                    <span class="badge ${bucketClass}">${i.treatment_bucket}</span>
+                    <span class="badge" style="background: rgba(255,255,255,0.03); color: var(--vm-muted); border: 1px solid var(--vm-stroke);">${i.suggested_action_type}</span>
+                    <span class="badge ${effortClass}">Esforço: ${i.effort}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Dono: <strong style="color:#eaf2ff;">${i.technical_owner}</strong></span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: var(--vm-faint); margin-top: 0.25rem;">Justificativa: ${i.reason}</div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <div style="font-size: 1.25rem; font-weight: 850; color: ${scoreColor};">${i.treatment_score}</div>
+                  <div style="font-size: 0.65rem; color: var(--vm-faint); font-weight: 700; text-transform: uppercase;">Score</div>
+                </div>
               `;
-              topTbody.appendChild(tr);
+              topTbody.appendChild(divCard);
             });
           }
 
-          // Render Workload por Owner
+          // Render Workload por Owner (Workload Profile Cards)
           const workloadTbody = document.getElementById('treatment-workload-tbody');
           workloadTbody.innerHTML = '';
           if (ownerWorkload.length === 0) {
-            workloadTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhum workload listado.</td></tr>';
+            workloadTbody.innerHTML = `
+              <div class="empty-pretty" style="grid-column: 1 / -1; width:100%;">
+                <div class="ep-ic">👥</div>
+                <div class="ep-t">Nenhum workload listado</div>
+              </div>`;
           } else {
             ownerWorkload.forEach(ow => {
-              const tr = document.createElement('tr');
-              let assetsList = ow.top_assets.map(a => `${a.agent_name} (${a.total_vulnerabilities})`).join('<br/>') || '-';
-              let cvesList = ow.top_cves.map(c => `${c.cve} (${c.count})`).join(', ') || '-';
-              tr.innerHTML = `
-                <td style="font-weight:600; color: var(--text-main);">${ow.technical_owner}</td>
-                <td><code>${ow.total_actionable}</code></td>
-                <td><span style="font-weight:700; color:#f87171;">${ow.now}</span></td>
-                <td>${ow.next_7_days} / ${ow.next_15_days} / ${ow.next_30_days}</td>
-                <td><span style="color:#f87171; font-weight:700;">${ow.overdue}</span> / <span style="color:#fb923c; font-weight:700;">${ow.due_soon}</span></td>
-                <td><span style="color:#f87171;">${ow.critical}</span> / <span style="color:#fb923c;">${ow.high}</span></td>
-                <td>${ow.estimated_effort.low} / ${ow.estimated_effort.medium} / ${ow.estimated_effort.high}</td>
-                <td style="font-size: 0.75rem; color: var(--text-muted);"><span style="color:var(--text-main); font-weight:600;">Ativos:</span><br/>${assetsList}<br/><span style="color:var(--text-main); font-weight:600;">CVEs:</span> ${cvesList}</td>
+              const card = document.createElement('div');
+              card.className = 'workload-profile-card';
+
+              const total = ow.total_actionable || 1;
+              const nowPct = Math.round((ow.now / total) * 100);
+              const restPct = 100 - nowPct;
+
+              let statusColor = 'var(--vm-low)';
+              if (ow.total_actionable >= 15) statusColor = 'var(--vm-crit)';
+              else if (ow.total_actionable >= 7) statusColor = 'var(--vm-high)';
+
+              let topAssetsList = ow.top_assets.slice(0, 2).map(a => `${a.agent_name} (${a.total_vulnerabilities})`).join(', ') || 'Nenhum';
+              let topCvesList = ow.top_cves.slice(0, 3).map(c => c.cve).join(', ') || 'Nenhuma';
+
+              card.innerHTML = `
+                <div class="prof-hdr">
+                  <div>
+                    <div class="prof-name">${ow.technical_owner}</div>
+                    <div class="prof-sub">Responsável Técnico</div>
+                  </div>
+                  <span class="badge" style="background: rgba(255,255,255,0.04); color: ${statusColor}; font-weight:800; font-size:1.1rem; border:1px solid ${statusColor}40;">${ow.total_actionable}</span>
+                </div>
+                <div class="prof-meter">
+                  <div class="prof-meter-lbl">
+                    <span>Carga Crítica (Now)</span>
+                    <span>${nowPct}%</span>
+                  </div>
+                  <div class="prof-bar">
+                    <div class="prof-bar-segment" style="width: ${nowPct}%; background: var(--vm-crit);"></div>
+                    <div class="prof-bar-segment" style="width: ${restPct}%; background: var(--vm-low);"></div>
+                  </div>
+                </div>
+                <div class="prof-details">
+                  <div class="prof-item">
+                    <span style="font-size:0.66rem; text-transform:uppercase; color:var(--vm-faint);">Buckets (7d / 15d / 30d)</span>
+                    <span class="prof-item-val" style="font-size:0.8rem;">${ow.next_7_days} / ${ow.next_15_days} / ${ow.next_30_days}</span>
+                  </div>
+                  <div class="prof-item">
+                    <span style="font-size:0.66rem; text-transform:uppercase; color:var(--vm-faint);">Overdue / Due Soon</span>
+                    <span class="prof-item-val" style="font-size:0.8rem; color:#f87171;">${ow.overdue} <span style="color:var(--vm-muted);">/</span> ${ow.due_soon}</span>
+                  </div>
+                </div>
+                <div style="font-size: 0.74rem; color: var(--vm-muted); border-top: 1px solid var(--vm-stroke-soft); padding-top: 0.5rem; display:flex; flex-direction:column; gap:0.2rem;">
+                  <div><strong>Top Ativos:</strong> <span style="color:#fff;">${topAssetsList}</span></div>
+                  <div><strong>Top CVEs:</strong> <span style="color:#fff;">${topCvesList}</span></div>
+                </div>
               `;
-              workloadTbody.appendChild(tr);
+              workloadTbody.appendChild(card);
             });
           }
 
@@ -10583,58 +11375,90 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const winsTbody = document.getElementById('treatment-wins-tbody');
           winsTbody.innerHTML = '';
           if (quickWins.length === 0) {
-            winsTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight:600;">✓ Nenhum Quick Win detectado no momento.</td></tr>';
+            winsTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">✓</div>
+                <div class="ep-t">Nenhum Quick Win detectado</div>
+              </div>`;
           } else {
             quickWins.forEach(qw => {
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td style="font-weight:700; color:#34d399;">${qw.title}</td>
-                <td><span style="font-size:0.85rem; font-weight:600;">${qw.owner}</span></td>
-                <td><code>${qw.affected_assets}</code></td>
-                <td><span class="badge badge-p4">${qw.suggested_window}</span></td>
-                <td style="text-align: center; font-weight:700; color:#34d399;">${qw.treatment_score}</td>
-                <td style="font-size:0.8rem; color: var(--text-muted);">${qw.reason}</td>
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #34d399; font-size: 0.92rem;">${qw.title}</div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge badge-p4">${qw.suggested_window}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Dono: <strong style="color:#eaf2ff;">${qw.owner}</strong> · Ativos: <code>${qw.affected_assets}</code></span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: var(--vm-faint); margin-top: 0.15rem;">${qw.reason}</div>
+                </div>
+                <div class="c-val" style="display: flex; flex-direction: column; align-items: flex-end;">
+                  <div style="font-size: 1.15rem; font-weight: 850; color: #34d399;">${qw.treatment_score}</div>
+                  <div style="font-size: 0.62rem; color: var(--vm-faint); font-weight: 700; text-transform: uppercase;">Score</div>
+                </div>
               `;
-              winsTbody.appendChild(tr);
+              winsTbody.appendChild(divCard);
             });
           }
 
-          // Render Change Window
+          // Render Change Window Candidates
           const changeTbody = document.getElementById('treatment-change-tbody');
           changeTbody.innerHTML = '';
           if (changeCandidates.length === 0) {
-            changeTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Nenhuma janela de mudança de alta complexidade listada.</td></tr>';
+            changeTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">⚙️</div>
+                <div class="ep-t">Sem Janelas Planejadas</div>
+              </div>`;
           } else {
             changeCandidates.forEach(cc => {
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td style="font-weight:700; color:#fb923c;">${cc.title}</td>
-                <td><span style="font-size:0.85rem; font-weight:600;">${cc.owner}</span></td>
-                <td><code>${cc.affected_assets}</code></td>
-                <td><span class="badge badge-p1plus">${cc.effort}</span></td>
-                <td><span class="badge badge-p1">${cc.suggested_window}</span></td>
-                <td style="font-size:0.8rem; color: var(--text-muted);">${cc.reason}</td>
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fb923c; font-size: 0.92rem;">${cc.title}</div>
+                  <div class="c-meta" style="margin-top: 0.2rem;">
+                    <span class="badge badge-p1plus">${cc.effort}</span>
+                    <span class="badge badge-p1">${cc.suggested_window}</span>
+                    <span style="color: var(--vm-muted); font-size: 0.74rem;">Dono: <strong style="color:#eaf2ff;">${cc.owner}</strong> · Ativos: <code>${cc.affected_assets}</code></span>
+                  </div>
+                  <div style="font-size: 0.74rem; color: var(--vm-faint); margin-top: 0.15rem;">${cc.reason}</div>
+                </div>
               `;
-              changeTbody.appendChild(tr);
+              changeTbody.appendChild(divCard);
             });
           }
 
-          // Render Plan Alerts Table
+          // Render Plan Alerts List
           const alertsTbody = document.getElementById('treatment-plan-alerts-tbody');
           alertsTbody.innerHTML = '';
-          alerts.forEach(al => {
-            const tr = document.createElement('tr');
-            let badgeClass = 'badge-p3';
-            if (al.level === 'critical') badgeClass = 'badge-p1plus';
-            else if (al.level === 'warning') badgeClass = 'badge-p1';
+          if (alerts.length === 0) {
+            alertsTbody.innerHTML = `
+              <div class="empty-pretty">
+                <div class="ep-ic">✓</div>
+                <div class="ep-t">Sem Alertas Ativos</div>
+              </div>`;
+          } else {
+            alerts.forEach(al => {
+              const divCard = document.createElement('div');
+              divCard.className = 'saas-list-card';
+              let badgeClass = 'badge-p3';
+              if (al.level === 'critical') badgeClass = 'badge-p1plus';
+              else if (al.level === 'warning') badgeClass = 'badge-p1';
 
-            tr.innerHTML = `
-              <td><span class="badge ${badgeClass}">${al.level}</span></td>
-              <td style="font-weight:700; color: var(--text-main);">${al.title}</td>
-              <td style="font-size:0.85rem; color: var(--text-muted);">${al.message}</td>
-            `;
-            alertsTbody.appendChild(tr);
-          });
+              divCard.innerHTML = `
+                <div class="c-info">
+                  <div style="font-weight: 700; color: #fff; font-size: 0.92rem; display:flex; align-items:center; gap:0.5rem;">
+                    <span class="badge ${badgeClass}">${al.level}</span>
+                    <span>${al.title}</span>
+                  </div>
+                  <div style="font-size: 0.78rem; color: var(--vm-muted); margin-top: 0.2rem;">${al.message}</div>
+                </div>
+              `;
+              alertsTbody.appendChild(divCard);
+            });
+          }
 
           // Render Buckets and Effort Lists
           const bucketsUl = document.getElementById('treatment-summary-buckets');
