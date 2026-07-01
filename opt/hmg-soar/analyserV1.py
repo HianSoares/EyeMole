@@ -6245,8 +6245,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         radial-gradient(900px 380px at 88% -30%, rgba(79,140,255,0.22), transparent 60%),
         radial-gradient(600px 300px at 6% 120%, rgba(244,63,94,0.14), transparent 55%),
         linear-gradient(135deg, #0f1d33 0%, #0b1626 60%, #0a1322 100%);
-      padding: 2.4rem 2.4rem 2rem;
-      margin-bottom: 1.5rem;
+      padding: 1.2rem 1.8rem 1.2rem;
+      margin-bottom: 1rem;
       box-shadow: 0 24px 60px -32px rgba(0,0,0,0.75);
     }
     .vm-hero::after {
@@ -6563,7 +6563,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos &amp; Exposição</span></button>
         <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Tratamento &amp; SLA</span></button>
         <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorização</span></button>
-        <button class="tab-btn" data-tab="treatment"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><span>Tratamento</span></button>
         <button class="tab-btn" data-tab="trends"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendencias</span></button>
         <button class="tab-btn" data-tab="status"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
       </nav>
@@ -6573,7 +6572,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="status-chip"><span>Modo Seguro</span><strong id="footer-safe-mode">Ativo</strong></div>
           <div class="status-chip"><span>API Online</span><strong id="footer-status-api">Verificando</strong></div>
           <div class="status-chip"><span>Timer Ativo</span><strong id="footer-status-timer">Verificando</strong></div>
-          <div class="status-chip"><span>Relatorio</span><strong id="footer-report-date">{{GEN_TIME}}</strong></div>
         </div>
         <button id="btn-global-reload" class="btn btn-primary" onclick="reloadAllData()" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; margin-top: 0.75rem;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -6603,12 +6601,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
       <section class="global-filterbar" aria-label="Filtros visuais do dashboard">
-        <div class="filter-field"><label for="filter-agent-ui">Fonte / Agente</label><select id="filter-agent-ui"><option>Todos os agentes</option></select></div>
-        <div class="filter-field"><label for="filter-severity-ui">Severidade</label><select id="filter-severity-ui"><option>Todas</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>
-        <div class="filter-field"><label for="filter-criticality-ui">Criticidade</label><select id="filter-criticality-ui"><option>Todas</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>unknown</option></select></div>
-        <div class="filter-field"><label for="filter-exposure-ui">Exposicao</label><select id="filter-exposure-ui"><option>Todas</option><option>internet</option><option>dmz</option><option>internal</option><option>unknown</option></select></div>
-        <div class="filter-field"><label for="filter-env-ui">Ambiente</label><select id="filter-env-ui"><option>Todos</option><option>production</option><option>hmg</option><option>development</option><option>lab</option><option>unknown</option></select></div>
-        <div class="filter-field"><label for="filter-status-ui">Status</label><select id="filter-status-ui"><option>Todos</option><option>Dentro do SLA</option><option>Proximo SLA</option><option>Vencido</option></select></div>
+        <div class="filter-field"><label for="filter-agent-ui">Fonte / Agente</label><select id="filter-agent-ui"><option value="ALL" selected>Todos os agentes</option></select></div>
+        <div class="filter-field"><label for="filter-severity-ui">Severidade</label><select id="filter-severity-ui"><option value="ALL" selected>Todas</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>
+        <div class="filter-field"><label for="filter-criticality-ui">Criticidade</label><select id="filter-criticality-ui"><option value="ALL" selected>Todas</option><option>critical</option><option>high</option><option>medium</option><option>low</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-exposure-ui">Exposicao</label><select id="filter-exposure-ui"><option value="ALL" selected>Todas</option><option>internet</option><option>dmz</option><option>internal</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-env-ui">Ambiente</label><select id="filter-env-ui"><option value="ALL" selected>Todos</option><option>production</option><option>hmg</option><option>development</option><option>lab</option><option>unknown</option></select></div>
+        <div class="filter-field"><label for="filter-status-ui">Status</label><select id="filter-status-ui"><option value="ALL" selected>Todos</option><option>Dentro do SLA</option><option>Proximo SLA</option><option>Vencido</option></select></div>
         <button class="btn" type="button" onclick="resetVisualFilters()">Reset Filters</button>
         <button class="btn btn-primary" type="button" onclick="applyVisualFilters()">Aplicar</button>
       </section>
@@ -6621,14 +6619,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <h1>Gestão de Vulnerabilidades e Exposição</h1>
           <p class="vm-hero-sub">Detecte, priorize e acompanhe vulnerabilidades com contexto de ativos, exposição e risco operacional.</p>
           <p class="vm-hero-desc">O EyeMole consolida CVEs, criticidade de ativos, exposição, KEV, EPSS e SLA para apoiar decisões de correção baseadas em risco.</p>
-          <div class="vm-hero-chips">
-            <span class="vm-chip"><span class="dot dot-info"></span>Modo: <b id="hero-mode">audit</b></span>
-            <span class="vm-chip"><span class="dot dot-ok"></span>API: <b id="hero-api">—</b></span>
-            <span class="vm-chip"><span class="dot dot-ok"></span>Timer: <b id="hero-timer">—</b></span>
-            <span class="vm-chip"><span class="dot dot-info"></span>Agentes: <b id="hero-agents">—</b></span>
-            <span class="vm-chip"><span class="dot dot-warn"></span>CVEs únicos: <b id="hero-cves">—</b></span>
-            <span class="vm-chip"><span class="dot dot-info"></span>Última geração: <b id="hero-lastgen">—</b></span>
-          </div>
         </div>
 
         <!-- ===== RISK COMMAND CENTER ===== -->
@@ -7583,8 +7573,149 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </tbody>
         </table>
       </div>
+
+      <!-- Seções Migradas da Aba Tratamento -->
+      <div class="vm-sec-head" style="margin-top: 2rem;"><div><div class="vm-kicker">Remediation Plan</div><h2>Ações Recomendadas &amp; Carga de Trabalho</h2><p>O que corrigir primeiro e distribuição por dono técnico.</p></div></div>
+      <div class="vm-grid-2" style="margin-bottom:1.4rem;">
+        <div class="vm-panel"><h4>Recommended Actions</h4><div id="rec-list"><div class="vm-empty">Analisando ações recomendadas…</div></div></div>
+        <div class="vm-panel"><h4>Owner Workload <span style="font-size:0.68rem;color:var(--vm-faint);font-weight:600;text-transform:none;letter-spacing:0;">carga por dono técnico</span></h4><div id="owner-list"><div class="vm-empty">Agrupando por dono…</div></div></div>
+      </div>
+
+      <div class="vm-sec-head"><div><div class="vm-kicker">Treatment Plan</div><h2>Itens de Tratativa</h2><p>Detalhamento das ações priorizadas por dono, ativo e SLA.</p></div></div>
+      <div style="margin-top: 2rem; margin-bottom: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">📋 Plano de Tratativa e Workload Operacional</h2>
+          <button class="btn" id="btn-refresh-treatment" onclick="refreshTreatmentPlan()" style="display: none;">
+            🔄 Atualizar Plano
+          </button>
+        </div>
+
+        <!-- Alertas de Tratativa -->
+        <div class="alert-container" id="treatment-alerts-container" style="display: none; margin-bottom: 1.5rem;">
+          <!-- Alertas dinâmicos serão inseridos aqui -->
+        </div>
+
+        <!-- Grid de Plano de Tratativa -->
+        <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem; gap: 1rem;">
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #ef4444;">
+            <div class="metric-title" style="font-size: 0.8rem;">Ações Imediatas (Now)</div>
+            <div class="metric-value" id="treatment-metrics-now" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Tratar agora</div>
+          </div>
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #f97316;">
+            <div class="metric-title" style="font-size: 0.8rem;">Próximos 7 Dias</div>
+            <div class="metric-value" id="treatment-metrics-7d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Curto prazo</div>
+          </div>
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #eab308;">
+            <div class="metric-title" style="font-size: 0.8rem;">Próximos 15 Dias</div>
+            <div class="metric-value" id="treatment-metrics-15d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Médio prazo</div>
+          </div>
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #3b82f6;">
+            <div class="metric-title" style="font-size: 0.8rem;">Próximos 30 Dias</div>
+            <div class="metric-value" id="treatment-metrics-30d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Longo prazo</div>
+          </div>
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #10b981;">
+            <div class="metric-title" style="font-size: 0.8rem;">Monitorar / Exceções</div>
+            <div class="metric-value" id="treatment-metrics-monitor" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="treatment-metrics-exc-fp">Exceções: - | FP: -</div>
+          </div>
+          <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #8b5cf6;">
+            <div class="metric-title" style="font-size: 0.8rem;">Equipes (Owners)</div>
+            <div class="metric-value" id="treatment-metrics-owners" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="treatment-metrics-wins-change">Quick Wins: - | Janelas: -</div>
+          </div>
+        </div>
+
+        <!-- Dashboards Plano de Tratativa -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
+          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Bucket</h4>
+            <div id="treat-chart-buckets" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          </div>
+          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Workload por Owner</h4>
+            <div id="treat-chart-workload" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          </div>
+          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Quick Wins</h4>
+            <div id="treat-chart-quickwins" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          </div>
+          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
+            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Change Window Candidates</h4>
+            <div id="treat-chart-changes" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Top Itens para Tratativa Operacional -->
+        <div class="vm-panel" style="margin-top: 1.5rem;">
+          <h4>🔥 Top Itens para Tratativa Operacional (Fase 3G)</h4>
+          <div id="treatment-top-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div class="vm-empty">Carregando plano de tratativa...</div>
+          </div>
+        </div>
+
+        <!-- Workload por Owner Técnico -->
+        <div class="vm-panel" style="margin-top: 1.5rem;">
+          <h4>👥 Distribuição de Carga de Trabalho (Workload) por Owner Técnico</h4>
+          <div id="treatment-workload-tbody" class="workload-grid" style="margin-top: 1rem; min-height: 120px; align-content: center;">
+            <div class="vm-empty">Carregando workload por owner...</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
+          <!-- Quick Wins -->
+          <div class="vm-panel" style="margin-bottom: 0;">
+            <h4 style="color: #10b981;">🎯 Quick Wins (Ações de Baixo Esforço e Alto Impacto)</h4>
+            <div id="treatment-wins-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+              <div class="vm-empty">Carregando quick wins...</div>
+            </div>
+          </div>
+
+          <!-- Janelas de Mudança Planejada -->
+          <div class="vm-panel" style="margin-bottom: 0;">
+            <h4 style="color: #eab308;">⚙️ Janelas de Mudança Planejada (Alta Complexidade / Impacto)</h4>
+            <div id="treatment-change-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+              <div class="vm-empty">Carregando janelas de mudanças...</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+          <!-- Alertas de Tratativa -->
+          <div class="vm-panel" style="margin-bottom: 0;">
+            <h4>🚨 Alertas do Plano de Tratativa</h4>
+            <div id="treatment-plan-alerts-tbody" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+              <div class="vm-empty">Carregando alertas...</div>
+            </div>
+          </div>
+
+          <!-- Tabela Agrupamentos Buckets & Esforço -->
+          <div class="table-container" style="margin-bottom: 0;">
+            <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
+              📊 Resumo Geral do Plano de Trabalho
+            </div>
+            <div style="padding: 1rem; display: flex; justify-content: space-around; font-size: 0.9rem;">
+              <div style="flex: 1; border-right: 1px solid var(--border-color); padding: 0 1rem;">
+                <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">Baldes de Prazos</h4>
+                <ul id="treatment-summary-buckets" style="list-style: none; padding-left: 0;">
+                  <li>-</li>
+                </ul>
+              </div>
+              <div style="flex: 1; padding: 0 1rem;">
+                <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">Complexidade (Esforço)</h4>
+                <ul id="treatment-summary-effort" style="list-style: none; padding-left: 0;">
+                  <li>-</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-      </section>
+  </section>
 
       <!-- Aba 5: Governança & Exceções -->
       <section id="tab-governance" class="tab-panel">
@@ -8182,152 +8313,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
       </section>
 
-      <!-- Aba 7: Plano de Tratativa -->
-      <section id="tab-treatment" class="tab-panel">
-        <div class="tab-hero">
-          <div class="vm-kicker">Remediation Plan</div>
-          <h2>Plano de Tratativa</h2>
-          <p>O que corrigir primeiro, quem é o dono e qual o próximo passo recomendado para reduzir risco.</p>
-        </div>
-        <div class="vm-grid-2" style="margin-bottom:1.4rem;">
-          <div class="vm-panel"><h4>Recommended Actions</h4><div id="rec-list"><div class="vm-empty">Analisando ações recomendadas…</div></div></div>
-          <div class="vm-panel"><h4>Owner Workload <span style="font-size:0.68rem;color:var(--vm-faint);font-weight:600;text-transform:none;letter-spacing:0;">carga por dono técnico</span></h4><div id="owner-list"><div class="vm-empty">Agrupando por dono…</div></div></div>
-        </div>
-        <div class="vm-sec-head"><div><div class="vm-kicker">Treatment Plan</div><h2>Itens de Tratativa</h2><p>Detalhamento das ações priorizadas por dono, ativo e SLA.</p></div></div>
-        <!-- Plano de Tratativa e Workload Operacional (Fase 3G) -->
-    <div style="margin-top: 2rem; margin-bottom: 2rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-        <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">📋 Plano de Tratativa e Workload Operacional</h2>
-        <button class="btn" id="btn-refresh-treatment" onclick="refreshTreatmentPlan()" style="display: none;">
-          🔄 Atualizar Plano
-        </button>
-      </div>
-
-      <!-- Alertas de Tratativa -->
-      <div class="alert-container" id="treatment-alerts-container" style="display: none; margin-bottom: 1.5rem;">
-        <!-- Alertas dinâmicos serão inseridos aqui -->
-      </div>
-
-      <!-- Grid de Plano de Tratativa -->
-      <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem; gap: 1rem;">
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #ef4444;">
-          <div class="metric-title" style="font-size: 0.8rem;">Ações Imediatas (Now)</div>
-          <div class="metric-value" id="treatment-metrics-now" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Tratar agora</div>
-        </div>
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #f97316;">
-          <div class="metric-title" style="font-size: 0.8rem;">Próximos 7 Dias</div>
-          <div class="metric-value" id="treatment-metrics-7d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Curto prazo</div>
-        </div>
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #eab308;">
-          <div class="metric-title" style="font-size: 0.8rem;">Próximos 15 Dias</div>
-          <div class="metric-value" id="treatment-metrics-15d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Médio prazo</div>
-        </div>
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #3b82f6;">
-          <div class="metric-title" style="font-size: 0.8rem;">Próximos 30 Dias</div>
-          <div class="metric-value" id="treatment-metrics-30d" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Longo prazo</div>
-        </div>
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #10b981;">
-          <div class="metric-title" style="font-size: 0.8rem;">Monitorar / Exceções</div>
-          <div class="metric-value" id="treatment-metrics-monitor" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="treatment-metrics-exc-fp">Exceções: - | FP: -</div>
-        </div>
-        <div class="metric-card all" style="cursor: default; pointer-events: none; border-left: 4px solid #8b5cf6;">
-          <div class="metric-title" style="font-size: 0.8rem;">Equipes (Owners)</div>
-          <div class="metric-value" id="treatment-metrics-owners" style="font-size: 1.8rem; margin-top: 0.5rem;">-</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="treatment-metrics-wins-change">Quick Wins: - | Janelas: -</div>
-        </div>
-      </div>
-
-        <!-- Fase 3H.2 - Dashboards Plano de Tratativa -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Bucket</h4>
-            <div id="treat-chart-buckets" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Workload por Owner</h4>
-            <div id="treat-chart-workload" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Quick Wins</h4>
-            <div id="treat-chart-quickwins" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Change Window Candidates</h4>
-            <div id="treat-chart-changes" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-        </div>
-
-      <!-- Top Itens para Tratativa Operacional -->
-      <div class="vm-panel" style="margin-top: 1.5rem;">
-        <h4>🔥 Top Itens para Tratativa Operacional (Fase 3G)</h4>
-        <div id="treatment-top-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
-          <div class="vm-empty">Carregando plano de tratativa...</div>
-        </div>
-      </div>
-
-      <!-- Workload por Owner Técnico -->
-      <div class="vm-panel" style="margin-top: 1.5rem;">
-        <h4>👥 Distribuição de Carga de Trabalho (Workload) por Owner Técnico</h4>
-        <div id="treatment-workload-tbody" class="workload-grid" style="margin-top: 1rem; min-height: 120px; align-content: center;">
-          <div class="vm-empty">Carregando workload por owner...</div>
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-top: 1.5rem; margin-bottom: 1.5rem;">
-        <!-- Quick Wins -->
-        <div class="vm-panel" style="margin-bottom: 0;">
-          <h4 style="color: #10b981;">🎯 Quick Wins (Ações de Baixo Esforço e Alto Impacto)</h4>
-          <div id="treatment-wins-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
-            <div class="vm-empty">Carregando quick wins...</div>
-          </div>
-        </div>
-
-        <!-- Janelas de Mudança Planejada -->
-        <div class="vm-panel" style="margin-bottom: 0;">
-          <h4 style="color: #eab308;">⚙️ Janelas de Mudança Planejada (Alta Complexidade / Impacto)</h4>
-          <div id="treatment-change-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
-            <div class="vm-empty">Carregando janelas de mudanças...</div>
-          </div>
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
-        <!-- Alertas de Tratativa -->
-        <div class="vm-panel" style="margin-bottom: 0;">
-          <h4>🚨 Alertas do Plano de Tratativa</h4>
-          <div id="treatment-plan-alerts-tbody" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
-            <div class="vm-empty">Carregando alertas...</div>
-          </div>
-        </div>
-
-        <!-- Tabela Agrupamentos Buckets & Esforço -->
-        <div class="table-container" style="margin-bottom: 0;">
-          <div style="padding: 1rem 1.25rem; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: rgba(10, 14, 23, 0.2);">
-            📊 Resumo Geral do Plano de Trabalho
-          </div>
-          <div style="padding: 1rem; display: flex; justify-content: space-around; font-size: 0.9rem;">
-            <div style="flex: 1; border-right: 1px solid var(--border-color); padding: 0 1rem;">
-              <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">Baldes de Prazos</h4>
-              <ul id="treatment-summary-buckets" style="list-style: none; padding-left: 0;">
-                <li>-</li>
-              </ul>
-            </div>
-            <div style="flex: 1; padding: 0 1rem;">
-              <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">Complexidade (Esforço)</h4>
-              <ul id="treatment-summary-effort" style="list-style: none; padding-left: 0;">
-                <li>-</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-      </section>
 
       <!-- Aba 8: Status & Auditoria -->
       <section id="tab-status" class="tab-panel">
@@ -8477,7 +8462,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           safeRefresh(refreshExposureContext, 'assets', 'Ativos & Exposição'),
           safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog'),
           safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções'),
-          safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa'),
+          safeRefresh(refreshTreatmentPlan, 'sla', 'Plano de Tratativa'),
           safeRefresh(refreshTrendSummary, 'trends', 'Tendências')
         ]);
         try { renderCommandCenter(); } catch (e) { /* silencioso */ }
@@ -8786,12 +8771,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         'sla',
         'governance',
         'trends',
-        'treatment',
         'status'
       ];
 
       if (!validTabs.includes(tabId)) {
         tabId = 'overview';
+      }
+
+      const filterBar = document.querySelector('.global-filterbar');
+      if (filterBar) {
+        if (['risk', 'assets', 'governance', 'sla'].includes(tabId)) {
+          filterBar.style.display = 'grid';
+        } else {
+          filterBar.style.display = 'none';
+        }
       }
 
       document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -8861,7 +8854,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await safeRefresh(refreshSlaSummary, 'sla', 'SLA & Backlog');
       await safeRefresh(refreshRiskAcceptance, 'governance', 'Governança & Exceções');
       await safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
-      await safeRefresh(refreshTreatmentPlan, 'treatment', 'Plano de Tratativa');
+      await safeRefresh(refreshTreatmentPlan, 'sla', 'Plano de Tratativa');
 
       // Reexecuta após o status operacional carregar (espelha API/Timer no hero).
       try { renderCommandCenter(); } catch(e) { /* silencioso */ }
@@ -9426,9 +9419,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div class="ep-d">Nenhuma ação recente foi gravada no log de auditoria.</div>
               </div>`;
           } else {
-            actions.forEach(act => {
+            const sortedActions = [...actions].sort((a, b) => {
+              const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
+              const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+              return dateB - dateA;
+            });
+
+            let lastTimeStr = '';
+            sortedActions.forEach(act => {
               const div = document.createElement('div');
               const actTime = act.timestamp ? new Date(act.timestamp).toLocaleString() : 'N/A';
+              const displayTime = (actTime === lastTimeStr) ? '' : actTime;
+              lastTimeStr = actTime;
 
               let statusClass = 'ok';
               if (act.result === 'error' || act.result === 'rejected') {
@@ -9449,7 +9451,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               div.innerHTML = `
                 <div class="tl-head">
                   <span class="tl-act">${actionName}</span>
-                  <span class="tl-time">${actTime}</span>
+                  ${displayTime ? `<span class="tl-time">${displayTime}</span>` : ''}
                   <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-text); border:1px solid var(--vm-stroke); font-size: 0.68rem; padding: 0.1rem 0.35rem; margin-left: auto;">Exit: ${exitVal}</span>
                 </div>
                 <div class="tl-meta">
