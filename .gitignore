@@ -37,3 +37,7 @@ eyemole_brand_theme_patch.py
 eyemole_brand_final_polish.py
 
 eyemole_card_color_logo_patch.py
+
+# Dados reais de ambiente - gerados automaticamente pelo context_bootstrap.py
+opt/hmg-soar/config/assets_context.json
+opt/hmg-soar/config/exposure_context.json
