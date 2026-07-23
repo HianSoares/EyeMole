@@ -8,7 +8,9 @@ API local mínima para disparar análises sob demanda.
 - Não acessa credenciais, Wazuh API ou OpenSearch diretamente
 - STATUS: lido diretamente via `systemctl show` (somente leitura, SEM sudo)
 - MODO SEGURO (padrão): sem sudoers; execução manual via web desabilitada (403)
-- MODO OPT-IN (EYEMOLE_ENABLE_WEB_RUN): dispara análise via wrapper sudo restrito
+- MODO OPT-IN (EYEMOLE_ENABLE_WEB_RUN): dispara análise pedindo ao systemd
+  (systemctl start) o start da unidade, autorizado por regra PolicyKit restrita
+  (sem sudo/SUID, compatível com NoNewPrivileges=yes do serviço)
 
 Endpoints:
   GET  /health       → Healthcheck simples
@@ -38,9 +40,15 @@ from urllib.parse import urlparse, parse_qs, unquote
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 8765
 
-# Wrappers seguros (root-owned, sem argumentos)
+# Wrappers seguros (root-owned, sem argumentos) — legado; NÃO são mais usados
+# para disparo (o mecanismo atual é systemctl start + PolicyKit). Mantidos apenas
+# para referência/limpeza pelo install.sh.
 WRAPPER_RUN_ANALYSIS = "/usr/local/sbin/hmg-soar-run-analysis"
 WRAPPER_STATUS = "/usr/local/sbin/hmg-soar-status"
+
+# Unidade de relatório disparada via systemd (sem SUID/sudo). A autorização do
+# start é concedida por uma regra PolicyKit restrita instalada no modo opt-in.
+REPORT_SERVICE_UNIT = "hmg-soar-report.service"
 
 # Diretórios do relatório
 WEB_DIR = Path("/var/www/wazuh-soar")
@@ -59,6 +67,11 @@ APP_DIR = Path("/opt/hmg-soar")
 CONFIG_DIR = APP_DIR / "config"
 # ÚNICO arquivo autorizado para escrita de contexto de ativos.
 ASSETS_CONTEXT_JSON = CONFIG_DIR / "assets_context.json"
+
+# Marcador ÚNICO do modo opt-in (web-run). Criado pelo install.sh --enable-web-run
+# e removido no modo seguro. É a única fonte de verdade usada tanto pelo backend
+# (_web_run_enabled) quanto pelo install.sh para decidir o action_mode.
+WEB_RUN_FLAG = CONFIG_DIR / "web_run.enabled"
 
 # Auditoria específica de contexto (separada, conforme requisito de segurança).
 CONTEXT_AUDIT_DIR = APP_DIR / "audit"
@@ -174,6 +187,29 @@ def _run_wrapper(wrapper_path: str) -> tuple:
         return (-3, "", str(e))
 
 
+def _start_report_service() -> tuple:
+    """Solicita ao systemd o start da unidade de relatório (sem SUID/sudo).
+
+    Usa `systemctl start --no-block`, que fala com o systemd via D-Bus. A
+    autorização é concedida por uma regra PolicyKit restrita (instalada apenas
+    no modo opt-in), então NÃO depende de sudo/SUID e é compatível com o
+    hardening do serviço (NoNewPrivileges=yes). Sem shell, argumentos fixos.
+    Retorna (exit_code, stdout, stderr).
+    """
+    try:
+        result = subprocess.run(
+            ["systemctl", "start", "--no-block", REPORT_SERVICE_UNIT],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return (result.returncode, result.stdout.strip(), result.stderr.strip())
+    except subprocess.TimeoutExpired:
+        return (-2, "", "Timeout ao solicitar start da unidade ao systemd")
+    except OSError as e:
+        return (-3, "", str(e))
+
+
 def _systemctl_show(unit: str, properties: list) -> dict:
     """Lê propriedades de uma unit via 'systemctl show', SEM privilégio (somente leitura).
 
@@ -243,10 +279,11 @@ def _web_run_enabled() -> bool:
     """Indica se a execução manual privilegiada via web está habilitada.
 
     Só é verdadeira no modo opt-in (EYEMOLE_ENABLE_WEB_RUN / --enable-web-run),
-    quando o install.sh instalou o wrapper sudo. No modo seguro padrão (sem
-    sudoers) retorna False e a API nunca tenta usar sudo.
+    quando o install.sh criou o marcador de estado e a regra PolicyKit que
+    autoriza o start da unidade. No modo seguro padrão o marcador não existe,
+    retorna False e a API nunca tenta disparar nada.
     """
-    return os.path.isfile(WRAPPER_RUN_ANALYSIS)
+    return WEB_RUN_FLAG.is_file()
 
 
 def _is_service_active() -> bool:
@@ -1144,7 +1181,7 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         try:
             logger.info(f"Disparando análise. Usuário: {remote_user}, IP: {client_ip}")
 
-            exit_code, stdout, stderr = _run_wrapper(WRAPPER_RUN_ANALYSIS)
+            exit_code, stdout, stderr = _start_report_service()
 
             if exit_code == 0:
                 audit_log(
@@ -1189,8 +1226,8 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
 def main() -> int:
     # API local: classificação de ativos via web edita apenas JSON local (sem sudo).
     logger.info(f"Iniciando HMG SOAR API em {LISTEN_HOST}:{LISTEN_PORT}")
-    logger.info(f"Wrapper run-analysis: {WRAPPER_RUN_ANALYSIS}")
-    logger.info(f"Wrapper status: {WRAPPER_STATUS}")
+    logger.info(f"Disparo de análise: systemctl start --no-block {REPORT_SERVICE_UNIT} (via PolicyKit)")
+    logger.info(f"Marcador web-run: {WEB_RUN_FLAG} (habilitado={_web_run_enabled()})")
     logger.info(f"Audit log: {AUDIT_LOG}")
 
     # Garantir que diretório de auditoria existe

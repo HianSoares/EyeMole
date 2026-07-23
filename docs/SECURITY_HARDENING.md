@@ -102,8 +102,12 @@ sudo systemctl start hmg-soar-report.service
 ## 4. Como habilitar o web-run opcional (HMG/lab)
 
 Apenas em ambiente **controlado** (homologação/laboratório), é possível habilitar
-a execução manual via web. Isso instala um wrapper fixo e uma regra `sudoers`
-**restrita** (apenas o disparo da análise; o status continua sem `sudo`):
+a execução manual via web. Isso **não usa `sudoers`/`NOPASSWD`**: instala uma
+regra **PolicyKit** de escopo mínimo. A API dispara a análise pedindo ao systemd
+(`systemctl start --no-block hmg-soar-report.service`), e o PolicyKit autoriza
+esse start. Como não há `sudo`/SUID envolvido, o hardening do serviço da API
+(`NoNewPrivileges=yes`) **permanece ativo** — que é justamente o que bloqueava a
+elevação via `sudo` do mecanismo antigo.
 
 ```bash
 EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh
@@ -113,10 +117,15 @@ sudo ./install.sh --enable-web-run
 
 Nesse modo:
 
-- Cria `/usr/local/sbin/hmg-soar-run-analysis` (root:root, 0700).
-- Cria `/etc/sudoers.d/hmg-soar-api` (0440) contendo **somente**:
-  `hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-run-analysis`.
-- Valida a sintaxe com `visudo -cf` (e remove o arquivo se reprovado).
+- Valida que o PolicyKit está presente; se `polkitd`/`rules.d` faltarem, o
+  instalador **falha com mensagem clara** em vez de configurar algo quebrado.
+- Cria `/etc/polkit-1/rules.d/49-hmg-soar.rules` (root:root, 0644) com escopo
+  **MÍNIMO**: só o usuário `hmg-soar`, só a unidade `hmg-soar-report.service`,
+  só o verbo `start` (nunca `ALL`, nunca wildcard de unidade).
+- Cria o marcador de estado único `/opt/hmg-soar/config/web_run.enabled`
+  (root:www-data, 0644), lido pela API para expor `action_mode`.
+- **Remove** (com backup) qualquer `sudoers`/wrapper de instalação anterior,
+  para não deixar dois caminhos de privilégio ativos.
 - `POST /soar-api/run-analysis` passa a responder **HTTP 202** e o botão do
   dashboard fica visível/habilitado (`action_mode: "web_run_enabled"`).
 
@@ -208,8 +217,8 @@ Notas de compatibilidade:
 |---|---|---|
 | `/etc/hmg-soar/credentials.env` | `root:hmg-soar` (ou `root:root`) | `0640` |
 | `/etc/nginx/.htpasswd-wazuh-soar` | `root:www-data` | `0640` |
-| `/etc/sudoers.d/hmg-soar-api` (somente web-run) | `root:root` | `0440` |
-| `/usr/local/sbin/hmg-soar-run-analysis` (somente web-run) | `root:root` | `0700` |
+| `/etc/polkit-1/rules.d/49-hmg-soar.rules` (somente web-run) | `root:root` | `0644` |
+| `/opt/hmg-soar/config/web_run.enabled` (marcador, somente web-run) | `root:www-data` | `0644` |
 | `/opt/hmg-soar` | `hmg-soar:www-data` | `0755` |
 | `/opt/hmg-soar/audit/actions.log` | `hmg-soar:www-data` | `0640` |
 | `/var/www/wazuh-soar/data/audit_actions.jsonl` | `hmg-soar:www-data` | `0660` |
@@ -292,8 +301,9 @@ Resultado esperado (produção, modo seguro):
 
 - **Basic Auth** protege as rotas, mas a robustez depende da força das senhas em
   `.htpasswd` e do TLS do Wazuh Dashboard (não gerenciado por este projeto).
-- O modo **web-run** (opt-in) reintroduz um `sudoers` restrito; use apenas em
-  ambiente controlado. Mesmo restrito, permite disparar a análise via web.
+- O modo **web-run** (opt-in) instala uma regra **PolicyKit** restrita (sem
+  `sudoers`/`NOPASSWD`); use apenas em ambiente controlado. Mesmo restrita a um
+  usuário/unidade/verbo, ela permite disparar a análise via web.
 - `systemctl show` é leitura, mas expõe metadados de unidades a quem acessa a API
   (já protegida por Basic Auth e loopback).
 - O hardening do `report.service` não usa `MemoryDenyWriteExecute` por
@@ -328,7 +338,8 @@ git checkout -- install.sh systemd/ opt/hmg-soar/soar_api.py opt/hmg-soar/analys
 Para simplesmente **desfazer o web-run** e voltar ao modo seguro:
 
 ```bash
-sudo ./install.sh          # reexecuta no modo seguro: faz backup e remove o sudoers
+sudo ./install.sh          # reexecuta no modo seguro: faz backup e remove a regra
+                           # PolicyKit + o marcador web_run.enabled (e o sudoers legado)
 ```
 
 ---
