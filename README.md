@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="opt/hmg-soar/assets/eyemole.png" alt="EyeMole Logo" width="180"/>
+  <img src="opt/hmg-soar/assets/eyemole.png" alt="EyeMole Logo" width="280"/>
 
   # EyeMole SOAR
 
