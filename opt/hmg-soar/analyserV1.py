@@ -6161,7 +6161,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .app-layout { grid-template-columns: 268px minmax(0, 1fr); }
     .sidebar { background: linear-gradient(180deg, #08111f 0%, #06101d 100%); padding: 1.25rem 0.85rem; }
     .sidebar-header { align-items: flex-start; text-align: left; padding: 0.2rem 0.55rem 1rem; }
-    .brand-logo { height: 54px; max-width: 168px; object-fit: contain; }
+    .brand-logo { height: 85px; max-width: 220px; object-fit: contain; }
     .brand-info h2 { font-size: 1.1rem; margin-top: 0; letter-spacing: 0; }
     .sidebar-status { display: grid; gap: 0.45rem; margin-top: 0.75rem; }
     .status-chip { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.6rem; border: 1px solid var(--eyemole-border); border-radius: 8px; background: rgba(13, 26, 43, 0.72); color: var(--text-muted); font-size: 0.74rem; }
@@ -6551,18 +6551,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <aside class="sidebar">
       <div class="sidebar-header">
         <img src="assets/eyemole.png" alt="Eyemole Logo" class="brand-logo">
-        <div class="brand-info">
-          <h2>EyeMole</h2>
-          <span class="brand-subtitle">Gestão de Exposição</span>
-        </div>
       </div>
 
       <nav class="sidebar-nav" aria-label="Menu principal EyeMole">
         <button class="tab-btn active" data-tab="overview"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Dashboard</span></button>
         <button class="tab-btn" data-tab="risk"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3L12 3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>Vulnerabilidades</span></button>
-        <button class="tab-btn" data-tab="assets"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos &amp; Exposição</span></button>
-        <button class="tab-btn" data-tab="sla"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Tratamento &amp; SLA</span></button>
-        <button class="tab-btn" data-tab="governance"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorização</span></button>
+        <button class="tab-btn" data-tab="assets" style="display: none;"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/></svg><span>Ativos &amp; Exposição</span></button>
+        <button class="tab-btn" data-tab="sla" style="display: none;"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 16l4-5 3 3 5-8"/></svg><span>Tratamento &amp; SLA</span></button>
+        <button class="tab-btn" data-tab="governance" style="display: none;"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-5"/></svg><span>Priorização</span></button>
         <button class="tab-btn" data-tab="trends"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg><span>Tendencias</span></button>
         <button class="tab-btn" data-tab="status"><svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg><span>Status & Auditoria</span></button>
       </nav>
