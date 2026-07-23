@@ -19,8 +19,11 @@ BACKUP_DIR="/opt/backup-eyemole-install-${TS}"
 # ====================================================================
 # MODO DE OPERAÇÃO
 # Padrão: MODO SEGURO (sem sudoers, sem NOPASSWD, sem execução manual via web).
-# Opt-in (apenas ambiente controlado): habilita execução manual via web,
-# instalando wrappers + regra sudoers RESTRITA.
+# Opt-in (apenas ambiente controlado): habilita execução manual via web
+# instalando uma regra PolicyKit RESTRITA (sem sudoers/NOPASSWD). A API pede
+# ao systemd (systemctl start) o start da unidade de relatório; o PolicyKit
+# autoriza APENAS o usuário hmg-soar a dar "start" APENAS na unidade
+# hmg-soar-report.service. Compatível com NoNewPrivileges=yes do serviço.
 #   EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh
 #   sudo ./install.sh --enable-web-run
 # ====================================================================
@@ -28,6 +31,10 @@ ENABLE_WEB_RUN="${EYEMOLE_ENABLE_WEB_RUN:-0}"
 SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/hmg-soar-api}"
 WRAPPER_RUN_ANALYSIS="/usr/local/sbin/hmg-soar-run-analysis"
 WRAPPER_STATUS="/usr/local/sbin/hmg-soar-status"
+# Mecanismo atual do opt-in: regra PolicyKit + marcador de estado único.
+POLKIT_RULE_FILE="${POLKIT_RULE_FILE:-/etc/polkit-1/rules.d/49-hmg-soar.rules}"
+WEB_RUN_FLAG="${WEB_RUN_FLAG:-${APP_DIR}/config/web_run.enabled}"
+REPORT_SERVICE_UNIT="${REPORT_SERVICE_UNIT:-hmg-soar-report.service}"
 
 log() {
 echo "[+] $*"
@@ -65,8 +72,9 @@ parse_args() {
         echo "    gerado automaticamente pelo timer hmg-soar-report.timer."
         echo
         echo "  --enable-web-run (opt-in, apenas ambiente controlado/HMG/lab):"
-        echo "    instala wrappers + regra sudoers RESTRITA para habilitar o"
-        echo "    botão 'Executar análise agora' no dashboard."
+        echo "    instala uma regra PolicyKit RESTRITA (sem sudoers/NOPASSWD) que"
+        echo "    autoriza apenas o usuário hmg-soar a dar 'start' apenas na unidade"
+        echo "    hmg-soar-report.service, habilitando o botão 'Executar análise agora'."
         echo "    Equivale a: EYEMOLE_ENABLE_WEB_RUN=1 sudo ./install.sh"
         exit 0
         ;;
@@ -228,40 +236,72 @@ enforce_safe_mode_no_sudoers() {
     rm -f "${WRAPPER_RUN_ANALYSIS}" "${WRAPPER_STATUS}"
     log "Wrappers privilegiados anteriores removidos."
   fi
+
+  # Remover a regra PolicyKit do modo opt-in, se existir (com backup).
+  if [[ -f "${POLKIT_RULE_FILE}" ]]; then
+    backup_path "${POLKIT_RULE_FILE}"
+    rm -f "${POLKIT_RULE_FILE}"
+    log "Regra PolicyKit removida: ${POLKIT_RULE_FILE} (backup em ${BACKUP_DIR})."
+  fi
+
+  # Remover o marcador de estado do web-run (garante action_mode=safe_no_sudoers).
+  if [[ -f "${WEB_RUN_FLAG}" ]]; then
+    rm -f "${WEB_RUN_FLAG}"
+    log "Marcador web-run removido: ${WEB_RUN_FLAG}."
+  fi
 }
 
 install_web_run_optin() {
-  warn "EYEMOLE_ENABLE_WEB_RUN ativo: habilitando execução manual via web (sudoers RESTRITO)."
+  warn "EYEMOLE_ENABLE_WEB_RUN ativo: habilitando execução manual via web (PolicyKit RESTRITO, sem sudoers)."
   warn "Use SOMENTE em ambiente controlado (HMG/lab). Em produção, prefira o modo seguro."
 
-  log "Instalando wrapper de execução (run-analysis)..."
-  # Wrapper run-analysis: dispara o serviço oneshot, sem argumentos do cliente.
-  cat > "${WRAPPER_RUN_ANALYSIS}" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-systemctl start hmg-soar-report.service
-EOF
-
-  chmod 0700 "${WRAPPER_RUN_ANALYSIS}"
-  chown root:root "${WRAPPER_RUN_ANALYSIS}"
-
-  # Regra sudoers RESTRITA: apenas o wrapper fixo de run-analysis.
-  # (O status NÃO precisa de sudo: a API lê via 'systemctl show'.)
-  log "Instalando regra sudoers restrita para a API..."
-  cat > "${SUDOERS_FILE}" <<'EOF'
-hmg-soar ALL=(ALL) NOPASSWD: /usr/local/sbin/hmg-soar-run-analysis
-EOF
-
-  chmod 0440 "${SUDOERS_FILE}"
-  chown root:root "${SUDOERS_FILE}"
-
-  # Validar sintaxe do sudoers, sem abortar a instalação se visudo faltar.
-  if command -v visudo >/dev/null 2>&1; then
-    if ! visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1; then
-      warn "visudo reprovou ${SUDOERS_FILE}; removendo por segurança."
-      rm -f "${SUDOERS_FILE}"
-    fi
+  # Validar que o PolicyKit está presente ANTES de instalar. Sem ele, a regra
+  # não seria lida e o botão voltaria a falhar. Falhar claro > instalar quebrado.
+  local polkit_dir; polkit_dir="$(dirname "${POLKIT_RULE_FILE}")"
+  if [[ ! -d "${polkit_dir}" ]] \
+     || ! { command -v pkaction >/dev/null 2>&1 \
+            || [[ -x /usr/lib/polkit-1/polkitd ]] \
+            || [[ -x /usr/libexec/polkit-1/polkitd ]]; }; then
+    die "PolicyKit ausente (${polkit_dir} ou polkitd não encontrados). Instale o pacote 'polkitd' (Ubuntu 24.04) e reexecute com --enable-web-run. O modo opt-in não foi configurado."
   fi
+
+  # Compatibilidade/limpeza: remover o mecanismo antigo (sudoers + wrapper SUID),
+  # para NÃO deixar dois caminhos de privilégio ativos ao mesmo tempo (com backup).
+  if [[ -f "${SUDOERS_FILE}" ]]; then
+    backup_path "${SUDOERS_FILE}"
+    rm -f "${SUDOERS_FILE}"
+    log "Sudoers legado removido: ${SUDOERS_FILE} (backup em ${BACKUP_DIR})."
+  fi
+  if [[ -f "${WRAPPER_RUN_ANALYSIS}" || -f "${WRAPPER_STATUS}" ]]; then
+    rm -f "${WRAPPER_RUN_ANALYSIS}" "${WRAPPER_STATUS}"
+    log "Wrappers privilegiados legados removidos."
+  fi
+
+  # Regra PolicyKit RESTRITA: só ${APP_USER}, só ${REPORT_SERVICE_UNIT}, só "start".
+  log "Instalando regra PolicyKit restrita para a API..."
+  backup_path "${POLKIT_RULE_FILE}"
+  cat > "${POLKIT_RULE_FILE}" <<EOF
+// Regra PolicyKit gerada por install.sh --enable-web-run (modo opt-in).
+// Escopo MINIMO: só o usuário ${APP_USER}, só a unidade ${REPORT_SERVICE_UNIT},
+// só o verbo "start". Sem sudoers/NOPASSWD. Removida no modo seguro (padrao).
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "${REPORT_SERVICE_UNIT}" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "${APP_USER}") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+  chown root:root "${POLKIT_RULE_FILE}"
+  chmod 0644 "${POLKIT_RULE_FILE}"
+
+  # Marcador de estado ÚNICO (a API lê para expor action_mode=web_run_enabled).
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "$(dirname "${WEB_RUN_FLAG}")"
+  printf '%s\n' "web-run habilitado via PolicyKit em ${TS}. Para desabilitar, reexecute install.sh no modo seguro (sem --enable-web-run)." > "${WEB_RUN_FLAG}"
+  chown root:"${WEB_GROUP}" "${WEB_RUN_FLAG}"
+  chmod 0644 "${WEB_RUN_FLAG}"
+  log "Marcador web-run criado: ${WEB_RUN_FLAG}."
 }
 
 secure_credentials_env() {
@@ -527,7 +567,8 @@ echo "App dir : ${APP_DIR}"
 echo "Web dir : ${WEB_DIR}"
 echo "URL     : https://<servidor>/soar/"
 if [[ "${ENABLE_WEB_RUN}" == "1" ]]; then
-echo "Modo    : WEB-RUN (opt-in) - execução manual via web HABILITADA (sudoers restrito)"
+echo "Modo    : WEB-RUN (opt-in) - execução manual via web HABILITADA (PolicyKit restrito, sem sudoers)"
+echo "          Regra: ${POLKIT_RULE_FILE} | Marcador: ${WEB_RUN_FLAG}"
 else
 echo "Modo    : SEGURO (padrão) - sem sudoers; execução manual via web DESABILITADA"
 echo "          Relatório gerado automaticamente pelo timer hmg-soar-report.timer."
@@ -557,6 +598,7 @@ main() {
   backup_path "${HTPASSWD_FILE}"
   backup_path "${SNIPPET_FILE}"
   backup_path "${SUDOERS_FILE}"
+  backup_path "${POLKIT_RULE_FILE}"
 
   create_user_and_dirs
   install_app_files

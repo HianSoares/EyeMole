@@ -17,7 +17,11 @@ No modo seguro:
 - Execução manual, quando necessária, é feita por um administrador via SSH:
   `sudo systemctl start hmg-soar-report.service`.
 - Habilitar execução manual via web (apenas HMG/lab):
-  `sudo ./install.sh --enable-web-run`.
+  `sudo ./install.sh --enable-web-run`. Esse modo opt-in usa uma regra
+  **PolicyKit restrita** (**sem** `sudoers`/`NOPASSWD`): autoriza apenas o
+  usuário `hmg-soar` a dar `start` apenas na unidade `hmg-soar-report.service`.
+  A API dispara a análise pedindo ao systemd (`systemctl start`), então o
+  hardening do serviço (`NoNewPrivileges=yes`) permanece **ativo**.
 
 
 ## Dashboard corporativo
