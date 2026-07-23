@@ -6161,7 +6161,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .app-layout { grid-template-columns: 268px minmax(0, 1fr); }
     .sidebar { background: linear-gradient(180deg, #08111f 0%, #06101d 100%); padding: 1.25rem 0.85rem; }
     .sidebar-header { align-items: flex-start; text-align: left; padding: 0.2rem 0.55rem 1rem; }
-    .brand-logo { height: 85px; max-width: 220px; object-fit: contain; }
+    .brand-logo { height: 132px; max-width: 250px; object-fit: contain; }
     .brand-info h2 { font-size: 1.1rem; margin-top: 0; letter-spacing: 0; }
     .sidebar-status { display: grid; gap: 0.45rem; margin-top: 0.75rem; }
     .status-chip { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.6rem; border: 1px solid var(--eyemole-border); border-radius: 8px; background: rgba(13, 26, 43, 0.72); color: var(--text-muted); font-size: 0.74rem; }
@@ -6180,6 +6180,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .panel-title h2, .panel-title h3 { margin: 0; color: var(--text-main); font-size: 1rem; font-weight: 750; letter-spacing: 0; }
     .panel-title span { color: var(--text-muted); font-size: 0.78rem; }
     .grid-metrics { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .grid-risk-seven { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    @media (max-width: 1024px) {
+      .grid-risk-seven { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .grid-risk-seven { grid-template-columns: 1fr; }
+    }
+    .pagination-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--eyemole-border); font-size: 0.85rem; color: var(--text-muted); }
+    .page-controls { display: flex; gap: 0.35rem; align-items: center; }
+    .page-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--eyemole-border); background: var(--eyemole-bg-panel); color: var(--text-muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; user-select: none; transition: all 0.2s ease; }
+    .page-btn:hover { border-color: var(--eyemole-cyan); color: #fff; background: rgba(34, 211, 238, 0.05); }
+    .page-btn.active { border-color: var(--eyemole-cyan); color: #fff; background: var(--eyemole-cyan-strong); cursor: default; }
+    .page-btn.disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--eyemole-border); background: transparent; color: var(--text-muted); }
+    .page-size-selector { background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: #fff; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; outline: none; margin-left: 0.5rem; }
+    #treatment-top-tbody::-webkit-scrollbar,
+    #sla-persistent-tbody::-webkit-scrollbar,
+    #sla-recurring-tbody::-webkit-scrollbar,
+    #treatment-wins-tbody::-webkit-scrollbar,
+    #treatment-change-tbody::-webkit-scrollbar {
+      width: 6px;
+    }
+    #treatment-top-tbody::-webkit-scrollbar-thumb,
+    #sla-persistent-tbody::-webkit-scrollbar-thumb,
+    #sla-recurring-tbody::-webkit-scrollbar-thumb,
+    #treatment-wins-tbody::-webkit-scrollbar-thumb,
+    #treatment-change-tbody::-webkit-scrollbar-thumb {
+      background: var(--eyemole-border);
+      border-radius: 3px;
+    }
     .metric-card, .risk-card { background: linear-gradient(180deg, rgba(13, 26, 43, 0.96), rgba(9, 20, 35, 0.96)); border: 1px solid var(--eyemole-border); border-radius: 8px; box-shadow: none; padding: 0.95rem; }
     .risk-card { position: relative; overflow: hidden; }
     .metric-card:hover, .risk-card:hover { transform: translateY(-1px); border-color: rgba(34, 211, 238, 0.32); box-shadow: none; }
@@ -7007,7 +7036,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-        <div class="vm-sec-head"><div><div class="vm-kicker">Findings</div><h2>Registros Priorizados</h2><p>Lista detalhada com CVSS, EPSS, KEV, ransomware e prioridade. Ordene pelas colunas.</p></div></div>
+        <div class="vm-sec-head"><div><div class="vm-kicker">Findings</div><h2 style="display: inline-flex; align-items: center; gap: 0.75rem;"><span>Registros Priorizados</span><button class="btn btn-sm" id="btn-toggle-vuln-table" onclick="toggleVulnTable()" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; border-radius: 6px; cursor: pointer; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: #fff;">Recolher [-]</button></h2><p>Lista detalhada com CVSS, EPSS, KEV, ransomware e prioridade. Ordene pelas colunas.</p></div></div>
         <!-- Prioritized Vulnerability Queue Container -->
         <div class="vuln-queue-container" id="vuln-table" style="margin-bottom: 1.5rem;">
           <!-- Header with sorting links -->
@@ -7026,7 +7055,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
 
-    <div class="pagination-bar">
+    <div class="pagination-bar" id="vuln-pagination-bar">
       <div>
         Exibindo <span id="pagination-start">0</span> a <span id="pagination-end">0</span> de <span id="pagination-total">0</span> registros.
         Mostrar:
@@ -7269,7 +7298,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
 
       <!-- Cards de Métricas de Exposição -->
-      <div class="grid-risk-seven" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+      <div class="grid-risk-seven">
         <div class="risk-card total">
           <div class="metric-title" style="font-size: 0.75rem;">Com Contexto</div>
           <div class="metric-value" id="expo-with-context" style="font-size: 1.6rem; margin-top: 0.25rem; color: #34d399;">-</div>
@@ -7436,7 +7465,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
 
       <!-- Grid de Métricas de SLA -->
-      <div class="grid-risk-seven" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 1.5rem; gap: 0.75rem;">
+      <div class="grid-risk-seven">
         <div class="risk-card total">
           <div class="metric-title" style="font-size: 0.75rem;">Total em Aberto</div>
           <div class="metric-value" id="sla-total-open" style="font-size: 1.6rem; margin-top: 0.25rem;">-</div>
@@ -7517,7 +7546,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Top CVEs Persistentes -->
         <div class="vm-panel" style="margin-bottom: 0;">
           <h4>⚠️ Top CVEs Persistentes (Aging &ge; 30 Dias)</h4>
-          <div id="sla-persistent-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+          <div id="sla-persistent-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; max-height: 400px; overflow-y: auto; justify-content: center;">
             <div class="vm-empty">Carregando persistentes...</div>
           </div>
         </div>
@@ -7525,7 +7554,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Top CVEs Recorrentes -->
         <div class="vm-panel" style="margin-bottom: 0;">
           <h4>🔄 Top CVEs Recorrentes (Aparições &ge; 3 Snapshots)</h4>
-          <div id="sla-recurring-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; justify-content: center;">
+          <div id="sla-recurring-tbody" class="saas-list-container" style="margin-top: 0.5rem; min-height: 120px; max-height: 400px; overflow-y: auto; justify-content: center;">
             <div class="vm-empty">Carregando recorrentes...</div>
           </div>
         </div>
@@ -7648,7 +7677,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Top Itens para Tratativa Operacional -->
         <div class="vm-panel" style="margin-top: 1.5rem;">
           <h4>🔥 Top Itens para Tratativa Operacional (Fase 3G)</h4>
-          <div id="treatment-top-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+          <div id="treatment-top-tbody" style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.8rem; min-height: 120px; max-height: 400px; overflow-y: auto; justify-content: center;">
             <div class="vm-empty">Carregando plano de tratativa...</div>
           </div>
         </div>
@@ -7665,7 +7694,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <!-- Quick Wins -->
           <div class="vm-panel" style="margin-bottom: 0;">
             <h4 style="color: #10b981;">🎯 Quick Wins (Ações de Baixo Esforço e Alto Impacto)</h4>
-            <div id="treatment-wins-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div id="treatment-wins-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; max-height: 400px; overflow-y: auto; justify-content: center;">
               <div class="vm-empty">Carregando quick wins...</div>
             </div>
           </div>
@@ -7673,7 +7702,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <!-- Janelas de Mudança Planejada -->
           <div class="vm-panel" style="margin-bottom: 0;">
             <h4 style="color: #eab308;">⚙️ Janelas de Mudança Planejada (Alta Complexidade / Impacto)</h4>
-            <div id="treatment-change-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; justify-content: center;">
+            <div id="treatment-change-tbody" class="saas-list-container" style="margin-top: 0.8rem; min-height: 120px; max-height: 400px; overflow-y: auto; justify-content: center;">
               <div class="vm-empty">Carregando janelas de mudanças...</div>
             </div>
           </div>
@@ -7749,7 +7778,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
 
       <!-- Grid de Métricas de Exceções -->
-      <div class="grid-risk-seven" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 1.5rem; gap: 0.75rem;">
+      <div class="grid-risk-seven">
         <div class="risk-card total">
           <div class="metric-title" style="font-size: 0.75rem;">Regras Cadastradas</div>
           <div class="metric-value" id="ra-rules-total" style="font-size: 1.6rem; margin-top: 0.25rem;">-</div>
@@ -9144,6 +9173,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       nextBtn.className = `page-btn ${currentPage === maxPage ? 'disabled' : ''}`; nextBtn.innerText = '›';
       nextBtn.onclick = () => { if (currentPage < maxPage) { currentPage++; renderTable(); } };
       controls.appendChild(nextBtn);
+    }
+
+    function toggleVulnTable() {
+      const table = document.getElementById('vuln-table');
+      const pagination = document.getElementById('vuln-pagination-bar');
+      const btn = document.getElementById('btn-toggle-vuln-table');
+      if (table && btn) {
+        const isCollapsed = table.style.display === 'none';
+        if (isCollapsed) {
+          table.style.display = '';
+          if (pagination) pagination.style.display = 'flex';
+          btn.innerHTML = 'Recolher [-]';
+        } else {
+          table.style.display = 'none';
+          if (pagination) pagination.style.display = 'none';
+          btn.innerHTML = 'Expandir [+]';
+        }
+      }
     }
 
     function exportFilteredCSV() {
