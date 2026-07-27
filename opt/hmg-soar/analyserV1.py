@@ -9653,6 +9653,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ovStatApi.innerHTML = document.getElementById('status-api').innerHTML;
         ovStatSvc.innerHTML = 'Report Service: ' + document.getElementById('status-report-service').innerHTML;
       }
+      if (btn) btn.disabled = false;
+    }
+
     // ======================================================================
     // PAINEL DE RISCO UNIFICADO (DIAGRAMA ALLUVIAL/SANKEY)
     // ======================================================================
