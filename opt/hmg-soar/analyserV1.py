@@ -7122,28 +7122,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
     </div>
 
-        <!-- Fase 3H.2 - Dashboards Risco & Prioridades -->
-        <div class="vm-sec-head"><div><div class="vm-kicker">Analytics</div><h2>Distribuições &amp; Concentração de Risco</h2><p>Severidade, prioridade, KEV×EPSS, pacotes e agentes com maior exposição.</p></div></div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; margin-bottom: 2rem;">
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Severidade</h4>
-            <div id="risk-chart-severity" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+        <!-- Fase 3H.2 - Dashboard Panorama de Risco (Sankey/Alluvial) -->
+        <div class="vm-sec-head"><div><div class="vm-kicker">Analytics</div><h2>Panorama de Risco &amp; Concentração</h2><p>Visão unificada do fluxo de achados por Severidade, Prioridade e Agentes afetados.</p></div></div>
+        <div id="risk-flow-panel-container" class="metric-card" style="padding: 1.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; margin-top: 1rem; margin-bottom: 2rem; position: relative; overflow: hidden;">
+          <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--eyemole-cyan), var(--eyemole-violet), var(--eyemole-magenta));"></div>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin: 0;">Diagrama de Distribuição de Risco</h3>
+              <span style="font-size: 0.78rem; color: var(--text-muted);" id="risk-flow-total-label">Carregando dados...</span>
+            </div>
+            <div id="risk-flow-badges" style="display: flex; gap: 0.75rem; align-items: center;">
+              <div style="background: rgba(251, 146, 60, 0.12); border: 1px solid rgba(251, 146, 60, 0.3); padding: 0.35rem 0.75rem; border-radius: 8px; font-size: 0.75rem; color: #fb923c; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fb923c;"></span>
+                <span>CISA KEV Ativo: <strong id="badge-kev-count">0</strong></span>
+              </div>
+              <div style="background: var(--eyemole-violet-subtle); border: 1px solid rgba(167, 139, 250, 0.3); padding: 0.35rem 0.75rem; border-radius: 8px; font-size: 0.75rem; color: var(--eyemole-violet); font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--eyemole-violet);"></span>
+                <span>EPSS ≥ 20%: <strong id="badge-epss-count">0</strong></span>
+              </div>
+            </div>
           </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Prioridade</h4>
-            <div id="risk-chart-priority" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          <div style="width: 100%; overflow-x: auto;">
+            <svg id="risk-flow-svg" viewBox="0 0 960 380" preserveAspectRatio="xMidYMid meet" style="width: 100%; height: auto; min-width: 700px; display: block;"></svg>
           </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">KEV x EPSS Alto</h4>
-            <div id="risk-chart-kev-epss" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Top Pacotes por Recorrência</h4>
-            <div id="risk-chart-packages" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Top Agentes por Risco</h4>
-            <div id="risk-chart-agents" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+          <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
+            <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.5rem;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--eyemole-cyan)" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              Top Pacotes por Recorrência
+            </div>
+            <div id="risk-flow-packages-cloud" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+            </div>
           </div>
         </div>
 
@@ -9133,6 +9141,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         else { return currentSortOrder === 'asc' ? valA - valB : valB - valA; }
       });
       renderTable();
+      try { renderRiskFlowPanel('risk-flow-panel-container', filteredData); } catch(e) { console.error('Erro renderRiskFlowPanel:', e); }
     }
 
     function onChangePageSize() {
@@ -9644,7 +9653,317 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ovStatApi.innerHTML = document.getElementById('status-api').innerHTML;
         ovStatSvc.innerHTML = 'Report Service: ' + document.getElementById('status-report-service').innerHTML;
       }
-if (btn) btn.disabled = false;
+    // ======================================================================
+    // PAINEL DE RISCO UNIFICADO (DIAGRAMA ALLUVIAL/SANKEY)
+    // ======================================================================
+    function renderRiskFlowPanel(containerId, data) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const dataset = Array.isArray(data) ? data : [];
+      if (dataset.length === 0) {
+        showChartEmptyState(containerId, 'Sem achados para a seleção de filtros atual.');
+        return;
+      }
+
+      const totalCount = dataset.length;
+
+      // 1. Métricas KEV & EPSS
+      const epssTh = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
+      let kevCount = 0;
+      let epssCount = 0;
+      dataset.forEach(r => {
+        if (r.is_kev) kevCount++;
+        const ep = (r.epss == null) ? 0 : Number(r.epss);
+        if (!isNaN(ep) && ep >= epssTh) epssCount++;
+      });
+
+      const badgeKev = document.getElementById('badge-kev-count');
+      if (badgeKev) badgeKev.textContent = kevCount;
+      const badgeEpss = document.getElementById('badge-epss-count');
+      if (badgeEpss) badgeEpss.textContent = epssCount;
+      const totalLabel = document.getElementById('risk-flow-total-label');
+      if (totalLabel) totalLabel.textContent = `${totalCount} achado${totalCount !== 1 ? 's' : ''} no escopo atual`;
+
+      // 2. Mapeamento de Categorias de Severidade & Prioridade
+      const SEV_CONFIG = [
+        { id: 'Critical', label: 'Críticas', color: '#f87171' },
+        { id: 'High', label: 'Altas', color: '#fb923c' },
+        { id: 'Medium', label: 'Médias', color: '#facc15' },
+        { id: 'Low', label: 'Baixas', color: '#3b82f6' },
+        { id: 'Desconhecido', label: 'Desconhecido', color: '#64748b' }
+      ];
+
+      const PRIO_CONFIG = [
+        { id: 'Priority 1+', label: 'P1+', color: '#ef4444' },
+        { id: 'Priority 1', label: 'P1', color: '#f97316' },
+        { id: 'Priority 2', label: 'P2', color: '#eab308' },
+        { id: 'Priority 3', label: 'P3', color: '#3b82f6' },
+        { id: 'Priority 4', label: 'P4', color: '#10b981' },
+        { id: 'Desconhecido', label: 'P-Outros', color: '#64748b' }
+      ];
+
+      // Contagem por agente para identificar Top 5
+      const agentCounts = {};
+      dataset.forEach(r => {
+        const name = (r.agent_name || r.hostname || r.agent_id || 'Sem Agente').trim();
+        agentCounts[name] = (agentCounts[name] || 0) + 1;
+      });
+
+      const sortedAgents = Object.entries(agentCounts).sort((a, b) => b[1] - a[1]);
+      const top5Names = new Set(sortedAgents.slice(0, 5).map(e => e[0]));
+
+      const AGENT_CONFIG = sortedAgents.slice(0, 5).map(([name], idx) => ({
+        id: name,
+        label: name.length > 16 ? name.substring(0, 14) + '...' : name,
+        fullLabel: name,
+        color: ['#f87171', '#fb923c', '#facc15', '#60a5fa', '#a78bfa'][idx % 5]
+      }));
+
+      const hasOthers = sortedAgents.length > 5;
+      if (hasOthers || AGENT_CONFIG.length === 0) {
+        AGENT_CONFIG.push({ id: 'Outros Agentes', label: 'Outros Agentes', fullLabel: 'Outros Agentes', color: '#94a3b8' });
+      }
+
+      // Preenchimento de Matrizes de Cruzamento Real
+      const sevTotals = {};
+      SEV_CONFIG.forEach(s => sevTotals[s.id] = 0);
+
+      const prioTotals = {};
+      PRIO_CONFIG.forEach(p => prioTotals[p.id] = 0);
+
+      const agentTotals = {};
+      AGENT_CONFIG.forEach(a => agentTotals[a.id] = 0);
+
+      const sevToPrio = {};
+      SEV_CONFIG.forEach(s => {
+        sevToPrio[s.id] = {};
+        PRIO_CONFIG.forEach(p => sevToPrio[s.id][p.id] = 0);
+      });
+
+      const prioToAgent = {};
+      PRIO_CONFIG.forEach(p => {
+        prioToAgent[p.id] = {};
+        AGENT_CONFIG.forEach(a => prioToAgent[p.id][a.id] = 0);
+      });
+
+      dataset.forEach(r => {
+        const rawSev = String(r.severity || '').toLowerCase();
+        let sevId = 'Desconhecido';
+        if (rawSev === 'critical') sevId = 'Critical';
+        else if (rawSev === 'high') sevId = 'High';
+        else if (rawSev === 'medium') sevId = 'Medium';
+        else if (rawSev === 'low') sevId = 'Low';
+
+        const rawPrio = String(r.priority || '').trim();
+        let prioId = 'Desconhecido';
+        if (rawPrio === 'Priority 1+' || rawPrio === 'P1+') prioId = 'Priority 1+';
+        else if (rawPrio === 'Priority 1' || rawPrio === 'P1') prioId = 'Priority 1';
+        else if (rawPrio === 'Priority 2' || rawPrio === 'P2') prioId = 'Priority 2';
+        else if (rawPrio === 'Priority 3' || rawPrio === 'P3') prioId = 'Priority 3';
+        else if (rawPrio === 'Priority 4' || rawPrio === 'P4') prioId = 'Priority 4';
+
+        const rawAgent = (r.agent_name || r.hostname || r.agent_id || 'Sem Agente').trim();
+        let agentId = top5Names.has(rawAgent) ? rawAgent : 'Outros Agentes';
+
+        sevTotals[sevId]++;
+        prioTotals[prioId]++;
+        agentTotals[agentId]++;
+
+        sevToPrio[sevId][prioId]++;
+        prioToAgent[prioId][agentId]++;
+      });
+
+      // 3. Renderização SVG (Alluvial/Sankey)
+      const svg = document.getElementById('risk-flow-svg');
+      if (!svg) return;
+
+      const width = 960;
+      const height = 380;
+      const colWidth = 18;
+      const colX = [60, 470, 880];
+      const topPadding = 45;
+      const bottomPadding = 25;
+      const availableHeight = height - topPadding - bottomPadding;
+      const gap = 10;
+
+      const activeSev = SEV_CONFIG.filter(s => sevTotals[s.id] > 0);
+      const activePrio = PRIO_CONFIG.filter(p => prioTotals[p.id] > 0);
+      const activeAgent = AGENT_CONFIG.filter(a => agentTotals[a.id] > 0);
+
+      const sevGapTotal = Math.max(0, activeSev.length - 1) * gap;
+      const prioGapTotal = Math.max(0, activePrio.length - 1) * gap;
+      const agentGapTotal = Math.max(0, activeAgent.length - 1) * gap;
+
+      function computeNodeHeights(activeList, totalsMap, availH) {
+        if (activeList.length === 0) return {};
+        const minH = 6;
+        let fixedH = 0;
+        let fixedCount = 0;
+        const result = {};
+
+        activeList.forEach(item => {
+          const count = totalsMap[item.id] || 0;
+          const pureH = (count / totalCount) * availH;
+          if (pureH < minH) {
+            result[item.id] = minH;
+            fixedH += minH;
+            fixedCount += count;
+          }
+        });
+
+        const remH = Math.max(0, availH - fixedH);
+        const remCount = totalCount - fixedCount;
+
+        activeList.forEach(item => {
+          if (result[item.id] === undefined) {
+            const count = totalsMap[item.id] || 0;
+            result[item.id] = remCount > 0 ? (count / remCount) * remH : (availH / activeList.length);
+          }
+        });
+
+        return result;
+      }
+
+      const sevHeights = computeNodeHeights(activeSev, sevTotals, availableHeight - sevGapTotal);
+      const prioHeights = computeNodeHeights(activePrio, prioTotals, availableHeight - prioGapTotal);
+      const agentHeights = computeNodeHeights(activeAgent, agentTotals, availableHeight - agentGapTotal);
+
+      const sevNodes = {};
+      let curY = topPadding;
+      activeSev.forEach(s => {
+        const nH = sevHeights[s.id];
+        sevNodes[s.id] = { x: colX[0], y: curY, h: nH, outY: curY, label: s.label, color: s.color, count: sevTotals[s.id] };
+        curY += nH + gap;
+      });
+
+      const prioNodes = {};
+      curY = topPadding;
+      activePrio.forEach(p => {
+        const nH = prioHeights[p.id];
+        prioNodes[p.id] = { x: colX[1], y: curY, h: nH, inY: curY, outY: curY, label: p.label, color: p.color, count: prioTotals[p.id] };
+        curY += nH + gap;
+      });
+
+      const agentNodes = {};
+      curY = topPadding;
+      activeAgent.forEach(a => {
+        const nH = agentHeights[a.id];
+        agentNodes[a.id] = { x: colX[2], y: curY, h: nH, inY: curY, label: a.label, fullLabel: a.fullLabel || a.label, color: a.color, count: agentTotals[a.id] };
+        curY += nH + gap;
+      });
+
+      let svgHtml = '';
+
+      // Títulos das Colunas
+      svgHtml += `<text x="${colX[0] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">SEVERIDADE</text>`;
+      svgHtml += `<text x="${colX[1] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">PRIORIDADE</text>`;
+      svgHtml += `<text x="${colX[2] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">TOP AGENTES</text>`;
+
+      // Faixas: Coluna 1 (Sev) -> Coluna 2 (Prio)
+      activeSev.forEach(s => {
+        const sN = sevNodes[s.id];
+        activePrio.forEach(p => {
+          const val = sevToPrio[s.id][p.id];
+          if (val <= 0) return;
+          const pN = prioNodes[p.id];
+          const flowH_s = (val / sN.count) * sN.h;
+          const flowH_p = (val / pN.count) * pN.h;
+
+          const x1 = sN.x + colWidth;
+          const y1a = sN.outY;
+          const y1b = sN.outY + flowH_s;
+          const x2 = pN.x;
+          const y2a = pN.inY;
+          const y2b = pN.inY + flowH_p;
+
+          const cX1 = x1 + (x2 - x1) * 0.45;
+          const cX2 = x1 + (x2 - x1) * 0.55;
+
+          const pathD = `M ${x1} ${y1a} C ${cX1} ${y1a}, ${cX2} ${y2a}, ${x2} ${y2a} L ${x2} ${y2b} C ${cX2} ${y2b}, ${cX1} ${y1b}, ${x1} ${y1b} Z`;
+          svgHtml += `<path d="${pathD}" fill="${sN.color}" fill-opacity="0.25" stroke="none"><title>${sN.label} → ${pN.label}: ${val} (${((val/totalCount)*100).toFixed(1)}%)</title></path>`;
+
+          sN.outY += flowH_s;
+          pN.inY += flowH_p;
+        });
+      });
+
+      // Faixas: Coluna 2 (Prio) -> Coluna 3 (Agente)
+      activePrio.forEach(p => {
+        const pN = prioNodes[p.id];
+        activeAgent.forEach(a => {
+          const val = prioToAgent[p.id][a.id];
+          if (val <= 0) return;
+          const aN = agentNodes[a.id];
+          const flowH_p = (val / pN.count) * pN.h;
+          const flowH_a = (val / aN.count) * aN.h;
+
+          const x1 = pN.x + colWidth;
+          const y1a = pN.outY;
+          const y1b = pN.outY + flowH_p;
+          const x2 = aN.x;
+          const y2a = aN.inY;
+          const y2b = aN.inY + flowH_a;
+
+          const cX1 = x1 + (x2 - x1) * 0.45;
+          const cX2 = x1 + (x2 - x1) * 0.55;
+
+          const pathD = `M ${x1} ${y1a} C ${cX1} ${y1a}, ${cX2} ${y2a}, ${x2} ${y2a} L ${x2} ${y2b} C ${cX2} ${y2b}, ${cX1} ${y1b}, ${x1} ${y1b} Z`;
+          svgHtml += `<path d="${pathD}" fill="${pN.color}" fill-opacity="0.25" stroke="none"><title>${pN.label} → ${aN.fullLabel}: ${val} (${((val/totalCount)*100).toFixed(1)}%)</title></path>`;
+
+          pN.outY += flowH_p;
+          aN.inY += flowH_a;
+        });
+      });
+
+      // Nós Coluna 1 (Severidade)
+      activeSev.forEach(s => {
+        const n = sevNodes[s.id];
+        const pct = ((n.count / totalCount) * 100).toFixed(1);
+        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.label}: ${n.count} (${pct}%)</title></rect>`;
+        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="11" font-weight="600" text-anchor="end">${n.label} <tspan fill="var(--text-muted)" font-size="10">(${n.count})</tspan></text>`;
+      });
+
+      // Nós Coluna 2 (Prioridade)
+      activePrio.forEach(p => {
+        const n = prioNodes[p.id];
+        const pct = ((n.count / totalCount) * 100).toFixed(1);
+        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.label}: ${n.count} (${pct}%)</title></rect>`;
+        svgHtml += `<text x="${n.x + colWidth + 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="11" font-weight="600" text-anchor="start">${n.label} <tspan fill="var(--text-muted)" font-size="10">(${n.count})</tspan></text>`;
+      });
+
+      // Nós Coluna 3 (Agentes)
+      activeAgent.forEach(a => {
+        const n = agentNodes[a.id];
+        const pct = ((n.count / totalCount) * 100).toFixed(1);
+        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.fullLabel}: ${n.count} (${pct}%)</title></rect>`;
+        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="10" font-weight="600" text-anchor="end">${n.label} <tspan fill="var(--text-muted)" font-size="9">(${n.count})</tspan></text>`;
+      });
+
+      svg.innerHTML = svgHtml;
+
+      // 4. Nuvem de Tags de Pacotes Recorrentes (Rodapé)
+      const pkgCounts = {};
+      dataset.forEach(r => {
+        const pkg = (r.package || r.package_name || '').trim();
+        if (pkg) pkgCounts[pkg] = (pkgCounts[pkg] || 0) + 1;
+      });
+
+      const sortedPkgs = Object.entries(pkgCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const cloudContainer = document.getElementById('risk-flow-packages-cloud');
+      if (cloudContainer) {
+        if (sortedPkgs.length === 0) {
+          cloudContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">Nenhum pacote identificado</span>';
+        } else {
+          const maxOcc = sortedPkgs[0][1];
+          const minOcc = sortedPkgs[sortedPkgs.length - 1][1];
+
+          cloudContainer.innerHTML = sortedPkgs.map(([pkg, count]) => {
+            const fontSize = maxOcc === minOcc ? 0.8 : (0.72 + ((count - minOcc) / (maxOcc - minOcc || 1)) * 0.23).toFixed(2);
+            return `<span class="badge" style="font-size: ${fontSize}rem; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: var(--eyemole-cyan); padding: 0.25rem 0.6rem; border-radius: 6px;" title="${count} ocorrências"><code>${pkg}</code> <span style="opacity: 0.6; font-size: 0.7em;">(${count})</span></span>`;
+          }).join('');
+        }
+      }
     }
 
     async function refreshRiskIntelligence() {
@@ -9780,7 +10099,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           }
 
           // ==========================================
-          // Fase 3H.2 - Renderizar Gráficos de Risco
+          // Renderizar Dashboard Panorama de Risco
           // ==========================================
 
           // 1. Visão Geral - Donut de Severidade
@@ -9833,72 +10152,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             }
           }
 
-          // 3. Risco & Prioridades - Donut de Severidade
-          if (document.getElementById('risk-chart-severity')) {
-            renderDonutChart('risk-chart-severity', [
-              { label: 'Críticas', value: sum.critical || 0, color: '#f87171' },
-              { label: 'Altas', value: sum.high || 0, color: '#fb923c' },
-              { label: 'Médias', value: sum.medium || 0, color: '#facc15' },
-              { label: 'Baixas', value: sum.low || 0, color: '#3b82f6' }
-            ], { totalLabel: 'Severidade' });
-          }
-
-          // 4. Risco & Prioridades - Distribuição por Prioridade
-          let pCount = { 'P1+': 0, 'P1': 0, 'P2': 0, 'P3': 0, 'P4': 0 };
-          rawData.forEach(r => {
-            if (r.priority === 'Priority 1+') pCount['P1+']++;
-            else if (r.priority === 'Priority 1') pCount['P1']++;
-            else if (r.priority === 'Priority 2') pCount['P2']++;
-            else if (r.priority === 'Priority 3') pCount['P3']++;
-            else if (r.priority === 'Priority 4') pCount['P4']++;
-          });
-          if (document.getElementById('risk-chart-priority')) {
-            renderStackedBar('risk-chart-priority', [
-              { label: 'P1+', value: pCount['P1+'], color: '#ef4444' },
-              { label: 'P1', value: pCount['P1'], color: '#f97316' },
-              { label: 'P2', value: pCount['P2'], color: '#eab308' },
-              { label: 'P3', value: pCount['P3'], color: '#3b82f6' },
-              { label: 'P4', value: pCount['P4'], color: '#10b981' }
-            ], { legendAlign: 'flex-start' });
-          }
-
-          // 5. Risco & Prioridades - KEV x EPSS Alto
-          if (document.getElementById('risk-chart-kev-epss')) {
-            renderMetricComparison('risk-chart-kev-epss', [
-              { label: 'CISA KEV Ativo', value: sum.kev_count || 0, color: '#fb923c' },
-              { label: 'EPSS >= 20%', value: sum.epss_high_count || 0, color: '#a78bfa' }
-            ]);
-          }
-
-          // 6. Risco & Prioridades - Top Pacotes por Recorrência
-          let pkgCounts = {};
-          rawData.forEach(r => {
-            if (r.package_name) {
-              pkgCounts[r.package_name] = (pkgCounts[r.package_name] || 0) + 1;
-            }
-          });
-          let topPkgs = Object.entries(pkgCounts)
-            .map(([pkg, val]) => ({ label: pkg, value: val, color: '#60a5fa' }))
-            .sort((a,b) => b.value - a.value)
-            .slice(0, 5);
-          if (document.getElementById('risk-chart-packages')) {
-            renderMiniBarChart('risk-chart-packages', topPkgs);
-          }
-
-          // 7. Risco & Prioridades - Top Agentes por Risco (contagem de vulns)
-          let agentCounts = {};
-          rawData.forEach(r => {
-            if (r.agent_name) {
-              agentCounts[r.agent_name] = (agentCounts[r.agent_name] || 0) + 1;
-            }
-          });
-          let topAgents = Object.entries(agentCounts)
-            .map(([agent, val]) => ({ label: agent, value: val, color: '#f87171' }))
-            .sort((a,b) => b.value - a.value)
-            .slice(0, 5);
-          if (document.getElementById('risk-chart-agents')) {
-            renderMiniBarChart('risk-chart-agents', topAgents);
-          }
+          // 3. Painel Panorama de Risco Unificado (Sankey/Alluvial)
+          renderRiskFlowPanel('risk-flow-panel-container', Array.isArray(filteredData) ? filteredData : rawData);
 
         } else {
           document.getElementById('risk-alerts-container').innerHTML = '<div class="alert-item alert-critical">Erro HTTP ao carregar inteligência de risco (' + rRes.status + ').</div>';
