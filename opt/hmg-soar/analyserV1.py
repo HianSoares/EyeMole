@@ -82,12 +82,9 @@ EPSS_CSV_CACHE_TTL_HOURS = int(os.getenv("HMG_EPSS_CSV_TTL_HOURS", "24"))
 DEFAULT_EPSS_THRESHOLD = 0.20
 DEFAULT_CVSS_THRESHOLD = 6.0
 
-KNOWN_AGENTS = {
-    "001": "windows-server-sscapps",
-    "003": "linux-server-asc-linux-02",
-    "004": "linux-server-asc-linux-01",
-    "005": "linux-siemapps",
-}
+# Fallback opcional de nomes quando agent.name estiver ausente.
+# A descoberta de agentes deve ser feita dinamicamente no OpenSearch.
+KNOWN_AGENTS = {}
 
 VULN_INDEX_PATTERN = os.getenv("WAZUH_VULN_INDEX", "wazuh-states-vulnerabilities-*")
 REQUEST_TIMEOUT = int(os.getenv("HMG_REQUEST_TIMEOUT", "60"))
@@ -4162,7 +4159,7 @@ def normalize_agent_list(raw: Optional[str]) -> List[str]:
     return list(dict.fromkeys(agents))
 
 
-def choose_agents_interactively() -> List[str]:
+def choose_agents_interactively(ctx: AppContext) -> List[str]:
     print("\nAgentes conhecidos no HMG:")
     for agent_id, name in KNOWN_AGENTS.items():
         print(f"  {agent_id} - {name}")
@@ -4171,7 +4168,8 @@ def choose_agents_interactively() -> List[str]:
     selection = input("Agente(s): ").strip().lower()
 
     if selection in {"all", "todos", "*"}:
-        return list(KNOWN_AGENTS.keys())
+        require_passwords(ctx)
+        return discover_agent_ids(ctx)
 
     agents = normalize_agent_list(selection)
     if not agents:
@@ -4519,6 +4517,117 @@ def get_wazuh_token(ctx: AppContext) -> str:
     return ctx.wazuh_token
 
 
+
+
+def discover_agent_ids(ctx: AppContext) -> List[str]:
+    """Descobre todos os agent.id presentes no índice via agregação composite paginada."""
+    url = f"{SCHEME}://{INDEXER_IP}:{INDEXER_PORT}/{VULN_INDEX_PATTERN}/_search"
+    agent_ids: List[str] = []
+    seen_agent_ids: Set[str] = set()
+    seen_after_keys: Set[str] = set()
+    after_key: Optional[dict] = None
+
+    while True:
+        composite = {
+            "size": 1000,
+            "sources": [
+                {
+                    "agent_id": {
+                        "terms": {
+                            "field": "agent.id",
+                        }
+                    }
+                }
+            ],
+        }
+        if after_key is not None:
+            composite["after"] = after_key
+
+        query = {
+            "size": 0,
+            "aggs": {
+                "agents": {
+                    "composite": composite,
+                }
+            },
+        }
+
+        try:
+            response = ctx.session.post(
+                url,
+                json=query,
+                auth=(INDEXER_USER, ctx.indexer_pass),
+                timeout=REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(f"Não foi possível descobrir agentes automaticamente: erro de conexão com o Indexer/OpenSearch: {e}") from e
+        except requests.exceptions.Timeout as e:
+            raise RuntimeError(f"Não foi possível descobrir agentes automaticamente: timeout na consulta ao Indexer (limite: {REQUEST_TIMEOUT}s): {e}") from e
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Não foi possível descobrir agentes automaticamente: erro na consulta ao Indexer/OpenSearch: {e}") from e
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                "Não foi possível descobrir agentes automaticamente: "
+                f"HTTP {response.status_code} - {response.text}"
+            )
+
+        try:
+            result = response.json()
+        except ValueError as e:
+            raise RuntimeError(
+                f"Não foi possível descobrir agentes automaticamente: resposta JSON inválida: {e}"
+            ) from e
+
+        if not isinstance(result, dict):
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: resposta JSON inesperada (objeto raiz ausente).")
+        aggregations = result.get("aggregations")
+        if not isinstance(aggregations, dict):
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: estrutura 'aggregations' ausente ou inválida.")
+        agents_aggregation = aggregations.get("agents")
+        if not isinstance(agents_aggregation, dict):
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: agregação 'agents' ausente ou inválida.")
+        buckets = agents_aggregation.get("buckets")
+        if not isinstance(buckets, list):
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: lista 'buckets' ausente ou inválida.")
+
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
+                raise RuntimeError("Não foi possível descobrir agentes automaticamente: bucket de agente inválido.")
+            key = bucket.get("key")
+            if not isinstance(key, dict) or "agent_id" not in key:
+                raise RuntimeError("Não foi possível descobrir agentes automaticamente: chave 'agent_id' ausente ou inválida.")
+            raw_agent_id = key["agent_id"]
+            if raw_agent_id is None or isinstance(raw_agent_id, (dict, list, bool)):
+                raise RuntimeError("Não foi possível descobrir agentes automaticamente: valor de 'agent_id' inválido.")
+            agent_id = str(raw_agent_id).strip()
+            if not agent_id:
+                raise RuntimeError("Não foi possível descobrir agentes automaticamente: valor de 'agent_id' vazio.")
+            if agent_id not in seen_agent_ids:
+                seen_agent_ids.add(agent_id)
+                agent_ids.append(agent_id)
+
+        next_after_key = agents_aggregation.get("after_key")
+        if next_after_key is None:
+            break
+        if not isinstance(next_after_key, dict) or set(next_after_key) != {"agent_id"}:
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: 'after_key' ausente ou inválido.")
+        after_agent_id = next_after_key["agent_id"]
+        if after_agent_id is None or isinstance(after_agent_id, (dict, list, bool)) or not str(after_agent_id).strip():
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: valor de 'agent_id' inválido em 'after_key'.")
+        after_key_marker = json.dumps(next_after_key, sort_keys=True, separators=(",", ":"))
+        if after_key_marker in seen_after_keys:
+            raise RuntimeError("Não foi possível descobrir agentes automaticamente: 'after_key' repetido durante a paginação.")
+        seen_after_keys.add(after_key_marker)
+        after_key = next_after_key
+
+    if not agent_ids:
+        raise RuntimeError(
+            "Não foi possível descobrir agentes automaticamente: "
+            f"nenhum agent.id foi encontrado no índice {VULN_INDEX_PATTERN}."
+        )
+
+    return sorted(agent_ids)
 
 
 def query_indexer_vulnerabilities(ctx: AppContext, agent_ids: List[str]) -> List[dict]:
@@ -5331,12 +5440,20 @@ def main() -> int:
         shutil.rmtree(CACHE_DIR, ignore_errors=True)
         print("[*] Cache local limpo.")
 
+    # Inicializa o contexto antes da seleção para permitir descoberta dinâmica.
+    ctx = AppContext(
+        cvss_threshold=args.cvss_threshold,
+        epss_threshold=args.epss_threshold,
+        use_cache=not args.no_cache,
+    )
+
     if args.all_agents:
-        agent_ids = list(KNOWN_AGENTS.keys())
+        require_passwords(ctx)
+        agent_ids = discover_agent_ids(ctx)
     else:
         agent_ids = normalize_agent_list(args.agent)
         if not agent_ids:
-            agent_ids = choose_agents_interactively()
+            agent_ids = choose_agents_interactively(ctx)
 
     print("\n" + "=" * 90)
     print("HMG WAZUH SOAR BRAIN - MOTOR DE PRIORIZAÇÃO")
@@ -5346,13 +5463,6 @@ def main() -> int:
     print(f"Modo                   : {args.mode}")
     print(f"Thresholds configurados: CVSS >= {args.cvss_threshold} | EPSS >= {args.epss_threshold*100:.0f}%")
     print(f"Cache local            : {'desabilitado' if args.no_cache else 'habilitado'} (TTL: {CACHE_TTL_HOURS}h)")
-
-    # Inicializa o contexto da aplicação para evitar escopo global mutável
-    ctx = AppContext(
-        cvss_threshold=args.cvss_threshold,
-        epss_threshold=args.epss_threshold,
-        use_cache=not args.no_cache,
-    )
 
     require_passwords(ctx)
 
