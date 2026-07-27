@@ -6161,26 +6161,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     /* Gráficos SVGs */
     .pie-chart-layout {
       display: grid;
-      grid-template-columns: minmax(130px, 170px) 1fr;
+      grid-template-columns: 90px minmax(0, 1fr);
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
       width: 100%;
       height: 100%;
     }
-    .pie-svg { width: 100%; max-width: 170px; height: 100%; max-height: 140px; display: block; }
+    .pie-svg { width: 100%; max-width: 90px; height: 100%; max-height: 140px; display: block; }
     .pie-slice { transition: opacity var(--transition-fast); cursor: pointer; }
     .pie-slice:hover { opacity: 0.9; }
     .pie-legend { display: flex; flex-direction: column; gap: 0.35rem; }
     .pie-legend-row {
       display: grid;
-      grid-template-columns: 8px 1fr auto;
-      gap: 0.5rem;
+      grid-template-columns: 8px minmax(0, 1fr);
+      column-gap: 0.5rem;
+      row-gap: 0.05rem;
       align-items: center;
       font-size: 0.75rem;
     }
     .pie-dot { width: 8px; height: 8px; border-radius: 50%; }
-    .pie-label { color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
-    .pie-value { font-weight: 700; color: var(--text-main); }
+    .pie-label { color: var(--text-muted); text-overflow: clip; white-space: normal; overflow: visible; }
+    .pie-value { grid-column: 2; font-weight: 700; color: var(--text-main); }
     .pie-pct { color: var(--text-muted); font-size: 0.7rem; }
 
     /* Alertas */
@@ -8978,6 +8979,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (epssLimitEl) epssLimitEl.innerText = (scanMeta.epssThresh * 100).toFixed(0);
 
       try { calculateMetrics(); } catch(e) { console.error('Erro calculateMetrics:', e); }
+      try { populateVisualFilters(); } catch(e) { console.error('Erro populateVisualFilters:', e); }
       try { applyFilters(); } catch(e) { console.error('Erro applyFilters:', e); }
       try { renderCommandCenter(); } catch(e) { console.error('Erro renderCommandCenter:', e); }
       try { renderTabsExtras(); } catch(e) { console.error('Erro renderTabsExtras:', e); }
@@ -9857,7 +9859,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               { label: 'P2', value: pCount['P2'], color: '#eab308' },
               { label: 'P3', value: pCount['P3'], color: '#3b82f6' },
               { label: 'P4', value: pCount['P4'], color: '#10b981' }
-            ]);
+            ], { legendAlign: 'flex-start' });
           }
 
           // 5. Risco & Prioridades - KEV x EPSS Alto
@@ -12383,7 +12385,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
         });
         html += '</div>';
 
-        html += '<div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; font-size: 0.75rem; margin-top: 0.1rem;">';
+        html += `<div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: ${options.legendAlign || 'center'}; font-size: 0.75rem; margin-top: 0.1rem;">`;
         validItems.forEach(item => {
           const val = Number(item.value) || 0;
           const color = item.color || '#3b82f6';
