@@ -9751,20 +9751,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       });
 
       dataset.forEach(r => {
-        const rawSev = String(r.severity || '').toLowerCase();
-        let sevId = 'Desconhecido';
+        const rawSev = String(r.severity || '').toLowerCase().trim();
+        let sevId = 'Low';
         if (rawSev === 'critical') sevId = 'Critical';
         else if (rawSev === 'high') sevId = 'High';
         else if (rawSev === 'medium') sevId = 'Medium';
-        else if (rawSev === 'low') sevId = 'Low';
 
         const rawPrio = String(r.priority || '').trim();
-        let prioId = 'Desconhecido';
+        let prioId = 'Priority 4';
         if (rawPrio === 'Priority 1+' || rawPrio === 'P1+') prioId = 'Priority 1+';
         else if (rawPrio === 'Priority 1' || rawPrio === 'P1') prioId = 'Priority 1';
         else if (rawPrio === 'Priority 2' || rawPrio === 'P2') prioId = 'Priority 2';
         else if (rawPrio === 'Priority 3' || rawPrio === 'P3') prioId = 'Priority 3';
-        else if (rawPrio === 'Priority 4' || rawPrio === 'P4') prioId = 'Priority 4';
 
         const rawAgent = (r.agent_name || r.hostname || r.agent_id || 'Sem Agente').trim();
         let agentId = top5Names.has(rawAgent) ? rawAgent : 'Outros Agentes';
@@ -9784,7 +9782,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const width = 960;
       const height = 380;
       const colWidth = 18;
-      const colX = [60, 470, 880];
+      const colX = [140, 500, 860];
       const topPadding = 45;
       const bottomPadding = 25;
       const availableHeight = height - topPadding - bottomPadding;
