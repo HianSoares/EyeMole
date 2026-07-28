@@ -6756,6 +6756,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       .overview-executive-updated { white-space: normal; }
       .overview-executive-chart[data-layout="wide"] { height: 620px; }
     }
+
+    /* Panorama de Risco & Concentração — Sankey executivo compacto */
+    .risk-flow-card { padding: 1rem 1.15rem 0.9rem !important; margin-top: 0.75rem; margin-bottom: 1.4rem; position: relative; overflow: hidden; }
+    .risk-flow-accent { position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--eyemole-cyan), var(--eyemole-violet), var(--eyemole-magenta)); }
+    .risk-flow-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.45rem; }
+    .risk-flow-title { margin: 0; color: var(--text-main); font-size: 1.02rem; font-weight: 700; }
+    .risk-flow-total { color: var(--text-muted); font-size: 0.76rem; line-height: 1.3; }
+    .risk-flow-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.45rem; }
+    .risk-flow-badge { display: flex; align-items: center; gap: 0.35rem; padding: 0.28rem 0.58rem; border-radius: 7px; font-size: 0.72rem; font-weight: 650; white-space: nowrap; }
+    .risk-flow-badge-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+    .risk-flow-badge-kev { color: #fb923c; background: rgba(251, 146, 60, 0.12); border: 1px solid rgba(251, 146, 60, 0.3); }
+    .risk-flow-badge-kev .risk-flow-badge-dot { background: #fb923c; }
+    .risk-flow-badge-epss { color: var(--eyemole-violet); background: var(--eyemole-violet-subtle); border: 1px solid rgba(167, 139, 250, 0.3); }
+    .risk-flow-badge-epss .risk-flow-badge-dot { background: var(--eyemole-violet); }
+    .risk-flow-chart-wrap { width: 100%; overflow: hidden; }
+    .risk-flow-chart { display: block; width: 100%; height: 400px; }
+    .risk-flow-packages { margin-top: 0.45rem; padding-top: 0.55rem; border-top: 1px solid rgba(255,255,255,0.06); }
+    .risk-flow-packages-title { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; color: var(--text-main); font-size: 0.76rem; font-weight: 700; }
+    .risk-flow-packages-cloud { display: flex; flex-wrap: wrap; align-items: center; gap: 0.32rem 0.38rem; }
+    @media (max-width: 900px) {
+      .risk-flow-card { padding: 0.9rem 0.8rem 0.8rem !important; }
+      .risk-flow-head { flex-wrap: wrap; }
+      .risk-flow-badges { justify-content: flex-start; }
+    }
+    @media (max-width: 760px) {
+      .risk-flow-head { gap: 0.5rem; margin-bottom: 0.3rem; }
+      .risk-flow-badges { width: 100%; }
+      .risk-flow-chart { height: 430px; }
+      .risk-flow-packages { margin-top: 0.45rem; padding-top: 0.5rem; }
+    }
   </style>
 </head>
 <body>
@@ -7197,33 +7227,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         <!-- Fase 3H.2 - Dashboard Panorama de Risco (Sankey/Alluvial) -->
         <div class="vm-sec-head"><div><div class="vm-kicker">Analytics</div><h2>Panorama de Risco &amp; Concentração</h2><p>Visão unificada do fluxo de achados por Severidade, Prioridade e Agentes afetados.</p></div></div>
-        <div id="risk-flow-panel-container" class="metric-card" style="padding: 1.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; margin-top: 1rem; margin-bottom: 2rem; position: relative; overflow: hidden;">
-          <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--eyemole-cyan), var(--eyemole-violet), var(--eyemole-magenta));"></div>
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+        <div id="risk-flow-panel-container" class="metric-card risk-flow-card">
+          <div class="risk-flow-accent"></div>
+          <div class="risk-flow-head">
             <div>
-              <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin: 0;">Diagrama de Distribuição de Risco</h3>
-              <span style="font-size: 0.78rem; color: var(--text-muted);" id="risk-flow-total-label">Carregando dados...</span>
+              <h3 class="risk-flow-title">Diagrama de Distribuição de Risco</h3>
+              <span class="risk-flow-total" id="risk-flow-total-label">Carregando dados...</span>
             </div>
-            <div id="risk-flow-badges" style="display: flex; gap: 0.75rem; align-items: center;">
-              <div style="background: rgba(251, 146, 60, 0.12); border: 1px solid rgba(251, 146, 60, 0.3); padding: 0.35rem 0.75rem; border-radius: 8px; font-size: 0.75rem; color: #fb923c; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fb923c;"></span>
+            <div id="risk-flow-badges" class="risk-flow-badges">
+              <div class="risk-flow-badge risk-flow-badge-kev">
+                <span class="risk-flow-badge-dot"></span>
                 <span>CISA KEV Ativo: <strong id="badge-kev-count">0</strong></span>
               </div>
-              <div style="background: var(--eyemole-violet-subtle); border: 1px solid rgba(167, 139, 250, 0.3); padding: 0.35rem 0.75rem; border-radius: 8px; font-size: 0.75rem; color: var(--eyemole-violet); font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--eyemole-violet);"></span>
+              <div class="risk-flow-badge risk-flow-badge-epss">
+                <span class="risk-flow-badge-dot"></span>
                 <span>EPSS ≥ 20%: <strong id="badge-epss-count">0</strong></span>
               </div>
             </div>
           </div>
-          <div style="width: 100%; overflow-x: auto;">
-            <svg id="risk-flow-svg" viewBox="0 0 960 380" preserveAspectRatio="xMidYMid meet" style="width: 100%; height: auto; min-width: 700px; display: block;"></svg>
+          <div class="risk-flow-chart-wrap">
+            <svg id="risk-flow-svg" class="risk-flow-chart" viewBox="0 0 960 400" preserveAspectRatio="xMidYMid meet"></svg>
           </div>
-          <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06);">
-            <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.5rem;">
+          <div class="risk-flow-packages">
+            <div class="risk-flow-packages-title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--eyemole-cyan)" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               Top Pacotes por Recorrência
             </div>
-            <div id="risk-flow-packages-cloud" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+            <div id="risk-flow-packages-cloud" class="risk-flow-packages-cloud">
             </div>
           </div>
         </div>
@@ -9566,6 +9596,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     let pageSize = 25;
     let currentSortColumn = 'priority';
     let currentSortOrder = 'asc';
+    let riskFlowRenderCache = null;
 
     const priorityRank = { 'Priority 1+': 0, 'Priority 1': 1, 'Priority 2': 2, 'Priority 3': 3, 'Priority 4': 4 };
 
@@ -9628,6 +9659,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             renderExecutiveRiskOverview();
           } catch (e) {
             console.warn('[EyeMole][activateTab] redesenho do panorama falhou:', e);
+          }
+        });
+      }
+
+      // Ao revelar Vulnerabilidades, recalcula apenas a geometria com dados em cache.
+      if (tabId === 'risk' && targetPanel && riskFlowRenderCache) {
+        requestAnimationFrame(() => {
+          try {
+            renderRiskFlowPanel('risk-flow-panel-container', riskFlowRenderCache);
+          } catch (e) {
+            console.warn('[EyeMole][activateTab] redesenho do Sankey falhou:', e);
           }
         });
       }
@@ -9707,12 +9749,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (overviewExecutiveResizeTimer) clearTimeout(overviewExecutiveResizeTimer);
       overviewExecutiveResizeTimer = setTimeout(() => {
         overviewExecutiveResizeTimer = null;
-        const panel = document.getElementById('tab-overview');
-        if (!panel || !panel.classList.contains('active')) return;
-        try {
-          renderExecutiveRiskOverview();
-        } catch (e) {
-          console.warn('[EyeMole][resize] redesenho do panorama falhou:', e);
+        const overviewPanel = document.getElementById('tab-overview');
+        if (overviewPanel && overviewPanel.classList.contains('active')) {
+          try {
+            renderExecutiveRiskOverview();
+          } catch (e) {
+            console.warn('[EyeMole][resize] redesenho do panorama falhou:', e);
+          }
+        }
+        const riskPanel = document.getElementById('tab-risk');
+        if (riskPanel && riskPanel.classList.contains('active') && riskFlowRenderCache) {
+          try {
+            renderRiskFlowPanel('risk-flow-panel-container', riskFlowRenderCache);
+          } catch (e) {
+            console.warn('[EyeMole][resize] redesenho do Sankey falhou:', e);
+          }
         }
       }, 250);
     });
@@ -10376,6 +10427,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (!container) return;
 
       const dataset = Array.isArray(data) ? data : [];
+      riskFlowRenderCache = dataset;
       if (dataset.length === 0) {
         showChartEmptyState(containerId, 'Sem achados para a seleção de filtros atual.');
         return;
@@ -10491,14 +10543,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const svg = document.getElementById('risk-flow-svg');
       if (!svg) return;
 
-      const width = 960;
-      const height = 380;
-      const colWidth = 18;
-      const colX = [140, 500, 860];
-      const topPadding = 45;
-      const bottomPadding = 25;
+      const measuredWidth = Math.round(svg.parentElement.getBoundingClientRect().width || 0);
+      const width = measuredWidth > 0 ? Math.max(400, measuredWidth) : 960;
+      const height = width >= 900 ? 400 : (width >= 700 ? 410 : 430);
+      const colWidth = 14;
+      const edgeInset = width < 700 ? 100 : Math.max(104, Math.round(width * 0.105));
+      const colX = [edgeInset, Math.round(width * 0.5), width - edgeInset - colWidth];
+      const topPadding = 32;
+      const bottomPadding = 16;
       const availableHeight = height - topPadding - bottomPadding;
-      const gap = 10;
+      const gap = 7;
+
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.style.height = `${height}px`;
 
       const activeSev = SEV_CONFIG.filter(s => sevTotals[s.id] > 0);
       const activePrio = PRIO_CONFIG.filter(p => prioTotals[p.id] > 0);
@@ -10566,12 +10623,51 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         curY += nH + gap;
       });
 
-      let svgHtml = '';
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const createSvgElement = (tagName, attributes = {}) => {
+        const element = document.createElementNS(svgNs, tagName);
+        Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+        return element;
+      };
+      const appendSvgTooltip = (parent, value) => {
+        const title = createSvgElement('title');
+        title.textContent = String(value);
+        parent.appendChild(title);
+      };
+      const appendColumnTitle = (x, value) => {
+        const text = createSvgElement('text', {
+          x, y: 19, fill: 'var(--text-muted)', 'font-size': 11,
+          'font-weight': 700, 'text-anchor': 'middle', 'letter-spacing': '0.05em'
+        });
+        text.textContent = value;
+        svg.appendChild(text);
+      };
+      const appendNode = (node, label, labelX, anchor, labelSize, countSize, tooltipLabel) => {
+        const pct = ((node.count / totalCount) * 100).toFixed(1);
+        const rect = createSvgElement('rect', {
+          x: node.x, y: node.y, width: colWidth, height: node.h, rx: 2, fill: node.color
+        });
+        appendSvgTooltip(rect, `${tooltipLabel}: ${node.count} (${pct}%)`);
+        svg.appendChild(rect);
+
+        const text = createSvgElement('text', {
+          x: labelX, y: node.y + Math.min(node.h / 2 + 4, node.h),
+          fill: 'var(--text-main)', 'font-size': labelSize,
+          'font-weight': 600, 'text-anchor': anchor
+        });
+        text.appendChild(document.createTextNode(`${label} `));
+        const count = createSvgElement('tspan', { fill: 'var(--text-muted)', 'font-size': countSize });
+        count.textContent = `(${node.count})`;
+        text.appendChild(count);
+        svg.appendChild(text);
+      };
+
+      svg.replaceChildren();
 
       // Títulos das Colunas
-      svgHtml += `<text x="${colX[0] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">SEVERIDADE</text>`;
-      svgHtml += `<text x="${colX[1] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">PRIORIDADE</text>`;
-      svgHtml += `<text x="${colX[2] + colWidth/2}" y="24" fill="var(--text-muted)" font-size="11" font-weight="700" text-anchor="middle" letter-spacing="0.05em">TOP AGENTES</text>`;
+      appendColumnTitle(colX[0] + colWidth / 2, 'SEVERIDADE');
+      appendColumnTitle(colX[1] + colWidth / 2, 'PRIORIDADE');
+      appendColumnTitle(colX[2] + colWidth / 2, 'TOP AGENTES');
 
       // Faixas: Coluna 1 (Sev) -> Coluna 2 (Prio)
       activeSev.forEach(s => {
@@ -10594,7 +10690,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const cX2 = x1 + (x2 - x1) * 0.55;
 
           const pathD = `M ${x1} ${y1a} C ${cX1} ${y1a}, ${cX2} ${y2a}, ${x2} ${y2a} L ${x2} ${y2b} C ${cX2} ${y2b}, ${cX1} ${y1b}, ${x1} ${y1b} Z`;
-          svgHtml += `<path d="${pathD}" fill="${sN.color}" fill-opacity="0.25" stroke="none"><title>${sN.label} → ${pN.label}: ${val} (${((val/totalCount)*100).toFixed(1)}%)</title></path>`;
+          const path = createSvgElement('path', { d: pathD, fill: sN.color, 'fill-opacity': 0.25, stroke: 'none' });
+          appendSvgTooltip(path, `${sN.label} → ${pN.label}: ${val} (${((val / totalCount) * 100).toFixed(1)}%)`);
+          svg.appendChild(path);
 
           sN.outY += flowH_s;
           pN.inY += flowH_p;
@@ -10622,7 +10720,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const cX2 = x1 + (x2 - x1) * 0.55;
 
           const pathD = `M ${x1} ${y1a} C ${cX1} ${y1a}, ${cX2} ${y2a}, ${x2} ${y2a} L ${x2} ${y2b} C ${cX2} ${y2b}, ${cX1} ${y1b}, ${x1} ${y1b} Z`;
-          svgHtml += `<path d="${pathD}" fill="${pN.color}" fill-opacity="0.25" stroke="none"><title>${pN.label} → ${aN.fullLabel}: ${val} (${((val/totalCount)*100).toFixed(1)}%)</title></path>`;
+          const path = createSvgElement('path', { d: pathD, fill: pN.color, 'fill-opacity': 0.25, stroke: 'none' });
+          appendSvgTooltip(path, `${pN.label} → ${aN.fullLabel}: ${val} (${((val / totalCount) * 100).toFixed(1)}%)`);
+          svg.appendChild(path);
 
           pN.outY += flowH_p;
           aN.inY += flowH_a;
@@ -10632,29 +10732,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       // Nós Coluna 1 (Severidade)
       activeSev.forEach(s => {
         const n = sevNodes[s.id];
-        const pct = ((n.count / totalCount) * 100).toFixed(1);
-        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.label}: ${n.count} (${pct}%)</title></rect>`;
-        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="11" font-weight="600" text-anchor="end">${n.label} <tspan fill="var(--text-muted)" font-size="10">(${n.count})</tspan></text>`;
+        appendNode(n, n.label, n.x - 7, 'end', 12, 11, n.label);
       });
 
       // Nós Coluna 2 (Prioridade)
       activePrio.forEach(p => {
         const n = prioNodes[p.id];
-        const pct = ((n.count / totalCount) * 100).toFixed(1);
-        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.label}: ${n.count} (${pct}%)</title></rect>`;
-        svgHtml += `<text x="${n.x + colWidth + 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="11" font-weight="600" text-anchor="start">${n.label} <tspan fill="var(--text-muted)" font-size="10">(${n.count})</tspan></text>`;
+        appendNode(n, n.label, n.x + colWidth + 7, 'start', 12, 11, n.label);
       });
 
       // Nós Coluna 3 (Agentes)
       activeAgent.forEach(a => {
         const n = agentNodes[a.id];
-        const pct = ((n.count / totalCount) * 100).toFixed(1);
-        // Fase 10 — nomes de agentes são dados externos: apenas escape.
-        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${escapeHtmlText(n.fullLabel)}: ${n.count} (${pct}%)</title></rect>`;
-        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="10" font-weight="600" text-anchor="end">${escapeHtmlText(n.label)} <tspan fill="var(--text-muted)" font-size="9">(${n.count})</tspan></text>`;
+        // Nomes externos são inseridos exclusivamente por textContent/TextNode.
+        const narrowAgentLabel = n.fullLabel.length > 10 ? n.fullLabel.substring(0, 8) + '...' : n.fullLabel;
+        appendNode(
+          n,
+          width < 700 ? narrowAgentLabel : n.label,
+          width < 700 ? n.x + colWidth + 7 : n.x - 7,
+          width < 700 ? 'start' : 'end',
+          12,
+          11,
+          n.fullLabel
+        );
       });
-
-      svg.innerHTML = svgHtml;
 
       // 4. Nuvem de Tags de Pacotes Recorrentes (Rodapé)
       const pkgCounts = {};
@@ -10666,18 +10767,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const sortedPkgs = Object.entries(pkgCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
       const cloudContainer = document.getElementById('risk-flow-packages-cloud');
       if (cloudContainer) {
+        cloudContainer.replaceChildren();
         if (sortedPkgs.length === 0) {
-          cloudContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">Nenhum pacote identificado</span>';
+          const empty = document.createElement('span');
+          empty.style.cssText = 'font-size: 0.8rem; color: var(--text-muted);';
+          empty.textContent = 'Nenhum pacote identificado';
+          cloudContainer.appendChild(empty);
         } else {
           const maxOcc = sortedPkgs[0][1];
           const minOcc = sortedPkgs[sortedPkgs.length - 1][1];
 
-          cloudContainer.innerHTML = sortedPkgs.map(([pkg, count]) => {
+          sortedPkgs.forEach(([pkg, count]) => {
             const fontSize = maxOcc === minOcc ? 0.8 : (0.72 + ((count - minOcc) / (maxOcc - minOcc || 1)) * 0.23).toFixed(2);
-            // Fase 10 — apenas escape do nome do pacote (dado externo).
-            // Geometria, cores e algoritmo do painel alluvial permanecem intactos.
-            return `<span class="badge" style="font-size: ${fontSize}rem; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: var(--eyemole-cyan); padding: 0.25rem 0.6rem; border-radius: 6px;" title="${escapeHtmlAttribute(count + ' ocorrências')}"><code>${escapeHtmlText(pkg)}</code> <span style="opacity: 0.6; font-size: 0.7em;">(${escapeHtmlText(count)})</span></span>`;
-          }).join('');
+            const badge = document.createElement('span');
+            badge.className = 'badge';
+            badge.style.cssText = `font-size: ${fontSize}rem; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: var(--eyemole-cyan); padding: 0.18rem 0.48rem; border-radius: 6px;`;
+            badge.title = `${count} ocorrências`;
+            const code = document.createElement('code');
+            code.textContent = pkg;
+            const occurrence = document.createElement('span');
+            occurrence.style.cssText = 'opacity: 0.6; font-size: 0.7em;';
+            occurrence.textContent = ` (${count})`;
+            badge.append(code, occurrence);
+            cloudContainer.appendChild(badge);
+          });
         }
       }
     }
