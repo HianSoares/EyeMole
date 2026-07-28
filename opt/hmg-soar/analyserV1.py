@@ -6737,6 +6737,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       .vuln-queue-card .col-metrics { align-items: flex-start; }
       .vuln-queue-card .col-actions { justify-content: flex-start; grid-column: 1 / -1; }
     }
+
+    /* Panorama de Risco integrado */
+    .overview-executive-card { width: 100%; margin-bottom: 2rem; padding: 1.25rem 1.35rem 1rem; background: linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0)), var(--vm-panel); border: 1px solid var(--vm-stroke); border-radius: 14px; }
+    .overview-executive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.25rem; }
+    .overview-executive-title { margin: 0; color: var(--text-main); font-size: 1.05rem; font-weight: 800; }
+    .overview-executive-subtitle { margin: 0.3rem 0 0; color: var(--vm-muted); font-size: 0.82rem; line-height: 1.4; }
+    .overview-executive-updated { flex: 0 0 auto; color: var(--vm-faint); font-size: 0.72rem; white-space: nowrap; }
+    .overview-executive-note { margin: 0.6rem 0 0.35rem; color: var(--vm-faint); font-size: 0.72rem; }
+    .overview-executive-chart { width: 100%; min-height: 0; }
+    .overview-executive-chart[data-layout="wide"] { height: clamp(590px, 55vw, 680px); }
+    .overview-executive-chart[data-layout="compact"] { height: auto; aspect-ratio: var(--overview-compact-ratio, 480 / 1080); }
+    .overview-executive-chart svg { display: block; width: 100%; height: 100%; max-height: none; }
+    .overview-executive-summary { margin-top: 0.35rem; padding-top: 0.75rem; border-top: 1px solid var(--vm-stroke-soft); color: var(--vm-muted); font-size: 0.78rem; line-height: 1.5; }
+    @media (max-width: 760px) {
+      .overview-executive-card { padding: 1rem 0.75rem 0.85rem; }
+      .overview-executive-head { flex-direction: column; gap: 0.35rem; }
+      .overview-executive-updated { white-space: normal; }
+      .overview-executive-chart[data-layout="wide"] { height: 620px; }
+    }
   </style>
 </head>
 <body>
@@ -6970,23 +6989,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
         <h3 class="section-title" style="display:none;">Dashboard Executivo</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Distribuição por Severidade</h4>
-            <div id="overview-chart-severity" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
+        <div class="overview-executive-card" id="overview-executive-card">
+          <div class="overview-executive-head">
+            <div>
+              <h3 class="overview-executive-title">Panorama de Risco &mdash; Vis&atilde;o Integrada</h3>
+              <p class="overview-executive-subtitle">Leitura consolidada da severidade, SLA, tratativa e evolu&ccedil;&atilde;o temporal.</p>
+            </div>
+            <div class="overview-executive-updated" id="overview-executive-updated">Atualizado: &mdash;</div>
           </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">SLA Operacional</h4>
-            <div id="overview-chart-sla" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Prioridades de Tratativa</h4>
-            <div id="overview-chart-treatment" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
-          <div class="metric-card" style="padding: 1.25rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; display: flex; flex-direction: column;">
-            <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;">Tendência Geral</h4>
-            <div id="overview-chart-trend" style="height: 160px; display: flex; align-items: center; justify-content: center; width: 100%;"></div>
-          </div>
+          <p class="overview-executive-note">Cada faixa utiliza sua pr&oacute;pria escala para preservar a leitura correta dos indicadores.</p>
+          <div class="overview-executive-chart" id="overview-executive-chart"></div>
+          <div class="overview-executive-summary" id="overview-executive-summary" aria-live="polite">Aguardando dados do panorama de risco.</div>
         </div>
 
         <!-- Fase 3H.2 - Top 10 na Visão Geral -->
@@ -9226,38 +9239,323 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       el.innerHTML = `<div class="chart-empty-state" style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">${message}</div>`;
     }
 
-    // ======================================================================
-    // FASE 2 + FASE 8 — CARD "TENDÊNCIA GERAL" (Dashboard)
-    // Contrato: série única 'total' sobre dataset [{ timestamp, total }].
-    // O dataset é mantido em cache de módulo para permitir redesenho quando a
-    // aba Dashboard passa de oculta para visível (clientWidth/Height = 0
-    // enquanto .tab-panel está display:none), sem novo fetch.
-    // ======================================================================
-    let overviewTrendCache = null;
+    // Cada endpoint atualiza somente sua faixa. O renderizador le este cache
+    // parcial, nunca realiza fetch e preserva dados validos em falhas isoladas.
+    const overviewExecutiveState = {
+      severity: null,
+      sla: null,
+      treatment: null,
+      trend: null,
+      sourceStatus: {
+        severity: { state: 'loading', message: '', updatedAt: null },
+        sla: { state: 'loading', message: '', updatedAt: null },
+        treatment: { state: 'loading', message: '', updatedAt: null },
+        trend: { state: 'loading', message: '', updatedAt: null }
+      }
+    };
 
-    function renderOverviewTrendFromCache() {
-      const el = safeGetEl('overview-chart-trend');
-      if (!el) return;
+    function parseValidOverviewTimestamp(value) {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'string' && value.trim() === '') return null;
+      if (typeof value === 'number' && (!Number.isFinite(value) || value <= 0)) return null;
+      const date = new Date(value);
+      const time = date.getTime();
+      return Number.isFinite(time) && time > 0 ? date : null;
+    }
 
-      const data = Array.isArray(overviewTrendCache) ? overviewTrendCache : [];
-      if (data.length === 0) {
-        showChartEmptyState('overview-chart-trend', 'Nenhuma vulnerabilidade registrada nos snapshots.');
-        return;
+    function setOverviewSourceStatus(source, state, timestamp = null) {
+      const current = overviewExecutiveState.sourceStatus[source];
+      if (!current) return;
+      current.state = state;
+      current.message = state === 'stale'
+        ? 'Dados preservados — atualização indisponível.'
+        : (state === 'unavailable' ? 'Dados indisponíveis.' : '');
+      if (state === 'fresh') {
+        const updateDate = parseValidOverviewTimestamp(timestamp) || new Date();
+        current.updatedAt = updateDate.toISOString();
+      }
+    }
+
+    function normalizeCount(value) {
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 ? number : 0;
+    }
+
+    function safePercent(value, total) {
+      const safeTotal = normalizeCount(total);
+      if (safeTotal === 0) return 0;
+      return Math.max(0, Math.min(100, (normalizeCount(value) / safeTotal) * 100));
+    }
+
+    function getTrendDirection(points) {
+      const valid = (Array.isArray(points) ? points : [])
+        .map(point => Number(point && point.total))
+        .filter(Number.isFinite);
+      if (valid.length < 2) return 'N/D';
+      if (valid[valid.length - 1] > valid[0]) return 'Alta';
+      if (valid[valid.length - 1] < valid[0]) return 'Queda';
+      return 'Estável';
+    }
+
+    function renderExecutiveRiskOverview() {
+      const container = document.getElementById('overview-executive-chart');
+      if (!container) return;
+      container.replaceChildren();
+
+      const containerWidth = container.clientWidth || 1200;
+      const compact = containerWidth < 720;
+      const compactWidth = containerWidth >= 600 ? 850 : (containerWidth >= 320 ? 560 : 430);
+      const width = compact ? compactWidth : 1200;
+      const height = compact ? 1080 : 660;
+      container.dataset.layout = compact ? 'compact' : 'wide';
+      if (compact) container.style.setProperty('--overview-compact-ratio', `${width} / ${height}`);
+      else container.style.removeProperty('--overview-compact-ratio');
+      const left = 42;
+      const right = width - 42;
+      const plotLeft = 255;
+      const plotRight = right - 68;
+      const plotWidth = plotRight - plotLeft;
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+
+      const svgNode = (tag, attrs = {}) => {
+        const node = document.createElementNS(SVG_NS, tag);
+        Object.entries(attrs).forEach(([name, value]) => node.setAttribute(name, String(value)));
+        return node;
+      };
+      const svgText = (parent, x, y, value, attrs = {}) => {
+        const text = svgNode('text', { x, y, ...attrs });
+        text.textContent = String(value);
+        parent.appendChild(text);
+        return text;
+      };
+      const addTitle = (parent, value) => {
+        const title = svgNode('title');
+        title.textContent = String(value);
+        parent.appendChild(title);
+      };
+      const svg = svgNode('svg', {
+        viewBox: `0 0 ${width} ${height}`,
+        preserveAspectRatio: 'xMidYMid meet',
+        role: 'img',
+        'aria-labelledby': 'overview-executive-svg-title overview-executive-svg-desc'
+      });
+      const accessibleTitle = svgNode('title', { id: 'overview-executive-svg-title' });
+      accessibleTitle.textContent = 'Panorama de Risco \u2014 Vis\u00e3o Integrada';
+      svg.appendChild(accessibleTitle);
+      const accessibleDesc = svgNode('desc', { id: 'overview-executive-svg-desc' });
+      accessibleDesc.textContent = 'Quatro faixas independentes apresentam severidade, SLA, prioridades de tratativa e tend\u00eancia temporal.';
+      svg.appendChild(accessibleDesc);
+
+      const statusMeta = {
+        fresh: { label: 'Atualizado', color: '#34d399' },
+        loading: { label: 'Atualizando', color: '#60a5fa' },
+        stale: { label: 'Dados preservados', color: '#fbbf24' },
+        unavailable: { label: 'Indisponível', color: '#f87171' }
+      };
+      const bandTitle = (label, y, detail, source) => {
+        const sourceStatus = overviewExecutiveState.sourceStatus[source];
+        const meta = statusMeta[sourceStatus.state] || statusMeta.unavailable;
+        const displayLabel = compact && source === 'severity' ? 'SEVERIDADE \u00b7 DISTRIBUI\u00c7\u00c3O' : label;
+        const displayDetail = compact && source === 'treatment' ? 'Volume absoluto \u00b7 maior barra' : detail;
+        const titleSize = compact ? 24 : 15;
+        const statusSize = compact ? 22 : 11;
+        const detailSize = compact ? 22 : 11;
+        svgText(svg, left, y, displayLabel, { fill: '#eaf2ff', 'font-size': titleSize, 'font-weight': 800, 'letter-spacing': 0.3 });
+        const statusText = svgText(svg, compact ? left : left + 310, compact ? y + 28 : y, meta.label, {
+          fill: meta.color, 'font-size': statusSize, 'font-weight': 700
+        });
+        const statusDate = parseValidOverviewTimestamp(sourceStatus.updatedAt);
+        addTitle(statusText, statusDate ? `${meta.label} · ${statusDate.toLocaleString()}` : meta.label);
+        if (displayDetail) svgText(svg, compact ? left : right, compact ? y + 54 : y, displayDetail, {
+          fill: '#71839b', 'font-size': detailSize, 'text-anchor': compact ? 'start' : 'end'
+        });
+      };
+      const divider = y => svg.appendChild(svgNode('line', {
+        x1: left, y1: y, x2: right, y2: y, stroke: 'rgba(148,178,214,0.14)', 'stroke-width': 1
+      }));
+      const emptyMessage = (y, message) => svgText(svg, left, y, message, { fill: '#71839b', 'font-size': compact ? 22 : 13 });
+      const drawStack = (items, y, emptyText, noItemsText) => {
+        const barHeight = compact ? 30 : 24;
+        const total = items ? items.reduce((sum, item) => sum + item.value, 0) : 0;
+        svg.appendChild(svgNode('rect', { x: left, y, width: right - left, height: barHeight, rx: 5, fill: 'rgba(255,255,255,0.055)' }));
+        if (!items) {
+          emptyMessage(y + (compact ? 23 : 17), noItemsText);
+          return 0;
+        }
+        if (total === 0) {
+          emptyMessage(y + (compact ? 23 : 17), emptyText);
+          return 0;
+        }
+        let cursor = left;
+        items.forEach(item => {
+          const pct = safePercent(item.value, total);
+          const segmentWidth = (right - left) * pct / 100;
+          if (segmentWidth <= 0) return;
+          const rect = svgNode('rect', { x: cursor, y, width: segmentWidth, height: barHeight, fill: item.color });
+          addTitle(rect, `${item.label}: ${item.value} (${pct.toFixed(1)}%)`);
+          svg.appendChild(rect);
+          cursor += segmentWidth;
+        });
+        return total;
+      };
+      const drawLegend = (items, total, y) => {
+        if (!items || total === 0) return;
+        const columns = compact ? 1 : items.length;
+        const columnWidth = (right - left) / columns;
+        items.forEach((item, index) => {
+          const row = Math.floor(index / columns);
+          const x = left + (index % columns) * columnWidth;
+          const itemY = y + row * (compact ? 30 : 23);
+          const dotSize = compact ? 14 : 9;
+          svg.appendChild(svgNode('rect', { x, y: itemY - dotSize + 1, width: dotSize, height: dotSize, rx: 2, fill: item.color }));
+          svgText(svg, x + 15, itemY - 1, `${item.label}  ${item.value} \u00b7 ${safePercent(item.value, total).toFixed(0)}%`, {
+            fill: '#a9b8ca', 'font-size': compact ? 22 : 12, 'font-weight': 600
+          });
+        });
+      };
+      const missingSourceText = (source, loadingText) => overviewExecutiveState.sourceStatus[source].state === 'unavailable'
+        ? 'Dados indisponíveis.'
+        : loadingText;
+
+      const severity = overviewExecutiveState.severity ? [
+        { label: 'Cr\u00edticas', value: normalizeCount(overviewExecutiveState.severity.critical), color: '#f87171' },
+        { label: 'Altas', value: normalizeCount(overviewExecutiveState.severity.high), color: '#fb923c' },
+        { label: 'M\u00e9dias', value: normalizeCount(overviewExecutiveState.severity.medium), color: '#facc15' },
+        { label: 'Baixas', value: normalizeCount(overviewExecutiveState.severity.low), color: '#3b82f6' }
+      ] : null;
+      bandTitle('DISTRIBUI\u00c7\u00c3O POR SEVERIDADE', 28, '100% da severidade', 'severity');
+      const severityTotal = drawStack(severity, compact ? 92 : 43, 'Sem dados de severidade.',
+        missingSourceText('severity', 'Carregando severidade\u2026'));
+      drawLegend(severity, severityTotal, compact ? 140 : 88);
+      divider(compact ? 250 : 116);
+
+      const slaY = compact ? 285 : 142;
+      const sla = overviewExecutiveState.sla ? [
+        { label: 'Vencidas', value: normalizeCount(overviewExecutiveState.sla.overdue), color: '#f87171' },
+        { label: 'Pr\u00f3ximas', value: normalizeCount(overviewExecutiveState.sla.due_soon), color: '#fb923c' },
+        { label: 'Dentro do SLA', value: normalizeCount(overviewExecutiveState.sla.within_sla), color: '#34d399' }
+      ] : null;
+      bandTitle('SLA OPERACIONAL', slaY, '100% dos itens com SLA', 'sla');
+      const slaTotal = drawStack(sla, compact ? 350 : slaY + 15, 'Sem dados de SLA.',
+        missingSourceText('sla', 'Carregando SLA\u2026'));
+      drawLegend(sla, slaTotal, compact ? 400 : slaY + 60);
+      const slaDivider = compact ? 480 : 230;
+      divider(slaDivider);
+
+      const treatmentY = compact ? 515 : slaDivider + 26;
+      bandTitle('PRIORIDADES DE TRATATIVA', treatmentY, 'Volume de itens \u00b7 escala pela maior barra', 'treatment');
+      const treatment = overviewExecutiveState.treatment ? [
+        { label: 'Imediato (Now)', value: normalizeCount(overviewExecutiveState.treatment.now), color: '#ef4444' },
+        { label: 'Pr\u00f3x. 7 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_7_days), color: '#f97316' },
+        { label: 'Pr\u00f3x. 15 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_15_days), color: '#eab308' },
+        { label: 'Pr\u00f3x. 30 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_30_days), color: '#3b82f6' }
+      ] : null;
+      if (!treatment) {
+        emptyMessage(compact ? 605 : treatmentY + 45, missingSourceText('treatment', 'Carregando tratativa\u2026'));
+      } else {
+        const treatmentMax = Math.max(0, ...treatment.map(item => item.value));
+        treatment.forEach((item, index) => {
+          const y = compact ? 600 + index * 50 : treatmentY + 23 + index * 31;
+          const trackX = compact ? left : plotLeft;
+          const trackY = compact ? y + 13 : y;
+          const trackWidth = compact ? right - left : plotWidth;
+          const barHeight = compact ? 18 : 15;
+          svgText(svg, left, compact ? y : y + 12, item.label, { fill: '#a9b8ca', 'font-size': compact ? 22 : 12, 'font-weight': 600 });
+          svg.appendChild(svgNode('rect', { x: trackX, y: trackY, width: trackWidth, height: barHeight, rx: 4, fill: 'rgba(255,255,255,0.055)' }));
+          const barWidth = treatmentMax > 0 ? trackWidth * item.value / treatmentMax : 0;
+          if (barWidth > 0) {
+            const bar = svgNode('rect', { x: trackX, y: trackY, width: barWidth, height: barHeight, rx: 4, fill: item.color });
+            addTitle(bar, `${item.label}: ${item.value} itens`);
+            svg.appendChild(bar);
+          }
+          svgText(svg, right, compact ? y : y + 12, item.value, { fill: '#eaf2ff', 'font-size': compact ? 22 : 12, 'font-weight': 800, 'text-anchor': 'end' });
+        });
+      }
+      const trendDivider = compact ? 805 : treatmentY + 157;
+      divider(trendDivider);
+      const trendTitleY = compact ? 840 : trendDivider + 27;
+      bandTitle('TEND\u00caNCIA TEMPORAL', trendTitleY, 'S\u00e9rie \u00fanica: Total', 'trend');
+      const rawTrend = Array.isArray(overviewExecutiveState.trend) ? overviewExecutiveState.trend : null;
+      const trend = rawTrend ? rawTrend.map(point => {
+        const timestamp = point && point.timestamp;
+        const date = parseValidOverviewTimestamp(timestamp);
+        const total = Number(point && point.total);
+        return date && Number.isFinite(total) && total >= 0 ? { timestamp, date, time: date.getTime(), total } : null;
+      }).filter(Boolean)
+        .sort((a, b) => a.time - b.time) : null;
+      const chartTop = compact ? 915 : trendTitleY + 18;
+      const chartBottom = compact ? 1045 : height - 34;
+      const chartLeft = left + (compact ? 58 : 45);
+      const chartRight = right - 8;
+
+      if (!trend) {
+        emptyMessage(chartTop + 42, missingSourceText('trend', 'Carregando tend\u00eancia\u2026'));
+      } else if (trend.length === 0) {
+        emptyMessage(chartTop + 42, 'Nenhuma vulnerabilidade registrada nos snapshots.');
+      } else {
+        const maxTotal = Math.max(1, ...trend.map(point => point.total));
+        const yMax = Math.max(1, Math.ceil(maxTotal * 1.1));
+        [0, 0.5, 1].forEach(ratio => {
+          const y = chartBottom - (chartBottom - chartTop) * ratio;
+          svg.appendChild(svgNode('line', { x1: chartLeft, y1: y, x2: chartRight, y2: y, stroke: 'rgba(148,178,214,0.12)', 'stroke-width': 1 }));
+          svgText(svg, chartLeft - 8, y + (compact ? 7 : 4), Math.round(yMax * ratio), { fill: '#71839b', 'font-size': compact ? 22 : 10, 'text-anchor': 'end' });
+        });
+        const step = trend.length > 1 ? (chartRight - chartLeft) / (trend.length - 1) : 0;
+        const points = trend.map((point, index) => ({
+          ...point,
+          x: trend.length > 1 ? chartLeft + index * step : (chartLeft + chartRight) / 2,
+          y: chartBottom - (chartBottom - chartTop) * point.total / yMax
+        }));
+        if (points.length > 1) {
+          svg.appendChild(svgNode('path', {
+            d: points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '),
+            fill: 'none', stroke: '#4f8cff', 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+          }));
+        }
+        points.forEach((point, index) => {
+          const marker = svgNode('circle', { cx: point.x, cy: point.y, r: 3.5, fill: '#4f8cff', stroke: '#0b1626', 'stroke-width': 1.5 });
+          addTitle(marker, `${point.date.toLocaleString()} \u00b7 Total: ${point.total}`);
+          svg.appendChild(marker);
+          if (index === 0 || index === points.length - 1 || (points.length > 4 && index === Math.floor(points.length / 2))) {
+            svgText(svg, point.x, chartBottom + (compact ? 27 : 17), point.date.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }), {
+              fill: '#71839b', 'font-size': compact ? 22 : 10, 'text-anchor': 'middle'
+            });
+          }
+        });
+        svg.appendChild(svgNode('line', { x1: chartLeft, y1: chartBottom, x2: chartRight, y2: chartBottom, stroke: 'rgba(148,178,214,0.28)', 'stroke-width': 1 }));
       }
 
-      const maxTotal = data.reduce((acc, d) => {
-        const n = Number(d && d.total);
-        return (Number.isFinite(n) && n > acc) ? n : acc;
-      }, 0);
-
-      if (maxTotal === 0) {
-        showChartEmptyState('overview-chart-trend', 'Nenhuma vulnerabilidade registrada nos snapshots.');
-        return;
+      container.appendChild(svg);
+      const summary = document.getElementById('overview-executive-summary');
+      if (summary) {
+        const severityLeader = severity && severityTotal > 0 ? severity.reduce((best, item) => item.value > best.value ? item : best, severity[0]) : null;
+        const severitySummary = severityLeader ? `Maior concentra\u00e7\u00e3o: ${severityLeader.label} (${safePercent(severityLeader.value, severityTotal).toFixed(0)}%)` : 'Severidade: N/D';
+        const slaSummary = sla && slaTotal > 0 ? `SLA: ${safePercent(sla[2].value, slaTotal).toFixed(0)}% dentro do prazo` : 'SLA: N/D';
+        const treatmentTotal = treatment ? treatment.reduce((sum, item) => sum + item.value, 0) : null;
+        const treatmentSummary = treatmentTotal !== null ? `Tratativa: ${treatmentTotal} itens em at\u00e9 30 dias` : 'Tratativa: N/D';
+        const sourceLabels = { severity: 'Severidade', sla: 'SLA', treatment: 'Tratativa', trend: 'Tend\u00eancia' };
+        const staleSources = Object.keys(sourceLabels).filter(source => overviewExecutiveState.sourceStatus[source].state === 'stale');
+        const staleNames = staleSources.map(source => sourceLabels[source]);
+        const staleList = staleNames.length > 1
+          ? `${staleNames.slice(0, -1).join(', ')} e ${staleNames[staleNames.length - 1]}`
+          : (staleNames[0] || '');
+        const staleSummary = staleList ? ` \u00b7 Dados preservados em: ${staleList} \u2014 atualiza\u00e7\u00e3o indispon\u00edvel.` : '';
+        const nextSummary = `${severitySummary} \u00b7 ${slaSummary} \u00b7 ${treatmentSummary} \u00b7 Tend\u00eancia: ${getTrendDirection(trend)}${staleSummary}`;
+        if (summary.textContent !== nextSummary) summary.textContent = nextSummary;
       }
-
-      renderTrendSvgChart('overview-chart-trend', [
-        { key: 'total', label: 'Total', color: '#4f8cff' }
-      ], { data: data });
+      const updated = document.getElementById('overview-executive-updated');
+      if (updated) {
+        const freshDates = Object.values(overviewExecutiveState.sourceStatus)
+          .filter(status => status.state === 'fresh')
+          .map(status => parseValidOverviewTimestamp(status.updatedAt))
+          .filter(Boolean);
+        const latestFresh = freshDates.length > 0
+          ? freshDates.reduce((latest, date) => date.getTime() > latest.getTime() ? date : latest, freshDates[0])
+          : null;
+        const partial = Object.values(overviewExecutiveState.sourceStatus).some(status => status.state === 'stale');
+        const nextUpdated = `Atualizado: ${latestFresh ? latestFresh.toLocaleString() : '\u2014'}${partial ? ' \u00b7 atualiza\u00e7\u00e3o parcial' : ''}`;
+        if (updated.textContent !== nextUpdated) updated.textContent = nextUpdated;
+      }
     }
 
     let filteredData = [...rawData];
@@ -9323,15 +9621,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         history.replaceState(null, '', `#${tabId}`);
       }
 
-      // Fase 8 — o SVG de tendência é dimensionado por clientWidth/clientHeight,
-      // que valem 0 enquanto o painel está display:none. Ao revelar o Dashboard,
-      // redesenhamos a partir do cache (sem novo fetch), no próximo frame.
+      // Ao revelar o Dashboard, redesenha o SVG a partir do cache parcial.
       if (tabId === 'overview' && targetPanel) {
         requestAnimationFrame(() => {
           try {
-            renderOverviewTrendFromCache();
+            renderExecutiveRiskOverview();
           } catch (e) {
-            console.warn('[EyeMole][activateTab] redesenho da tendência falhou:', e);
+            console.warn('[EyeMole][activateTab] redesenho do panorama falhou:', e);
           }
         });
       }
@@ -9405,19 +9701,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       activateTab(hash, false);
     });
 
-    // Fase 8 — um único listener de resize, com debounce, apenas para o card
-    // "Tendência Geral" (redesenho a partir do cache; nunca dispara fetch).
-    let overviewTrendResizeTimer = null;
+    // Um unico listener com debounce; redesenho do cache nunca dispara fetch.
+    let overviewExecutiveResizeTimer = null;
     window.addEventListener('resize', () => {
-      if (overviewTrendResizeTimer) clearTimeout(overviewTrendResizeTimer);
-      overviewTrendResizeTimer = setTimeout(() => {
-        overviewTrendResizeTimer = null;
+      if (overviewExecutiveResizeTimer) clearTimeout(overviewExecutiveResizeTimer);
+      overviewExecutiveResizeTimer = setTimeout(() => {
+        overviewExecutiveResizeTimer = null;
         const panel = document.getElementById('tab-overview');
         if (!panel || !panel.classList.contains('active')) return;
         try {
-          renderOverviewTrendFromCache();
+          renderExecutiveRiskOverview();
         } catch (e) {
-          console.warn('[EyeMole][resize] redesenho da tendência falhou:', e);
+          console.warn('[EyeMole][resize] redesenho do panorama falhou:', e);
         }
       }, 250);
     });
@@ -10390,6 +10685,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     async function refreshRiskIntelligence() {
       const btn = document.getElementById('btn-refresh-risk');
       if (btn) btn.disabled = true;
+      setOverviewSourceStatus('severity', 'loading');
+      renderExecutiveRiskOverview();
 
       // 1. Fetch Risk Summary
       try {
@@ -10523,13 +10820,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         // ==========================================
 
         runBlock('overview-severity-chart', () => {
-          if (!safeGetEl('overview-chart-severity')) return;
-          renderPieChart('overview-chart-severity', [
-            { label: 'Críticas', value: sum.critical || 0, color: '#f87171' },
-            { label: 'Altas', value: sum.high || 0, color: '#fb923c' },
-            { label: 'Médias', value: sum.medium || 0, color: '#facc15' },
-            { label: 'Baixas', value: sum.low || 0, color: '#3b82f6' }
-          ], { totalLabel: 'Severidade' });
+          overviewExecutiveState.severity = { critical: sum.critical, high: sum.high, medium: sum.medium, low: sum.low };
+          setOverviewSourceStatus('severity', 'fresh', rData.timestamp);
+          renderExecutiveRiskOverview();
         });
 
         runBlock('overview-top10', () => {
@@ -10586,13 +10879,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         // Somente falha real de rede / HTTP / parsing chega aqui.
         console.error('[EyeMole][refreshRiskIntelligence] falha de rede/HTTP/parsing:', err);
         const msg = (err && err.message) ? err.message : String(err);
+        setOverviewSourceStatus('severity', overviewExecutiveState.severity ? 'stale' : 'unavailable');
+        renderExecutiveRiskOverview();
         safeSetHtml('risk-alerts-container', '<div class="alert-item alert-critical">Não foi possível carregar a inteligência de risco: ' + escapeHtmlText(msg) + '</div>');
         clearRiskCharts(msg);
       }
 
       function clearRiskCharts(msg) {
         const safeMsg = escapeHtmlText(msg);
-        const charts = ['overview-chart-severity', 'risk-chart-severity', 'risk-chart-priority', 'risk-chart-kev-epss', 'risk-chart-packages', 'risk-chart-agents'];
+        const charts = ['risk-chart-severity', 'risk-chart-priority', 'risk-chart-kev-epss', 'risk-chart-packages', 'risk-chart-agents'];
         charts.forEach(id => {
           const c = safeGetEl(id);
           if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${safeMsg}</div>`;
@@ -11289,6 +11584,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     async function refreshSlaSummary() {
       const btn = document.getElementById('btn-refresh-sla');
       if (btn) btn.disabled = true;
+      setOverviewSourceStatus('sla', 'loading');
+      renderExecutiveRiskOverview();
 
       try {
         const response = await fetch('/soar-api/sla-summary', {
@@ -11607,14 +11904,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           // ==========================================
 
           runBlock('sla-charts', () => {
-          // 1. Visão Geral - Donut de SLA
-          if (document.getElementById('overview-chart-sla')) {
-            renderPieChart('overview-chart-sla', [
-              { label: 'Vencidas', value: sum.overdue || 0, color: '#f87171' },
-              { label: 'Próximas', value: sum.due_soon || 0, color: '#fb923c' },
-              { label: 'Dentro SLA', value: sum.within_sla || 0, color: '#34d399' }
-            ], { totalLabel: 'SLA Status' });
-          }
+          // 1. Visao Geral - faixa integrada de SLA
+          overviewExecutiveState.sla = { overdue: sum.overdue, due_soon: sum.due_soon, within_sla: sum.within_sla };
+          setOverviewSourceStatus('sla', 'fresh', data.timestamp);
+          renderExecutiveRiskOverview();
 
           // 2. SLA & Backlog - Stacked de Cumprimento de SLA
           if (document.getElementById('sla-chart-compliance')) {
@@ -11697,7 +11990,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       safeSetHtml('sla-backlog-owner-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
       safeSetHtml('sla-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">${generalMsg}</td></tr>`);
 
-      const charts = ['overview-chart-sla', 'sla-chart-compliance', 'sla-chart-aging', 'sla-chart-backlog-asset', 'sla-chart-backlog-owner'];
+      setOverviewSourceStatus('sla', overviewExecutiveState.sla ? 'stale' : 'unavailable');
+      renderExecutiveRiskOverview();
+      const charts = ['sla-chart-compliance', 'sla-chart-aging', 'sla-chart-backlog-asset', 'sla-chart-backlog-owner'];
       charts.forEach(id => {
         showChartEmptyState(id, chartMsg);
       });
@@ -12065,6 +12360,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     async function refreshTreatmentPlan() {
       const btn = document.getElementById('btn-refresh-treatment');
       if (btn) btn.disabled = true;
+      setOverviewSourceStatus('treatment', 'loading');
+      renderExecutiveRiskOverview();
 
       try {
         const response = await fetch('/soar-api/treatment-plan', {
@@ -12353,15 +12650,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           // ==========================================
 
           runBlock('treatment-charts', () => {
-          // 1. Visão Geral - Mini Bar de Buckets de Tratativa
-          if (document.getElementById('overview-chart-treatment')) {
-            renderMiniBarChart('overview-chart-treatment', [
-              { label: 'Imediato (Now)', value: sum.now || 0, color: '#ef4444' },
-              { label: 'Próx. 7 Dias', value: sum.next_7_days || 0, color: '#f97316' },
-              { label: 'Próx. 15 Dias', value: sum.next_15_days || 0, color: '#eab308' },
-              { label: 'Próx. 30 Dias', value: sum.next_30_days || 0, color: '#3b82f6' }
-            ]);
-          }
+          // 1. Visao Geral - faixa integrada de buckets de tratativa
+          overviewExecutiveState.treatment = {
+            now: sum.now, next_7_days: sum.next_7_days,
+            next_15_days: sum.next_15_days, next_30_days: sum.next_30_days
+          };
+          setOverviewSourceStatus('treatment', 'fresh', data.timestamp);
+          renderExecutiveRiskOverview();
 
           // 2. Plano de Tratativa - Buckets Stacked Bar
           if (document.getElementById('treat-chart-buckets')) {
@@ -12420,6 +12715,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function showFallbackTreatmentPlan(msg) {
+      setOverviewSourceStatus('treatment', overviewExecutiveState.treatment ? 'stale' : 'unavailable');
+      renderExecutiveRiskOverview();
       safeSetText('treatment-metrics-now', '-');
       safeSetText('treatment-metrics-7d', '-');
       safeSetText('treatment-metrics-15d', '-');
@@ -12441,7 +12738,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       safeSetHtml('treatment-summary-buckets', '<li>indisponível</li>');
       safeSetHtml('treatment-summary-effort', '<li>indisponível</li>');
 
-      const charts = ['overview-chart-treatment', 'treat-chart-buckets', 'treat-chart-workload', 'treat-chart-quickwins', 'treat-chart-changes'];
+      const charts = ['treat-chart-buckets', 'treat-chart-workload', 'treat-chart-quickwins', 'treat-chart-changes'];
       charts.forEach(id => {
         const c = document.getElementById(id);
         if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${msg}</div>`;
@@ -12451,6 +12748,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     async function refreshTrendSummary() {
       const btn = document.getElementById('btn-refresh-trend');
       if (btn) btn.disabled = true;
+      setOverviewSourceStatus('trend', 'loading');
+      renderExecutiveRiskOverview();
 
       try {
         const response = await fetch('/soar-api/trend-summary', {
@@ -12739,10 +13038,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             // 1. Visão Geral - Evolução do Risco (Fase 2: série única "Total")
             const totalTrendData = severityTrend.map(s => ({
               timestamp: s.timestamp,
-              total: (s.critical || 0) + (s.high || 0) + (s.medium || 0) + (s.low || 0)
+              total: normalizeCount(s.critical) + normalizeCount(s.high) + normalizeCount(s.medium) + normalizeCount(s.low)
             }));
-            overviewTrendCache = totalTrendData;
-            renderOverviewTrendFromCache();
+            overviewExecutiveState.trend = totalTrendData;
+            setOverviewSourceStatus('trend', 'fresh', data.timestamp);
+            renderExecutiveRiskOverview();
 
             // 2. Tendências - Evolução do Total
             if (document.getElementById('trend-chart-total')) {
@@ -12760,8 +13060,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
           } else {
             // Fase 2 / D2 — estado vazio explícito apenas no card do Dashboard.
-            overviewTrendCache = [];
-            renderOverviewTrendFromCache();
+            overviewExecutiveState.trend = [];
+            setOverviewSourceStatus('trend', 'fresh', data.timestamp);
+            renderExecutiveRiskOverview();
           }
 
           if (slaTrend && slaTrend.length > 0) {
@@ -12796,6 +13097,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function showFallbackTrend(msg) {
+      setOverviewSourceStatus('trend', Array.isArray(overviewExecutiveState.trend) ? 'stale' : 'unavailable');
+      renderExecutiveRiskOverview();
       safeSetHtml('trend-exec-health', '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>');
       safeSetHtml('trend-risk-direction', '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>');
       safeSetText('trend-period-days', 'Período: -');
