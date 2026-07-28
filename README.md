@@ -1,86 +1,462 @@
 <div align="center">
-  <img src="opt/hmg-soar/assets/eyemole.png" alt="EyeMole Logo" width="280"/>
+
+  <img
+    src="opt/hmg-soar/assets/eyemole.png"
+    alt="Logotipo do EyeMole"
+    width="460"
+  />
 
   # EyeMole SOAR
 
-  **Dashboard de gestão de vulnerabilidades para Wazuh, com priorização de risco e contexto de exposição.**
+  **Gestão, contextualização e priorização de vulnerabilidades para ambientes Wazuh.**
+
+  O EyeMole transforma achados técnicos do Wazuh em uma visão operacional de risco, combinando severidade, KEV, EPSS, exposição, criticidade dos ativos, SLA e contexto de tratamento.
 
 </div>
 
 ---
 
-## Índice
+## Visão geral
 
-- [Instalação](#instalação)
-- [Modo seguro (padrão)](#modo-seguro-padrão)
-- [Execução manual via web (opt-in)](#execução-manual-via-web-opt-in)
-- [Dashboard corporativo](#dashboard-corporativo)
-- [Classificação de ativos via web](#classificação-de-ativos-via-web)
-- [Documentação](#documentação)
+O EyeMole SOAR é uma aplicação web para gestão de vulnerabilidades integrada ao Wazuh.
+
+O projeto coleta os achados do ambiente, aplica regras de priorização e publica um dashboard executivo com informações para apoiar decisões de correção.
+
+Entre os principais recursos estão:
+
+- Risk Command Center com score contextual;
+- contagem de CVEs únicas e achados por severidade;
+- priorização por CISA KEV e EPSS;
+- sinais independentes de risco;
+- Panorama de Risco integrado;
+- fluxo Sankey por severidade, prioridade e agentes;
+- contexto de ativos e exposição;
+- controle de SLA e backlog;
+- tendências históricas;
+- classificação de ativos pela interface;
+- API local protegida;
+- auditoria das alterações de contexto;
+- operação automática por `systemd timer`;
+- modo seguro sem `sudoers` ou `NOPASSWD`.
+
+---
+
+## Arquitetura resumida
+
+```text
+Wazuh Indexer
+      │
+      ▼
+analyserV1.py
+      │
+      ├── Relatórios CSV/HTML/JSON
+      ├── Snapshot do dashboard
+      └── Histórico operacional
+      │
+      ▼
+/var/www/wazuh-soar
+      │
+      ├── Dashboard web
+      └── Dados publicados
+      │
+      ▼
+Nginx + autenticação HTTP
+```
+
+A API local do EyeMole fornece os dados dinâmicos usados pelas abas, gráficos, tabelas, contexto de ativos e indicadores operacionais.
+
+---
+
+## Funcionalidades
+
+### Dashboard executivo
+
+A aba Dashboard apresenta:
+
+- Risk Score Contextual;
+- CVEs únicas;
+- vulnerabilidades críticas e altas;
+- CISA KEV;
+- EPSS acima do limiar configurado;
+- ativos expostos;
+- ativos sem classificação;
+- backlog e SLA;
+- Sinais de Risco e Priorização;
+- Panorama de Risco integrado;
+- Top 10 de prioridades de tratativa.
+
+### Vulnerabilidades
+
+A aba Vulnerabilidades oferece:
+
+- filtros por agente, severidade, criticidade, exposição, ambiente e status;
+- classificação por prioridade;
+- busca por CVE, pacote ou agente;
+- exportação CSV filtrada;
+- diagrama Sankey por severidade, prioridade e agentes;
+- lista detalhada de achados priorizados.
+
+### Ativos e exposição
+
+Permite acompanhar:
+
+- criticidade dos ativos;
+- nível de exposição;
+- ambiente;
+- serviço crítico;
+- ativos pendentes de classificação;
+- superfície de ataque;
+- ativos externos autorizados sem agente Wazuh.
+
+### Tratamento e SLA
+
+Apresenta:
+
+- itens vencidos;
+- itens próximos do vencimento;
+- backlog por ativo;
+- backlog por responsável;
+- aging;
+- recorrência;
+- ações recomendadas;
+- plano de tratativa.
+
+### Tendências e inteligência
+
+Inclui:
+
+- evolução do total de vulnerabilidades;
+- críticas e altas;
+- cumprimento de SLA;
+- backlog acionável;
+- ativos com melhora ou piora de risco;
+- CVEs persistentes;
+- histórico de risco aceito e exceções.
+
+---
+
+## Requisitos
+
+- Linux com `systemd`;
+- Python 3;
+- Nginx;
+- acesso ao Wazuh Indexer;
+- certificados e credenciais válidos;
+- privilégios administrativos para instalação;
+- usuário web para acesso ao dashboard.
 
 ---
 
 ## Instalação
 
+Clone o repositório:
+
 ```bash
 git clone https://github.com/HianSoares/EyeMole.git
 cd EyeMole
-sudo ./install.sh
-sudo ./create-web-user.sh
 ```
 
-## Modo seguro (padrão)
+Instale no modo seguro padrão:
 
-Por padrão, a instalação roda em **modo seguro**, sem `sudoers` nem `NOPASSWD`:
-
-- A instalação **não cria** `sudoers` nem `NOPASSWD`.
-- A geração do relatório ocorre **automaticamente** via `hmg-soar-report.timer`.
-- O botão **"Executar análise agora"** fica **desabilitado/oculto** em produção.
-- Execução manual, quando necessária, é feita por um administrador via SSH:
 ```bash
-  sudo systemctl start hmg-soar-report.service
+sudo ./install.sh
 ```
 
-## Execução manual via web (opt-in)
+Crie o usuário de acesso web:
 
-Para habilitar o botão de execução manual pela interface web (recomendado apenas em ambiente **HMG/lab**):
+```bash
+sudo ./create-web-user.sh <usuario>
+```
+
+Após a instalação, acesse:
+
+```text
+https://<servidor>/soar/
+```
+
+Consulte o guia completo:
+
+- [Instalação detalhada](docs/INSTALL_EYEMOLE.md)
+- [Hardening e produção](docs/SECURITY_HARDENING.md)
+
+---
+
+## Modo seguro — padrão recomendado
+
+Por padrão, o EyeMole opera sem execução manual pela interface web.
+
+Nesse modo:
+
+- não cria regras em `sudoers`;
+- não utiliza `NOPASSWD`;
+- não permite execução de comandos arbitrários;
+- não permite execução manual da análise pela interface;
+- mantém `NoNewPrivileges=yes`;
+- executa os relatórios automaticamente pelo timer;
+- permite execução administrativa via SSH.
+
+Execução manual pelo servidor:
+
+```bash
+sudo systemctl start hmg-soar-report.service
+```
+
+Verificação do timer:
+
+```bash
+systemctl status hmg-soar-report.timer
+```
+
+Esse é o modo recomendado para produção.
+
+---
+
+## Execução manual via web — opt-in
+
+Em ambientes controlados de homologação ou laboratório, a execução manual pela interface pode ser habilitada com:
 
 ```bash
 sudo ./install.sh --enable-web-run
 ```
 
-Esse modo usa uma regra **PolicyKit restrita** — **sem** `sudoers`/`NOPASSWD`:
+Esse modo:
 
-- autoriza apenas o usuário `hmg-soar` a dar `start`
-- apenas na unidade `hmg-soar-report.service`
-- a API dispara a análise pedindo ao `systemd` (`systemctl start`), então o hardening do serviço (`NoNewPrivileges=yes`) permanece **ativo**
+- não cria `sudoers`;
+- não utiliza `NOPASSWD`;
+- usa uma regra PolicyKit restrita;
+- autoriza somente o usuário de serviço do EyeMole;
+- autoriza somente o início de `hmg-soar-report.service`;
+- mantém o hardening da unidade `systemd`.
 
-## Dashboard corporativo
+> A execução manual via web deve ser habilitada apenas após avaliação de segurança do ambiente.
 
-A interface web do EyeMole usa um layout de produto SaaS para gestão de vulnerabilidades: sidebar fixa, topbar executiva, filtros visuais, KPIs, gráficos SVG autocontidos, tabelas compactas e modal moderno de contexto de ativos.
+Executar novamente o instalador sem `--enable-web-run` retorna a instalação ao modo seguro.
 
-O botão **Recarregar Dados** apenas refaz leituras via API/JSON e atualiza a tela — ele não executa análise, não chama `systemctl`, não usa `sudo` e não dispara shell.
+---
 
-## Classificação de ativos via web
+## Atualização dos dados
 
-A aba **Ativos & Exposição** permite classificar ativos pendentes diretamente pela interface (botão **Classificar**), **sem linha de comando** e **sem privilégio**:
+O botão **Recarregar Dados da API**:
 
-- não usa `sudo`, não cria `sudoers`, não chama `systemctl` nem executa shell;
-- apenas edita o JSON local `/opt/hmg-soar/config/assets_context.json`;
-- a execução manual via web continua **desabilitada** em produção;
-- a priorização é aplicada no próximo relatório automático (timer) ou via SSH:
-```bash
-  sudo systemctl start hmg-soar-report.service
+- consulta novamente os endpoints locais;
+- atualiza tabelas, indicadores e gráficos;
+- não inicia uma nova análise;
+- não executa shell;
+- não chama `systemctl`;
+- não utiliza `sudo`.
+
+Uma nova coleta acontece:
+
+- automaticamente pelo timer;
+- manualmente por um administrador via SSH;
+- pela interface apenas quando o modo web-run estiver habilitado.
+
+---
+
+## Classificação de ativos
+
+A aba **Ativos & Exposição** permite classificar ativos pendentes diretamente pela interface.
+
+A classificação pode registrar:
+
+- criticidade;
+- exposição;
+- ambiente;
+- responsável;
+- serviço crítico;
+- contexto operacional.
+
+A operação:
+
+- não usa `sudo`;
+- não executa shell;
+- não chama `systemctl`;
+- altera apenas os arquivos JSON de contexto autorizados;
+- registra a ação no log de auditoria.
+
+Arquivo de contexto:
+
+```text
+/opt/hmg-soar/config/assets_context.json
 ```
-- toda alteração é auditada em `/opt/hmg-soar/audit/audit_actions.jsonl`.
+
+Log de auditoria:
+
+```text
+/opt/hmg-soar/audit/audit_actions.jsonl
+```
+
+As alterações passam a influenciar integralmente a priorização no próximo relatório.
+
+---
+
+## Serviços
+
+API local:
+
+```bash
+systemctl status hmg-soar-api.service
+```
+
+Timer de geração:
+
+```bash
+systemctl status hmg-soar-report.timer
+```
+
+Última execução:
+
+```bash
+systemctl status hmg-soar-report.service
+```
+
+Logs da API:
+
+```bash
+journalctl -u hmg-soar-api.service
+```
+
+Logs do relatório:
+
+```bash
+journalctl -u hmg-soar-report.service
+```
+
+O serviço de relatório é do tipo `oneshot`. Por isso, após concluir corretamente, ele pode aparecer como:
+
+```text
+inactive (dead)
+```
+
+com o resultado:
+
+```text
+status=0/SUCCESS
+```
+
+---
+
+## Segurança
+
+O EyeMole foi projetado para operar com privilégios mínimos.
+
+Princípios aplicados:
+
+- sem `sudoers` no modo padrão;
+- sem `NOPASSWD`;
+- PolicyKit restrito no modo web-run;
+- API local;
+- autenticação HTTP no Nginx;
+- credenciais fora do diretório público;
+- arquivos de contexto com permissões controladas;
+- validação e escape de dados no frontend;
+- auditoria das alterações;
+- execução automática por unidades `systemd`;
+- proteção contra execução arbitrária de comandos.
+
+Nunca publique no Git:
+
+- `credentials.env`;
+- senhas;
+- certificados privados;
+- tokens;
+- relatórios reais;
+- inventários internos;
+- dados de agentes;
+- arquivos de contexto do ambiente;
+- logs de auditoria reais.
+
+Consulte:
+
+- [Hardening de segurança](docs/SECURITY_HARDENING.md)
+- [Hardening de segurança](docs/SECURITY_HARDENING.md))
+
+---
+
+## Estrutura do projeto
+
+```text
+EyeMole/
+├── docs/                  # Documentação
+├── nginx/                 # Configurações do Nginx
+├── opt/hmg-soar/          # Aplicação principal
+├── systemd/               # Serviços e timers
+├── create-web-user.sh     # Criação do usuário HTTP
+├── install.sh             # Instalador
+├── set-asset-context.sh   # Gestão de contexto
+├── CHANGELOG.md           # Histórico de versões
+└── README.md
+```
+
+---
+
+## Desenvolvimento e preview
+
+O projeto contém uma infraestrutura local de preview com dados fictícios.
+
+Gerar o HTML:
+
+```bash
+python3 opt/hmg-soar/preview_dashboard.py
+```
+
+Iniciar o servidor mock:
+
+```bash
+python3 opt/hmg-soar/preview_server.py --port 8088
+```
+
+Abrir:
+
+```text
+http://127.0.0.1:8088/index.html
+```
+
+Os dados usados no preview são fictícios e não representam o ambiente real.
+
+---
+
+## Validação
+
+Antes de enviar alterações:
+
+```bash
+python3 -m py_compile opt/hmg-soar/analyserV1.py
+git diff --check
+```
+
+Também deve ser validada a sintaxe do JavaScript incorporado no `HTML_TEMPLATE`.
+
+Nenhuma alteração deve ser implantada sem:
+
+- revisão do diff;
+- validação Python;
+- validação JavaScript;
+- teste do preview;
+- smoke test no ambiente de homologação.
+
+---
 
 ## Documentação
 
-- [Guia de Instalação do EyeMole SOAR](docs/INSTALL_EYEMOLE.md)
-- [Hardening de Segurança e Modo de Produção](docs/SECURITY_HARDENING.md)
+- [Instalação do EyeMole](docs/INSTALL_EYEMOLE.md)
+- [Hardening e modo de produção](docs/SECURITY_HARDENING.md)
+- [Histórico de alterações](CHANGELOG.md)
+
+---
+
+## Status do projeto
+
+O EyeMole está em evolução ativa.
+
+Mudanças relevantes devem ser registradas no `CHANGELOG.md` e publicadas por versão ou tag após validação em homologação.
 
 ---
 
 <div align="center">
-  <sub>EyeMole SOAR — priorização de risco e contexto de exposição para Wazuh.</sub>
+
+  **EyeMole SOAR**
+
+  Priorização de risco, exposição e contexto de ativos para ambientes Wazuh.
+
 </div>
