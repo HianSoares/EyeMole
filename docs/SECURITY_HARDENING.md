@@ -21,14 +21,16 @@ Fluxo de dados:
 
 ```
 Navegador --HTTPS+BasicAuth--> Nginx --/soar/--> arquivos estáticos em /var/www/wazuh-soar
-                                    \--/soar-api/--> 127.0.0.1:8765 (API local, somente leitura)
+                                    \--/soar-api/--> 127.0.0.1:8765 (API local)
 
 Geração do relatório:  systemd timer (root) -> hmg-soar-report.service (hmg-soar) -> /var/www/wazuh-soar
 ```
 
 A API **lê** o status do serviço/timer diretamente via `systemctl show`
 (consulta somente-leitura, **sem `sudo`**). Ela **não** dispara execução
-privilegiada no modo padrão.
+privilegiada no modo padrão. A API também realiza **escrita restrita**:
+contexto de ativos (`/opt/hmg-soar/config/assets_context.json`) e registros
+de auditoria (`/opt/hmg-soar/audit/` e `/var/www/wazuh-soar/data/`).
 
 ---
 
@@ -59,7 +61,7 @@ Instalação padrão:
 git clone https://github.com/HianSoares/EyeMole.git
 cd EyeMole
 sudo ./install.sh
-sudo ./create-web-user.sh
+sudo ./create-web-user.sh <usuario>
 ```
 
 No modo seguro o instalador:
@@ -162,7 +164,7 @@ CapabilityBoundingSet=        # nenhuma capability
 AmbientCapabilities=          # nenhuma capability
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadOnlyPaths=/opt/hmg-soar
-ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config
 ```
 
 Notas de compatibilidade:
@@ -281,8 +283,8 @@ sudo -l -U hmg-soar || true
 ss -ltnp | grep 8765 || true
 
 sudo nginx -t
-curl -k -I https://127.0.0.1/soar/
-curl -k -I https://127.0.0.1/soar-api/status
+curl -kfsS -u "<usuario>:<senha>" https://<servidor>/soar/ -o /dev/null && echo OK
+curl -kfsS -u "<usuario>:<senha>" https://<servidor>/soar-api/status | python3 -m json.tool
 ```
 
 Resultado esperado (produção, modo seguro):
@@ -321,19 +323,19 @@ artefatos substituídos (inclui o `sudoers` anterior, se havia).
 Reverter para um estado anterior:
 
 ```bash
-# 1) Restaurar o sudoers anterior (se você precisa do comportamento antigo):
-sudo cp /opt/backup-eyemole-install-<timestamp>/hmg-soar-api /etc/sudoers.d/hmg-soar-api
-sudo chown root:root /etc/sudoers.d/hmg-soar-api
-sudo chmod 0440 /etc/sudoers.d/hmg-soar-api
-sudo visudo -cf /etc/sudoers.d/hmg-soar-api
-
-# 2) Restaurar o snippet/conf do Nginx anterior, se necessário:
+# 1) Restaurar o snippet/conf do Nginx anterior, se necessário:
 sudo cp /opt/backup-eyemole-install-<timestamp>/<arquivo> /etc/nginx/...
 sudo nginx -t && sudo systemctl reload nginx
 
-# 3) Reverter o código (git):
+# 2) Reverter o código (git):
 git checkout -- install.sh systemd/ opt/hmg-soar/soar_api.py opt/hmg-soar/analyserV1.py
 ```
+
+> **Restauração do sudoers legado**: procedimento legado e não recomendado.
+> Reintroduz o modelo de privilégio removido pelo hardening e exige aprovação
+> formal da equipe de segurança. O backup está disponível em
+> `/opt/backup-eyemole-install-<timestamp>/hmg-soar-api`, mas sua restauração
+> **não faz parte do fluxo normal de operação**.
 
 Para simplesmente **desfazer o web-run** e voltar ao modo seguro:
 
