@@ -296,6 +296,76 @@ A priorização completa é aplicada no **próximo relatório automático** (tim
 
 O script `set-asset-context.sh` continua disponível para uso por CLI.
 
+### Classificação via linha de comando
+
+O script `set-asset-context.sh` permite classificar ativos sem a interface web. Requer `sudo`:
+
+```bash
+sudo ./set-asset-context.sh <agent_id> [opções]
+```
+
+Opções disponíveis:
+
+| Opção | Descrição | Valores permitidos |
+|---|---|---|
+| `--technical-owner <dono>` | Responsável técnico | Texto livre |
+| `--business-owner <dono>` | Área de negócio | Texto livre |
+| `--criticality <nível>` | Criticidade do ativo | `critical`, `high`, `medium`, `low`, `unknown` |
+| `--environment <env>` | Ambiente operacional | Texto livre (ex: `prod`, `hmg`, `dev`, `lab`) |
+
+Exemplo:
+
+```bash
+sudo ./set-asset-context.sh 001 \
+  --technical-owner "Equipe Windows" \
+  --business-owner "Sistemas Corporativos" \
+  --criticality critical \
+  --environment hmg
+```
+
+O script edita `/opt/hmg-soar/config/assets_context.json` e ajusta permissões (`hmg-soar:www-data`, `0640`).
+
+Após a classificação, a priorização será aplicada no próximo relatório automático (timer) ou após execução manual:
+
+```bash
+sudo systemctl start hmg-soar-report.service
+```
+
+Para exibir a ajuda: `sudo ./set-asset-context.sh --help`
+
+---
+
+### Consultar auditoria das ações
+
+O endpoint `GET /soar-api/audit-actions` retorna os registros de auditoria das ações disparadas pela API (execuções manuais, classificações de ativos, etc.). Protegido por Basic Auth.
+
+Parâmetro opcional: `limit` (padrão: 10, máximo: 50).
+
+```bash
+read -s -p "Senha web: " SOAR_PASS
+echo
+
+curl -kfsS \
+  -u "admmaster:${SOAR_PASS}" \
+  "https://<servidor>/soar-api/audit-actions?limit=10" | python3 -m json.tool
+
+unset SOAR_PASS
+```
+
+Formato da resposta:
+
+```json
+{
+  "timestamp": "2026-07-28T18:00:00Z",
+  "source": "/var/www/wazuh-soar/data/audit_actions.jsonl",
+  "limit": 10,
+  "count": 0,
+  "actions": []
+}
+```
+
+O campo `actions` contém os registros encontrados no arquivo de auditoria. Os campos de cada registro variam conforme o tipo de ação, como execução manual ou atualização de contexto de ativo.
+
 ---
 
 ## 13. Atualização do EyeMole
