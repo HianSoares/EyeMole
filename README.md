@@ -369,7 +369,6 @@ Nunca publique no Git:
 Consulte:
 
 - [Hardening de segurança](docs/SECURITY_HARDENING.md)
-- [Hardening de segurança](docs/SECURITY_HARDENING.md))
 
 ---
 
