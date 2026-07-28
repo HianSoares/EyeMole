@@ -1421,6 +1421,13 @@ def generate_risk_intelligence(
     e incorpora o Asset Criticality Score (Fase 3B) e o Exposure Context/Superfície de Ataque (Fase 3C).
     """
     try:
+        # D9 — limiar canônico de "EPSS alto". Todas as contagens/pesos que
+        # representam esse MESMO conceito passam a respeitar a configuração
+        # (--epss-threshold). A banda "EPSS muito alto" (0.50) é um patamar
+        # distinto e permanece constante.
+        epss_high_thr = float(getattr(ctx, "epss_threshold", DEFAULT_EPSS_THRESHOLD))
+        EPSS_VERY_HIGH = 0.50
+
         web_path = Path(web_dir)
         snapshots_dir = web_path / "data" / "snapshots"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
@@ -1800,10 +1807,10 @@ def generate_risk_intelligence(
                 reasons.append("Severidade Alta")
 
             if epss_score is not None:
-                if epss_score >= 0.50:
+                if epss_score >= EPSS_VERY_HIGH:
                     score_rec += 30
                     reasons.append("EPSS muito alto")
-                elif epss_score >= 0.20:
+                elif epss_score >= epss_high_thr:
                     score_rec += 20
                     reasons.append("EPSS alto")
 
@@ -2025,9 +2032,9 @@ def generate_risk_intelligence(
             elif str(sample_severity).lower() == "high":
                 score_rec += 15
             if epss_val is not None:
-                if epss_val >= 0.50:
+                if epss_val >= EPSS_VERY_HIGH:
                     score_rec += 30
-                elif epss_val >= 0.20:
+                elif epss_val >= epss_high_thr:
                     score_rec += 20
             if str(r.package_name).lower() in sensitive_packages:
                 score_rec += 10
@@ -2087,7 +2094,7 @@ def generate_risk_intelligence(
         medium_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if str(v.get("severity")).lower() == "medium")
         low_count = total_vulns - critical_count - high_count - medium_count
         kev_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if v.get("is_kev"))
-        epss_high_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if v.get("epss_score") is not None and v.get("epss_score") >= 0.20)
+        epss_high_count = sum(1 for v in current_snapshot["agent_vulnerabilities"] if v.get("epss_score") is not None and v.get("epss_score") >= epss_high_thr)
         affected_agents_set = set(v["agent_id"] for v in current_snapshot["agent_vulnerabilities"])
 
         # Alertas de Ativos sem classificação (Fase 3B)
@@ -2871,7 +2878,7 @@ def generate_risk_intelligence(
         }
 
         # Gerar tendência executiva (Fase 3F)
-        trend_enrichment = generate_trend_summary(web_dir, web_group)
+        trend_enrichment = generate_trend_summary(web_dir, web_group, epss_high_thr)
 
         # Gerar o risk_summary enriquecido
         risk_summary = {
@@ -2949,7 +2956,7 @@ def generate_risk_intelligence(
             })
 
         # Gerar plano de tratativa operacional (Fase 3G)
-        treatment_enrichment = generate_treatment_plan(web_dir, web_group)
+        treatment_enrichment = generate_treatment_plan(web_dir, web_group, epss_high_thr)
         if treatment_enrichment:
             risk_summary.update(treatment_enrichment)
         else:
@@ -2988,7 +2995,7 @@ def generate_risk_intelligence(
     except Exception as e:
         logger.error(f"[ERRO] Falha ao gerar inteligência de risco (Fase 3D): {e}", exc_info=True)
 
-def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Optional[dict]:
+def generate_trend_summary(web_dir: str, web_group: Optional[str] = None, epss_high_thr: float = DEFAULT_EPSS_THRESHOLD) -> Optional[dict]:
     """
     Fase 3F: Lê os snapshots históricos sob /var/www/wazuh-soar/data/snapshots/,
     calcula as evoluções temporárias e gera o trend_summary.json.
@@ -3094,7 +3101,7 @@ def generate_trend_summary(web_dir: str, web_group: Optional[str] = None) -> Opt
 
                 if v.get("is_kev"):
                     kev += 1
-                if (v.get("epss_score") or 0.0) >= 0.20:
+                if (v.get("epss_score") or 0.0) >= epss_high_thr:
                     epss_high += 1
 
                 sla_stat = v.get("sla_status", "unknown")
@@ -3536,7 +3543,7 @@ def write_degraded_treatment_plan(web_dir: str, web_group: Optional[str], messag
     except Exception as e:
         logger.error(f"[ERRO] Falha ao gravar plano de tratativa degradado: {e}", exc_info=True)
 
-def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Optional[dict]:
+def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None, epss_high_thr: float = DEFAULT_EPSS_THRESHOLD) -> Optional[dict]:
     """
     Fase 3G: Lê snapshots e summaries para compilar o plano de tratativa operacional,
     carga de trabalho por owner e detecção de quick wins / planejamentos de mudanças complexas.
@@ -3717,7 +3724,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 tech_base += 15
             if epss_score_val >= 0.50:
                 tech_base += 30
-            elif epss_score_val >= 0.20:
+            elif epss_score_val >= epss_high_thr:
                 tech_base += 20
 
             assets_count = len(cve_agent_map.get(cve, []))
@@ -3774,7 +3781,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 severity_w = weights.get("low", 2)
 
             kev_w = weights.get("kev", 30) if is_kev_val else 0
-            epss_w = weights.get("epss_high", 15) if epss_score_val >= 0.20 else 0
+            epss_w = weights.get("epss_high", 15) if epss_score_val >= epss_high_thr else 0
 
             sla_w = 0
             if sla_status == "overdue":
@@ -3880,7 +3887,7 @@ def generate_treatment_plan(web_dir: str, web_group: Optional[str] = None) -> Op
                 reasons.append("Alta")
             if is_kev_val:
                 reasons.append("KEV ativo")
-            if epss_score_val >= 0.20:
+            if epss_score_val >= epss_high_thr:
                 reasons.append("EPSS alto")
             if sla_status == "overdue":
                 reasons.append("SLA vencido")
@@ -5164,6 +5171,41 @@ def export_pdf(
         logger.error(f"Erro ao exportar PDF: {e}")
 
 
+def _json_for_script_context(json_text: str) -> str:
+    """Torna um JSON produzido por json.dumps seguro para embutir num bloco <script>.
+
+    Contexto: o payload é injetado como literal JavaScript em HTML_TEMPLATE
+    ({{VULN_DATA}}). Sem escape, um valor de inventário contendo a sequência
+    '</script>' encerraria o elemento <script> prematuramente, quebrando todo o
+    JavaScript da página (SyntaxError) e possibilitando injeção de markup.
+
+    Premissa: json.dumps é chamado com ensure_ascii=True (default), portanto todo
+    caractere não-ASCII já saiu como \\uXXXX e os únicos '&', '<' e '>' presentes
+    estão dentro de literais string JSON (os delimitadores estruturais são
+    {} [] : , " e dígitos).
+
+    Substituições aplicadas (todas são escapes \\uXXXX válidos tanto para JSON
+    quanto para string JavaScript, decodificando de volta ao caractere original):
+      &        -> \\u0026
+      <        -> \\u003c
+      >        -> \\u003e
+      U+2028   -> \\u2028   (defensivo: LINE SEPARATOR)
+      U+2029   -> \\u2029   (defensivo: PARAGRAPH SEPARATOR)
+
+    Os dois últimos já são cobertos por ensure_ascii=True, mas são mantidos para
+    que a função permaneça correta caso ensure_ascii seja alterado no futuro.
+    A ordem começa por '&' por convenção (evita reprocessar escapes gerados).
+    """
+    return (
+        json_text
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str], mode: str) -> str:
     """Monta o HTML completo como string e retorna. Não grava em disco."""
     metadata = _build_report_metadata(ctx, records, agent_ids, mode)
@@ -5306,7 +5348,10 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
             "snapshot_occurrences": occ_count
         })
 
+    # ensure_ascii=True (default) é obrigatório aqui: garante que o payload seja
+    # puramente ASCII antes do escape específico do contexto <script>.
     vuln_data_js = json.dumps(vuln_list, indent=2)
+    vuln_data_js = _json_for_script_context(vuln_data_js)
 
     html_content = HTML_TEMPLATE.replace("{{VULN_DATA}}", vuln_data_js)
     html_content = html_content.replace("{{GEN_TIME}}", metadata["generated_at"])
@@ -5976,6 +6021,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .badge-p2 { background: rgba(234, 179, 8, 0.12); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.25); }
     .badge-p3 { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
     .badge-p4 { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+    /* Fase 5.3 / D8 — prioridade ausente ou desconhecida: neutro, nunca badge-p4. */
+    .badge-neutral { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-color); }
     .badge-ransomware { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-weight: 700; }
     .badge-kev { background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
 
@@ -6398,17 +6445,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .vm-hero h1 { position: relative; font-size: clamp(1.8rem, 3vw, 2.7rem); line-height: 1.06; font-weight: 850; letter-spacing: -0.02em; margin: 1rem 0 0.7rem; background: linear-gradient(92deg, #ffffff, #cfe0ff 60%, #9dc2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; max-width: 22ch; }
     .vm-hero-sub { position: relative; font-size: 1.02rem; color: #cddcf3; max-width: 62ch; margin-bottom: 0.5rem; }
     .vm-hero-desc { position: relative; font-size: 0.9rem; color: var(--vm-muted); max-width: 70ch; }
-    .vm-hero-chips { position: relative; display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1.4rem; }
-    .vm-chip { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; color: var(--vm-text); background: rgba(255,255,255,0.045); border: 1px solid var(--vm-stroke); padding: 0.45rem 0.8rem; border-radius: 10px; }
-    .vm-chip b { color: #fff; font-weight: 800; }
-    .vm-chip .dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
-    .dot-ok { background: var(--vm-low); } .dot-warn { background: var(--vm-high); } .dot-info { background: var(--vm-accent); } .dot-crit { background: var(--vm-crit); }
+    /* Fase 9.1 — .vm-hero-chips/.vm-chip/.dot-* removidos: eram CSS órfão dos
+       chips hero (IDs hero-* inexistentes no HTML), agora também eliminados. */
 
     /* ---- SECTION TITLES ---- */
     .vm-sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin: 2rem 0 1rem; }
     .vm-sec-head h2 { font-size: 1.22rem; font-weight: 820; letter-spacing: -0.01em; color: #fff; }
     .vm-sec-head p { font-size: 0.84rem; color: var(--vm-muted); margin-top: 0.15rem; }
     .vm-kicker { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--vm-accent); }
+    /* Fase 7 — procedência dos dados e avisos de escopo (visual discreto). */
+    .vm-source { font-size: 0.72rem; color: var(--vm-faint); margin-top: 0.35rem; font-weight: 600; }
+    .vm-global-note { font-size: 0.74rem; color: var(--vm-muted); background: rgba(255,255,255,0.03); border: 1px solid var(--vm-stroke); border-radius: 8px; padding: 0.45rem 0.7rem; margin: 0.9rem 0 0.2rem; font-weight: 600; }
+    .vm-source-warn { font-size: 0.74rem; color: var(--vm-high); background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.28); border-radius: 8px; padding: 0.45rem 0.7rem; margin: 0.6rem 0 0.2rem; font-weight: 600; }
 
     /* ---- RISK COMMAND CENTER ---- */
     .cc-grid { display: grid; grid-template-columns: 1.15fr 2fr; gap: 1rem; margin-bottom: 0.5rem; }
@@ -6434,7 +6482,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .cc-card .t { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
     .cc-card .n { font-size: 2rem; font-weight: 840; letter-spacing: -0.02em; color: #fff; }
     .cc-card .c { font-size: 0.74rem; color: var(--vm-faint); }
-    .cc-card .spark { margin-top: 0.2rem; height: 26px; }
     .cc-crit { --accent: var(--vm-crit); } .cc-high { --accent: var(--vm-high); } .cc-kev { --accent: var(--vm-kev); }
     .cc-epss { --accent: var(--vm-epss); } .cc-exp { --accent: var(--vm-accent-2); } .cc-asset { --accent: var(--vm-info); }
     .cc-sla { --accent: var(--vm-high); } .cc-total { --accent: var(--vm-accent); }
@@ -6455,6 +6502,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .vm-funnel .fn-step:last-child::after { display: none; }
     .fn-1 { --fn: var(--vm-crit); } .fn-2 { --fn: var(--vm-kev); } .fn-3 { --fn: var(--vm-epss); }
     .fn-4 { --fn: var(--vm-low); } .fn-5 { --fn: var(--vm-accent-2); } .fn-6 { --fn: var(--vm-info); } .fn-7 { --fn: var(--vm-high); }
+    /* Fase 6.2 — critérios paralelos: remove as setas que sugeriam funil sequencial. */
+    .vm-signals .fn-step::after { display: none; }
+    /* Fase 6.3 / D4 — sinal sem dado disponível: aparência neutra. */
+    .vm-signals .fn-na { --fn: var(--vm-faint); }
+    .vm-signals .fn-na .fn-n { color: var(--vm-faint); }
+    .vm-signals .fn-note { display: block; font-size: 0.66rem; color: var(--vm-faint); font-weight: 600; }
 
     /* ---- PANELS / EXEC CHARTS ---- */
     .vm-panel { border: 1px solid var(--vm-stroke); border-radius: 16px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--vm-panel); padding: 1.25rem; }
@@ -6713,7 +6766,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
-          <span>Recarregar Dados</span>
+          <span>Recarregar Dados da API</span>
         </button>
       </div>
     </aside>
@@ -6758,11 +6811,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <!-- ===== RISK COMMAND CENTER ===== -->
+        <!-- Fase 7.5 / D10 — o Dashboard é uma visão global e não filtrada. -->
+        <div class="vm-global-note">Visão global — os filtros da aba Vulnerabilidades não se aplicam a este painel.</div>
+        <!-- Fase 7.3 / D11 — aviso de divergência entre snapshot embutido e API. -->
+        <div class="vm-source-warn" id="source-divergence" style="display: none;"></div>
+
         <div class="vm-sec-head">
           <div>
             <div class="vm-kicker">Command Center</div>
             <h2>Risk Command Center</h2>
             <p>Postura de risco consolidada do último snapshot, priorizada por contexto.</p>
+            <div class="vm-source">Fonte: snapshot embutido &middot; gerado em <span id="cc-source-time">—</span></div>
           </div>
         </div>
         <div class="cc-grid">
@@ -6777,12 +6836,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
           </div>
           <div class="cc-cards">
-            <div class="cc-card cc-total"><div class="t">CVEs únicos</div><div class="n" id="ccv-total">—</div><div class="c">ativos no snapshot</div></div>
+            <div class="cc-card cc-total"><div class="t">CVEs únicos</div><div class="n" id="ccv-total">—</div><div class="c">CVEs distintos no snapshot</div></div>
             <div class="cc-card cc-crit"><div class="t">Críticas</div><div class="n" id="ccv-crit">—</div><div class="c">severidade crítica</div></div>
             <div class="cc-card cc-high"><div class="t">Altas</div><div class="n" id="ccv-high">—</div><div class="c">severidade alta</div></div>
             <div class="cc-card cc-kev"><div class="t">KEV</div><div class="n" id="ccv-kev">—</div><div class="c">exploradas conhecidas</div></div>
-            <div class="cc-card cc-epss"><div class="t">EPSS alto</div><div class="n" id="ccv-epss">—</div><div class="c">&ge; limiar de exploração</div></div>
-            <div class="cc-card cc-exp"><div class="t">Ativos expostos</div><div class="n" id="ccv-exposed">—</div><div class="c">internet / DMZ</div></div>
+            <div class="cc-card cc-epss"><div class="t">EPSS alto</div><div class="n" id="ccv-epss">—</div><div class="c" id="ccv-epss-cap">&ge; limiar de exploração</div></div>
+            <div class="cc-card cc-exp"><div class="t">Ativos expostos</div><div class="n" id="ccv-exposed">—</div><div class="c">ativos em internet / DMZ</div></div>
             <div class="cc-card cc-asset"><div class="t">Sem classificação</div><div class="n" id="ccv-unclass">—</div><div class="c">contexto pendente</div></div>
             <div class="cc-card cc-sla"><div class="t">Backlog / SLA</div><div class="n" id="ccv-sla">—</div><div class="c">vencido / próximo</div></div>
           </div>
@@ -6792,18 +6851,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="vm-sec-head">
           <div>
             <div class="vm-kicker">Priorização</div>
-            <h2>Vulnerability Issues Validation</h2>
-            <p>Redução de ruído: da severidade bruta ao que realmente exige correção.</p>
+            <h2>Sinais de Risco e Priorização</h2>
+            <p>Critérios independentes sobre o snapshot; não representam um funil cumulativo.</p>
           </div>
         </div>
-        <div class="vm-funnel" style="margin-bottom: 0.5rem;">
-          <div class="fn-step fn-1"><span class="stage">Etapa 1</span><span class="fn-n" id="fnv-1">—</span><span class="fn-l">Critical &amp; High</span><span class="fn-bar"><span id="fnb-1" style="width:0%"></span></span></div>
-          <div class="fn-step fn-2"><span class="stage">Etapa 2</span><span class="fn-n" id="fnv-2">—</span><span class="fn-l">Known Exploited / KEV</span><span class="fn-bar"><span id="fnb-2" style="width:0%"></span></span></div>
-          <div class="fn-step fn-3"><span class="stage">Etapa 3</span><span class="fn-n" id="fnv-3">—</span><span class="fn-l">EPSS &ge; 20%</span><span class="fn-bar"><span id="fnb-3" style="width:0%"></span></span></div>
-          <div class="fn-step fn-4"><span class="stage">Etapa 4</span><span class="fn-n" id="fnv-4">—</span><span class="fn-l">Fix Available</span><span class="fn-bar"><span id="fnb-4" style="width:0%"></span></span></div>
-          <div class="fn-step fn-5"><span class="stage">Etapa 5</span><span class="fn-n" id="fnv-5">—</span><span class="fn-l">Internet Exposed</span><span class="fn-bar"><span id="fnb-5" style="width:0%"></span></span></div>
-          <div class="fn-step fn-6"><span class="stage">Etapa 6</span><span class="fn-n" id="fnv-6">—</span><span class="fn-l">Critical Asset</span><span class="fn-bar"><span id="fnb-6" style="width:0%"></span></span></div>
-          <div class="fn-step fn-7"><span class="stage">Etapa 7</span><span class="fn-n" id="fnv-7">—</span><span class="fn-l">SLA Risk</span><span class="fn-bar"><span id="fnb-7" style="width:0%"></span></span></div>
+        <div class="vm-funnel vm-signals" style="margin-bottom: 0.5rem;">
+          <div class="fn-step fn-1"><span class="stage">Sinal 1</span><span class="fn-n" id="fnv-1">—</span><span class="fn-l">Críticas e altas</span><span class="fn-bar"><span id="fnb-1" style="width:0%"></span></span></div>
+          <div class="fn-step fn-2"><span class="stage">Sinal 2</span><span class="fn-n" id="fnv-2">—</span><span class="fn-l">KEV conhecido</span><span class="fn-bar"><span id="fnb-2" style="width:0%"></span></span></div>
+          <div class="fn-step fn-3"><span class="stage">Sinal 3</span><span class="fn-n" id="fnv-3">—</span><span class="fn-l" id="fnl-3">EPSS acima do limiar</span><span class="fn-bar"><span id="fnb-3" style="width:0%"></span></span></div>
+          <div class="fn-step fn-4 fn-na"><span class="stage">Sinal 4</span><span class="fn-n" id="fnv-4">N/D</span><span class="fn-l">Correção disponível<br><span class="fn-note">dado não fornecido pelo índice</span></span><span class="fn-bar"><span id="fnb-4" style="width:0%"></span></span></div>
+          <div class="fn-step fn-5"><span class="stage">Sinal 5</span><span class="fn-n" id="fnv-5">—</span><span class="fn-l">Ativos expostos</span><span class="fn-bar"><span id="fnb-5" style="width:0%"></span></span></div>
+          <div class="fn-step fn-6"><span class="stage">Sinal 6</span><span class="fn-n" id="fnv-6">—</span><span class="fn-l">Ativos críticos</span><span class="fn-bar"><span id="fnb-6" style="width:0%"></span></span></div>
+          <div class="fn-step fn-7"><span class="stage">Sinal 7</span><span class="fn-n" id="fnv-7">—</span><span class="fn-l">Risco de SLA</span><span class="fn-bar"><span id="fnb-7" style="width:0%"></span></span></div>
         </div>
 
         <!-- Cards Principais Executivos (sinais detalhados; ocultos, alimentam a lógica existente) -->
@@ -6907,6 +6966,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="vm-kicker">Visão Executiva</div>
             <h2>Panorama de Risco</h2>
             <p>Distribuição por severidade, SLA operacional, tratativa e tendência.</p>
+            <div class="vm-source">Fonte: API SOAR &middot; atualizado em <span id="panorama-source-time">—</span></div>
           </div>
         </div>
         <h3 class="section-title" style="display:none;">Dashboard Executivo</h3>
@@ -6937,7 +6997,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <tr>
                 <th style="width: 55px; text-align: center;">Rank</th>
                 <th style="width: 100px; text-align: center;">Prioridade</th>
-                <th style="width: 80px; text-align: center;">Agente</th>
+                <th style="width: 80px; text-align: center;">Agentes afetados</th>
                 <th>CVE</th>
                 <th>Pacote</th>
                 <th style="width: 70px; text-align: center;">CVSS</th>
@@ -6971,7 +7031,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="vm-stat sc-high"><div class="t">Altas</div><div class="n" id="vs-high">—</div><div class="c">severidade alta</div></div>
           <div class="vm-stat sc-kev"><div class="t">KEV</div><div class="n" id="vs-kev">—</div><div class="c">exploradas conhecidas</div></div>
           <div class="vm-stat sc-epss"><div class="t">EPSS alto</div><div class="n" id="vs-epss">—</div><div class="c">&ge; limiar de exploração</div></div>
-          <div class="vm-stat sc-ok"><div class="t">Fix disponível</div><div class="n" id="vs-fix">—</div><div class="c">com versão corrigida</div></div>
+          <div class="vm-stat sc-ok"><div class="t">Correção disponível</div><div class="n" id="vs-fix">N/D</div><div class="c">dado não fornecido pelo índice</div></div>
         </div>
         <div class="vm-kicker" style="margin: 0.2rem 0 0.6rem;">Filtrar por prioridade</div>
         <div class="grid-metrics">
@@ -8179,7 +8239,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="vm-stat sc-kev"><div class="t">KEV</div><div class="n" id="ti-kev">—</div><div class="c">exploradas conhecidas</div></div>
           <div class="vm-stat sc-epss"><div class="t">EPSS alto</div><div class="n" id="ti-epss">—</div><div class="c">alta probabilidade</div></div>
           <div class="vm-stat sc-crit"><div class="t">Ransomware</div><div class="n" id="ti-ransom">—</div><div class="c">associadas a ransomware</div></div>
-          <div class="vm-stat sc-ok"><div class="t">Fix disponível</div><div class="n" id="ti-fix">—</div><div class="c">com correção</div></div>
+          <div class="vm-stat sc-ok"><div class="t">Correção disponível</div><div class="n" id="ti-fix">N/D</div><div class="c">dado não fornecido pelo índice</div></div>
         </div>
         <div class="vm-sec-head"><div><div class="vm-kicker">Trend Insights</div><h2>Conclusões</h2><p>Leitura executiva do momento atual do risco.</p></div></div>
         <div class="vm-grid-4" id="trend-insights" style="margin-bottom:1.4rem;"><div class="vm-empty" style="grid-column:1/-1;">Gerando conclusões…</div></div>
@@ -8539,28 +8599,56 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <script>
     window.currentAssetsData = {};
 
+    // Fase 3.3 — delega para a regra canônica única (normalizeExposure).
+    // Assinatura e tipo de retorno preservados para não afetar os filtros.
     function getAssetExposure(asset) {
-      if (!asset) return 'unknown';
-      if (asset.exposure_level && asset.exposure_level !== 'unknown') {
-        return asset.exposure_level.toLowerCase().trim();
-      }
-      if (asset.exposure && asset.exposure !== 'unknown') {
-        return asset.exposure.toLowerCase().trim();
-      }
-      return 'unknown';
+      return normalizeExposure(asset);
     }
 
+    // Lote A / D13 — fallback NÃO destrutivo.
+    // Antes: substituía panel.innerHTML, destruindo todo o markup e os IDs do
+    // painel (o que provocava cascata de falhas nas refresh* seguintes).
+    // Agora: insere/atualiza um único banner no topo do painel, preservando
+    // todos os componentes já renderizados. Idempotente por painel.
+    // A mensagem externa nunca é interpolada em innerHTML (usa textContent).
     function showTabFallback(tabId, errorMsg) {
       const panel = document.getElementById(`tab-${tabId}`);
-      if (panel) {
-        panel.innerHTML = `
-          <div class="widget-error" style="padding: 3rem; text-align: center; color: var(--eyemole-critical); background: rgba(239, 68, 68, 0.05); border: 1px dashed var(--eyemole-critical); border-radius: var(--radius-lg); margin: var(--space-lg) 0; grid-column: 1 / -1;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; display: inline-block;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--eyemole-critical);">Não foi possível carregar esta seção.</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted);">${errorMsg || 'Erro interno ou falha de comunicação com a API.'}</p>
-          </div>
-        `;
+      if (!panel) return;
+
+      const bannerId = `tab-fallback-${tabId}`;
+      let banner = document.getElementById(bannerId);
+
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = bannerId;
+        banner.className = 'widget-error';
+        banner.setAttribute('data-eyemole-fallback', tabId);
+        banner.setAttribute('role', 'alert');
+        banner.setAttribute('style', 'padding: 3rem; text-align: center; color: var(--eyemole-critical); background: rgba(239, 68, 68, 0.05); border: 1px dashed var(--eyemole-critical); border-radius: var(--radius-lg); margin: var(--space-lg) 0; grid-column: 1 / -1;');
+
+        // Markup interno estático (ícone + título): nenhum dado externo aqui.
+        const head = document.createElement('div');
+        head.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; display: inline-block;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><h3 style="font-weight: 700; margin-bottom: 0.5rem; color: var(--eyemole-critical);">Não foi possível carregar esta seção.</h3>';
+        banner.appendChild(head);
+
+        const msg = document.createElement('p');
+        msg.setAttribute('data-role', 'fallback-message');
+        msg.setAttribute('style', 'font-size: 0.85rem; color: var(--text-muted);');
+        banner.appendChild(msg);
+
+        panel.insertBefore(banner, panel.firstChild);
       }
+
+      const msgEl = banner.querySelector('[data-role="fallback-message"]');
+      if (msgEl) {
+        msgEl.textContent = String(errorMsg || 'Erro interno ou falha de comunicação com a API.');
+      }
+    }
+
+    // Remove o banner de erro de um painel (após execução bem-sucedida).
+    function clearTabFallback(tabId) {
+      const banner = document.getElementById(`tab-fallback-${tabId}`);
+      if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
     }
 
     async function safeRefresh(arg1, arg2, arg3) {
@@ -8576,6 +8664,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
       try {
         await func();
+        clearTabFallback(tabId);
       } catch (err) {
         console.error(`Erro ao carregar aba ${tabId} (${label}):`, err);
         showTabFallback(tabId, err.message || err);
@@ -8609,8 +8698,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           safeRefresh(refreshTreatmentPlan, 'sla', 'Plano de Tratativa'),
           safeRefresh(refreshTrendSummary, 'trends', 'Tendências')
         ]);
-        try { renderCommandCenter(); } catch (e) { /* silencioso */ }
-        try { renderTabsExtras(); } catch (e) { /* silencioso */ }
+        try { renderCommandCenter(); } catch (e) { console.error('[EyeMole][reload:renderCommandCenter]', e); }
+        try { renderTabsExtras(); } catch (e) { console.error('[EyeMole][reload:renderTabsExtras]', e); }
       } catch (err) {
         console.error('Erro ao recarregar dados:', err);
       } finally {
@@ -8620,7 +8709,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <svg class="tab-ico" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="stroke: var(--eyemole-cyan-strong); opacity: 1;">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
-            <span>Recarregar Dados</span>
+            <span>Recarregar Dados da API</span>
           `;
         }
       }
@@ -8637,69 +8726,113 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function renderCommandCenter() {
       try {
         const data = Array.isArray(rawData) ? rawData : [];
-        const total = data.length;
+        // "findings" = ocorrências (CVE x agente x pacote x severidade).
+        const findings = data.length;
         const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
-        let crit = 0, high = 0, kev = 0, epss = 0, exposed = 0, critAsset = 0, slaRisk = 0, fix = 0;
-        const agents = new Set();
+        let crit = 0, high = 0, kev = 0, epss = 0, exposedFindings = 0, critAssetFindings = 0, slaRisk = 0;
+
+        // Fase 3.1 — CVEs distintos (rawData é por ocorrência, não por CVE).
+        const uniqueCves = new Set();
+        // Fase 3.2 / 3.4 — indicadores por ATIVO precisam de deduplicação.
+        const allAgents = new Set();
+        const exposedAgents = new Set();
+        const criticalAssets = new Set();
+
+        // Chave de ativo: agent_id -> name:<agent_name> -> não conta.
+        const agentKey = (v) => {
+          const id = String(v.agent_id == null ? '' : v.agent_id).trim();
+          if (id) return id;
+          const nm = String(v.agent_name == null ? '' : v.agent_name).trim();
+          return nm ? ('name:' + nm) : '';
+        };
 
         data.forEach(v => {
           if (!v) return;
+
+          const cve = String(v.cve || '').trim().toUpperCase();
+          if (cve) uniqueCves.add(cve);
+
+          const key = agentKey(v);
+          if (key) allAgents.add(key);
+
           const sev = String(v.severity || '').toLowerCase();
           if (sev === 'critical') crit++;
           else if (sev === 'high') high++;
+
           if (v.is_kev) kev++;
+
           const ep = (v.epss == null) ? 0 : Number(v.epss);
-          if (!isNaN(ep) && ep >= th) epss++;
-          const expo = String(v.exposure || v.exposure_level || v.network_zone || '').toLowerCase();
-          if (expo === 'internet' || expo === 'dmz' || expo === 'internet-facing' || expo === 'internet_facing') exposed++;
-          if (String(v.criticality || '').toLowerCase() === 'critical') critAsset++;
+          if (Number.isFinite(ep) && ep >= th) epss++;
+
+          if (isExposedToInternetOrDmz(v)) {
+            exposedFindings++;
+            if (key) exposedAgents.add(key);
+          }
+
+          if (String(v.criticality || '').toLowerCase() === 'critical') {
+            critAssetFindings++;
+            if (key) criticalAssets.add(key);
+          }
+
           const sla = String(v.sla_status || '').toLowerCase();
           if (sla === 'overdue' || sla === 'due_soon' || sla === 'vencido' || sla === 'due-soon') slaRisk++;
-          const ver = String(v.version || '').trim().toLowerCase();
-          if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') fix++;
-          if (v.agent_id) agents.add(v.agent_id);
         });
 
+        // Risk Score continua ponderado por ACHADOS (não por CVE distinto).
         let score = 0;
-        if (total > 0) {
-          const raw = (crit * 3 + high * 1.5 + kev * 4 + epss * 2 + exposed * 2 + critAsset * 2.5) / total;
+        if (findings > 0) {
+          const raw = (crit * 3 + high * 1.5 + kev * 4 + epss * 2 + exposedFindings * 2 + critAssetFindings * 2.5) / findings;
           score = Math.max(0, Math.min(100, Math.round(raw * 12)));
         }
 
-        const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
-        const bar = (id, pct) => { const e = document.getElementById(id); if (e) e.style.width = Math.max(0, Math.min(100, pct)) + '%'; };
+        const set = (id, val) => safeSetText(id, val);
+        const bar = (id, pct) => { const e = safeGetEl(id); if (e) e.style.width = Math.max(0, Math.min(100, pct)) + '%'; };
 
-        set('ccv-total', total); set('ccv-crit', crit); set('ccv-high', high);
-        set('ccv-kev', kev); set('ccv-epss', epss); set('ccv-exposed', exposed);
+        // Fase 7.1 — procedência explícita: snapshot embutido + timestamp.
+        set('cc-source-time', scanMeta.genTime || '—');
+
+        // Fase 4 — rótulos do limiar EPSS acompanham a configuração real.
+        const thLabel = formatPercent(th);
+        set('fnl-3', 'EPSS ≥ ' + thLabel);
+        set('ccv-epss-cap', '≥ ' + thLabel + ' de probabilidade');
+
+        set('ccv-total', uniqueCves.size);
+        set('ccv-crit', crit);
+        set('ccv-high', high);
+        set('ccv-kev', kev);
+        set('ccv-epss', epss);
+        set('ccv-exposed', exposedAgents.size);
         set('ccv-sla', slaRisk);
         set('ccv-score', score);
         const cap = score >= 70 ? 'Risco elevado' : score >= 40 ? 'Risco moderado' : 'Risco controlado';
-        set('ccv-score-cap', cap + ' · ' + total + ' CVEs no snapshot');
+        // Legenda coerente com o denominador realmente usado no score.
+        set('ccv-score-cap', cap + ' · ' + findings + ' achados no snapshot');
         bar('ccv-gauge', Math.max(4, score));
 
-        set('hero-cves', total);
-        set('hero-agents', agents.size);
-
-        const steps = [crit + high, kev, epss, fix, exposed, critAsset, slaRisk];
-        const denom = Math.max(total, 1);
-        for (let i = 0; i < 7; i++) {
-          set('fnv-' + (i + 1), steps[i]);
-          bar('fnb-' + (i + 1), Math.round(steps[i] / denom * 100));
+        // Sinais paralelos. Cada sinal usa o universo compatível com sua unidade:
+        // achados para 1/2/3/7 e ativos distintos para 5/6. O sinal 4 é N/D.
+        const findingsDenom = Math.max(findings, 1);
+        const agentsDenom = Math.max(allAgents.size, 1);
+        const signals = [
+          { value: crit + high, denom: findingsDenom },
+          { value: kev, denom: findingsDenom },
+          { value: epss, denom: findingsDenom },
+          { value: null, denom: findingsDenom },
+          { value: exposedAgents.size, denom: agentsDenom },
+          { value: criticalAssets.size, denom: agentsDenom },
+          { value: slaRisk, denom: findingsDenom }
+        ];
+        for (let i = 0; i < signals.length; i++) {
+          const s = signals[i];
+          if (s.value === null) continue;
+          set('fnv-' + (i + 1), s.value);
+          bar('fnb-' + (i + 1), Math.round(s.value / s.denom * 100));
         }
 
-        // Espelha estado operacional (API/timer/geração) quando já carregado.
-        const clean = (t) => String(t || '').replace(/^[●•\\s]+/, '').trim();
-        const apiEl = document.getElementById('overview-status-api');
-        if (apiEl) { const t = clean(apiEl.textContent); if (t && t !== '-') set('hero-api', t); }
-        const timerEl = document.getElementById('status-timer');
-        if (timerEl) { const t = clean(timerEl.textContent); if (t && t !== '-') set('hero-timer', t); }
-        const genEl = document.getElementById('overview-generation-time');
-        if (genEl) { const t = (genEl.textContent || '').replace('Gerado em:', '').trim(); if (t && t !== '-') set('hero-lastgen', t); }
-
-        // Ativos sem classificação: derivado assíncrono via /assets-context (best-effort).
-        try { updateUnclassifiedCount(); } catch (e) { /* silencioso */ }
+        // Ativos sem classificação: derivado assíncrono via /assets-context.
+        try { updateUnclassifiedCount(); } catch (e) { console.warn('[EyeMole][updateUnclassifiedCount]', e); }
       } catch (e) {
-        console.warn('[EyeMole] renderCommandCenter falhou:', e);
+        console.error('[EyeMole] renderCommandCenter falhou:', e);
       }
     }
 
@@ -8716,8 +8849,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         a.vulns++;
         const c = String(v.criticality || 'unknown').toLowerCase();
         if ((critRank[c] || 0) > (critRank[a.crit] || 0)) a.crit = c;
-        let e = String(v.exposure || v.exposure_level || v.network_zone || 'unknown').toLowerCase();
-        if (e === 'internet-facing' || e === 'internet_facing') e = 'internet';
+        const e = normalizeExposure(v);
         if ((expoRank[e] || 0) > (expoRank[a.expo] || 0)) a.expo = e;
         const sev = String(v.severity || '').toLowerCase();
         let w = sev === 'critical' ? 4 : sev === 'high' ? 2.5 : sev === 'medium' ? 1 : 0.4;
@@ -8741,7 +8873,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const setH = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h; };
         const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-        let crit = 0, high = 0, kev = 0, epss = 0, fix = 0, cvssCrit = 0, exposed = 0, critAsset = 0, ransom = 0, slaRisk = 0;
+        let crit = 0, high = 0, kev = 0, epss = 0, cvssCrit = 0, exposed = 0, critAsset = 0, ransom = 0, slaRisk = 0;
+        // Fase 6 / D4 — "correção disponível" não é mensurável com os dados atuais.
+        const FIX_UNAVAILABLE_LABEL = 'N/D';
         const pcount = { 'Priority 1+': 0, 'Priority 1': 0, 'Priority 2': 0, 'Priority 3': 0, 'Priority 4': 0 };
         let hasSla = false, slaWithin = 0, slaSoon = 0, slaOver = 0;
         data.forEach(v => {
@@ -8750,8 +8884,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           if (v.is_kev) kev++;
           const ep = Number(v.epss || 0); if (!isNaN(ep) && ep >= th) epss++;
           const cv = Number(v.cvss || 0); if (!isNaN(cv) && cv >= 9) cvssCrit++;
-          const ver = String(v.version || '').trim().toLowerCase(); if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') fix++;
-          const expo = String(v.exposure || v.exposure_level || '').toLowerCase(); if (expo === 'internet' || expo === 'dmz' || expo === 'internet-facing' || expo === 'internet_facing') exposed++;
+          // Fase 6 / D4 — não existe campo de correção disponível no índice.
+          if (isExposedToInternetOrDmz(v)) exposed++;
           if (String(v.criticality || '').toLowerCase() === 'critical') critAsset++;
           if (v.is_ransomware) ransom++;
           const sla = String(v.sla_status || '').toLowerCase();
@@ -8759,7 +8893,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           if (v.priority && pcount[v.priority] != null) pcount[v.priority]++;
         });
 
-        setT('vs-total', total); setT('vs-crit', crit); setT('vs-high', high); setT('vs-kev', kev); setT('vs-epss', epss); setT('vs-fix', fix);
+        setT('vs-total', total); setT('vs-crit', crit); setT('vs-high', high); setT('vs-kev', kev); setT('vs-epss', epss); setT('vs-fix', FIX_UNAVAILABLE_LABEL);
 
         const assets = vmDeriveAssets();
         const noOwner = assets.filter(a => !a.tech).length;
@@ -8768,7 +8902,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         setT('qx-p0', pcount['Priority 1+']); setT('qx-p1', pcount['Priority 1']); setT('qx-p2', pcount['Priority 2']); setT('qx-p3', pcount['Priority 3']);
 
         setT('pd-kev', kev); setT('pd-epss', epss); setT('pd-cvss', cvssCrit); setT('pd-exp', exposed); setT('pd-asset', critAsset); setT('pd-sla', slaRisk);
-        setT('ti-kev', kev); setT('ti-epss', epss); setT('ti-ransom', ransom); setT('ti-fix', fix);
+        setT('ti-kev', kev); setT('ti-epss', epss); setT('ti-ransom', ransom); setT('ti-fix', FIX_UNAVAILABLE_LABEL);
 
         let aClass = 0, aPend = 0, aCrit = 0, aInet = 0, aDmz = 0, aInternal = 0, aUnknown = 0;
         assets.forEach(a => {
@@ -8819,10 +8953,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (v.is_kev) chips.push('<span class="rchip rchip-kev">KEV</span>');
             if (Number(v.epss || 0) >= th) chips.push('<span class="rchip rchip-epss">EPSS alto</span>');
             if (Number(v.cvss || 0) >= 9) chips.push('<span class="rchip rchip-cvss">CVSS ' + Number(v.cvss).toFixed(1) + '</span>');
-            const expo = String(v.exposure || v.exposure_level || '').toLowerCase(); if (expo === 'internet' || expo === 'dmz') chips.push('<span class="rchip rchip-exp">Internet Exposed</span>');
+            if (isExposedToInternetOrDmz(v)) chips.push('<span class="rchip rchip-exp">Internet Exposed</span>');
             if (String(v.criticality || '').toLowerCase() === 'critical') chips.push('<span class="rchip rchip-asset">Critical Asset</span>');
             if (v.is_ransomware) chips.push('<span class="rchip rchip-sla">Ransomware</span>');
-            const ver = String(v.version || '').trim().toLowerCase(); if (ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-') chips.push('<span class="rchip rchip-fix">Fix Available</span>');
+            // Fase 6 / D4 — chip "Fix Available" removido: baseava-se na versão instalada.
             return `<div style="padding:0.7rem 0;border-bottom:1px solid var(--vm-stroke-soft);display:grid;grid-template-columns:1fr auto;gap:0.6rem;align-items:start;"><div><div style="font-weight:750;color:#eaf2ff;">${esc(v.cve || '-')} <span style="color:var(--vm-faint);font-weight:600;">· ${esc(v.package || '')}</span></div><div style="font-size:0.78rem;color:var(--vm-muted);margin:0.15rem 0 0.4rem;">Ativo ${esc(v.agent_name || v.agent_id || '-')} · ${esc(v.priority || '')}</div><div style="display:flex;flex-wrap:wrap;gap:0.35rem;">${chips.join('') || '<span class="rchip" style="color:var(--vm-faint);border-color:var(--vm-stroke);">Sem fatores adicionais</span>'}</div></div><div style="text-align:right;"><span class="vm-pill vm-pill-score">CVSS ${v.cvss != null ? Number(v.cvss).toFixed(1) : '-'}</span></div></div>`;
           }).join(''));
         } else setH('pd-top', '<div class="vm-empty">Sem findings priorizados.</div>');
@@ -8868,12 +9002,209 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const crit = String(a.criticality || 'unknown').toLowerCase();
           if (st === 'pending' || (!st && crit === 'unknown')) pending++;
         });
-        const e = document.getElementById('ccv-unclass'); if (e) e.textContent = pending;
-      } catch (e) { /* best-effort */ }
+        safeSetText('ccv-unclass', pending);
+      } catch (e) { console.warn('[EyeMole][updateUnclassifiedCount] falha ao derivar ativos sem classificação:', e); }
     }
 
     function safeGetEl(id) {
       return document.getElementById(id);
+    }
+
+    // ======================================================================
+    // LOTE A — HELPERS DE ESCAPE E DOM SEGURO
+    // Escopo de módulo (reutilizáveis por qualquer bloco de renderização).
+    // ======================================================================
+
+    // Contexto: nó de texto dentro de HTML.
+    function escapeHtmlText(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    // Contexto: valor de atributo HTML (title="...", aria-label="...").
+    // Escapa também aspas simples e backtick para resistir a atributos sem aspas.
+    function escapeHtmlAttribute(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;');
+    }
+
+    // Escrita segura de texto. required=false (default) => ausência silenciosa,
+    // para elementos opcionais que pertencem a outras abas. required=true =>
+    // registra warning nomeado, sem lançar.
+    function safeSetText(id, value, required = false) {
+      const el = safeGetEl(id);
+      if (!el) {
+        if (required) console.warn(`[EyeMole] Elemento obrigatório ausente: ${id}`);
+        return false;
+      }
+      el.textContent = (value == null ? '' : String(value));
+      return true;
+    }
+
+    // Executa um bloco de renderização isolado. Uma falha de DOM/lógica em um
+    // bloco não interrompe os demais e é registrada com o nome do bloco.
+    // NÃO deve ser usado para mascarar falhas de rede (essas continuam tratadas
+    // pelos catch de fetch e por clearRiskCharts).
+    function runBlock(name, fn) {
+      try {
+        fn();
+        return true;
+      } catch (err) {
+        console.error(`[EyeMole][bloco:${name}]`, err);
+        return false;
+      }
+    }
+
+    // ======================================================================
+    // FASE 3.3 / D7 — EXPOSIÇÃO CANÔNICA (fonte única de verdade no frontend)
+    // Espelha get_asset_exposure_combined() do backend (analyserV1.py):
+    //   1) exposure_level  2) exposure  3) 'unknown'
+    // network_zone NÃO participa (vocabulário distinto: 'external' != 'internet').
+    // ======================================================================
+    const EXPOSURE_EMPTY_TOKENS = new Set(['', 'unknown', 'n/a', 'na', '-', 'null', 'undefined', 'none']);
+    const EXPOSURE_ALIASES = { 'internet-facing': 'internet', 'internet_facing': 'internet' };
+
+    function normalizeExposure(v) {
+      if (!v || typeof v !== 'object') return 'unknown';
+      const pick = (raw) => {
+        const s = String(raw == null ? '' : raw).toLowerCase().trim();
+        if (EXPOSURE_EMPTY_TOKENS.has(s)) return null;
+        return EXPOSURE_ALIASES[s] || s;
+      };
+      return pick(v.exposure_level) || pick(v.exposure) || 'unknown';
+    }
+
+    function isExposedToInternetOrDmz(v) {
+      const e = normalizeExposure(v);
+      return e === 'internet' || e === 'dmz';
+    }
+
+    // ======================================================================
+    // FASE 4 / D9 — formatação do limiar EPSS (rótulos dinâmicos)
+    // 0.20 -> "20%" | 0.055 -> "5.5%" | inválido -> "—"
+    // ======================================================================
+    function formatPercent(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      const pct = n * 100;
+      const rounded = Math.round(pct);
+      return (Math.abs(pct - rounded) < 0.05 ? String(rounded) : pct.toFixed(1)) + '%';
+    }
+
+    // ======================================================================
+    // FASE 5.3 / D8 — NORMALIZAÇÃO DE PRIORIDADE
+    // A classe CSS nunca vem da API: é resolvida por mapa interno.
+    // Valor ausente/desconhecido -> "Sem classificação" com estilo neutro
+    // (nunca badge-p4, que significa "risco baixo").
+    // ======================================================================
+    const PRIORITY_ALIASES = {
+      'priority 1+': 'Priority 1+', 'p1+': 'Priority 1+',
+      'priority 1': 'Priority 1', 'p1': 'Priority 1',
+      'priority 2': 'Priority 2', 'p2': 'Priority 2',
+      'priority 3': 'Priority 3', 'p3': 'Priority 3',
+      'priority 4': 'Priority 4', 'p4': 'Priority 4'
+    };
+    const PRIORITY_CLASSES = {
+      'Priority 1+': 'badge-p1plus',
+      'Priority 1': 'badge-p1',
+      'Priority 2': 'badge-p2',
+      'Priority 3': 'badge-p3',
+      'Priority 4': 'badge-p4'
+    };
+
+    function normalizePriority(raw) {
+      const key = String(raw == null ? '' : raw).toLowerCase().trim();
+      const label = PRIORITY_ALIASES[key];
+      if (!label) return { label: 'Sem classificação', className: 'badge-neutral' };
+      return { label: label, className: PRIORITY_CLASSES[label] };
+    }
+
+    // ======================================================================
+    // FASE 7.3 / D11 — arquitetura híbrida EXPLÍCITA
+    // O Command Center/Sinais leem o snapshot embutido (rawData, congelado na
+    // geração do HTML); o Panorama e o Top 10 leem a API SOAR em runtime.
+    // Quando os dois totais existem e divergem, o painel informa em vez de
+    // mascarar. Não é erro: são momentos de geração diferentes.
+    // ======================================================================
+    // ======================================================================
+    // FASE 7.6 / D14 — indicador "Modo Seguro" derivado de /soar-api/status.
+    // Eixo distinto de EXEC_MODE (--mode audit): trata-se do action_mode
+    // (sudoers/web-run) reportado por soar_api.py.
+    // ======================================================================
+    function updateSafeModeIndicator(actionMode) {
+      const el = safeGetEl('footer-safe-mode');
+      if (!el) return;
+
+      let label = 'Indeterminado';
+      let color = 'var(--text-muted)';
+      if (actionMode === 'safe_no_sudoers') {
+        label = 'Ativo';
+        color = '#10b981';
+      } else if (actionMode === 'web_run_enabled') {
+        label = 'Inativo';
+        color = '#f59e0b';
+      }
+
+      el.textContent = label;
+      el.style.color = color;
+      el.title = actionMode ? ('action_mode: ' + actionMode) : 'action_mode não informado pela API';
+    }
+
+    function reportSourceDivergence(apiTotal) {
+      const el = safeGetEl('source-divergence');
+      if (!el) return;
+
+      const localTotal = Array.isArray(rawData) ? rawData.length : null;
+      const apiNum = Number(apiTotal);
+
+      if (localTotal == null || !Number.isFinite(apiNum)) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+
+      if (localTotal !== apiNum) {
+        el.textContent = 'Os dados do snapshot embutido e da API foram gerados em momentos diferentes ('
+          + localTotal + ' achados no snapshot embutido, ' + apiNum + ' na API).';
+        el.style.display = 'block';
+      } else {
+        el.style.display = 'none';
+        el.textContent = '';
+      }
+    }
+
+    // Converte um valor em Date válido ou retorna null (nunca "Invalid Date").
+    function parseDateSafe(value) {
+      if (value == null || value === '' || value === 'N/A') return null;
+      const d = new Date(value);
+      return Number.isFinite(d.getTime()) ? d : null;
+    }
+
+    // Idade relativa ("3 mins atrás") a partir de uma Date já validada.
+    function formatRelativeAge(date) {
+      const diffMins = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+      if (diffMins < 60) return diffMins + ' min' + (diffMins !== 1 ? 's' : '') + ' atrás';
+      if (diffMins < 1440) {
+        const h = Math.floor(diffMins / 60);
+        return h + ' hora' + (h !== 1 ? 's' : '') + ' atrás';
+      }
+      const d = Math.floor(diffMins / 1440);
+      return d + ' dia' + (d !== 1 ? 's' : '') + ' atrás';
+    }
+
+    // Rótulo curto de data/hora para carimbos de fonte; '—' se inválida.
+    function formatStampLabel(value) {
+      const d = parseDateSafe(value);
+      if (d) return d.toLocaleString();
+      const s = String(value == null ? '' : value).trim();
+      return s !== '' ? s : '—';
     }
 
     function safeSetHtml(id, html) {
@@ -8893,6 +9224,40 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return;
       }
       el.innerHTML = `<div class="chart-empty-state" style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">${message}</div>`;
+    }
+
+    // ======================================================================
+    // FASE 2 + FASE 8 — CARD "TENDÊNCIA GERAL" (Dashboard)
+    // Contrato: série única 'total' sobre dataset [{ timestamp, total }].
+    // O dataset é mantido em cache de módulo para permitir redesenho quando a
+    // aba Dashboard passa de oculta para visível (clientWidth/Height = 0
+    // enquanto .tab-panel está display:none), sem novo fetch.
+    // ======================================================================
+    let overviewTrendCache = null;
+
+    function renderOverviewTrendFromCache() {
+      const el = safeGetEl('overview-chart-trend');
+      if (!el) return;
+
+      const data = Array.isArray(overviewTrendCache) ? overviewTrendCache : [];
+      if (data.length === 0) {
+        showChartEmptyState('overview-chart-trend', 'Nenhuma vulnerabilidade registrada nos snapshots.');
+        return;
+      }
+
+      const maxTotal = data.reduce((acc, d) => {
+        const n = Number(d && d.total);
+        return (Number.isFinite(n) && n > acc) ? n : acc;
+      }, 0);
+
+      if (maxTotal === 0) {
+        showChartEmptyState('overview-chart-trend', 'Nenhuma vulnerabilidade registrada nos snapshots.');
+        return;
+      }
+
+      renderTrendSvgChart('overview-chart-trend', [
+        { key: 'total', label: 'Total', color: '#4f8cff' }
+      ], { data: data });
     }
 
     let filteredData = [...rawData];
@@ -8958,6 +9323,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         history.replaceState(null, '', `#${tabId}`);
       }
 
+      // Fase 8 — o SVG de tendência é dimensionado por clientWidth/clientHeight,
+      // que valem 0 enquanto o painel está display:none. Ao revelar o Dashboard,
+      // redesenhamos a partir do cache (sem novo fetch), no próximo frame.
+      if (tabId === 'overview' && targetPanel) {
+        requestAnimationFrame(() => {
+          try {
+            renderOverviewTrendFromCache();
+          } catch (e) {
+            console.warn('[EyeMole][activateTab] redesenho da tendência falhou:', e);
+          }
+        });
+      }
+
       window.scrollTo({
         top: 0,
         behavior: 'smooth'
@@ -9001,9 +9379,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await safeRefresh(refreshTrendSummary, 'trends', 'Tendências');
       await safeRefresh(refreshTreatmentPlan, 'sla', 'Plano de Tratativa');
 
-      // Reexecuta após o status operacional carregar (espelha API/Timer no hero).
-      try { renderCommandCenter(); } catch(e) { /* silencioso */ }
-      try { renderTabsExtras(); } catch(e) { /* silencioso */ }
+      // Fase 9.1 — a segunda execução de renderCommandCenter/renderTabsExtras
+      // existia apenas para espelhar API/Timer/geração nos chips hero-*, que
+      // não existem no HTML. Ambas derivam somente de rawData (imutável), logo
+      // a reexecução era redundante e disparava um fetch extra de
+      // /soar-api/assets-context. Removida.
 
       // Modal de contexto: ESC fecha; clique no overlay (fora do painel) fecha.
       try {
@@ -9017,12 +9397,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (ov) ov.addEventListener('click', (ev) => {
           if (ev.target === ov && typeof closeClassifyModal === 'function') closeClassifyModal();
         });
-      } catch (e) { /* silencioso */ }
+      } catch (e) { console.warn('[EyeMole][init:modal-listeners]', e); }
     });
 
     window.addEventListener('hashchange', () => {
       const hash = (window.location.hash || '#overview').replace('#', '');
       activateTab(hash, false);
+    });
+
+    // Fase 8 — um único listener de resize, com debounce, apenas para o card
+    // "Tendência Geral" (redesenho a partir do cache; nunca dispara fetch).
+    let overviewTrendResizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (overviewTrendResizeTimer) clearTimeout(overviewTrendResizeTimer);
+      overviewTrendResizeTimer = setTimeout(() => {
+        overviewTrendResizeTimer = null;
+        const panel = document.getElementById('tab-overview');
+        if (!panel || !panel.classList.contains('active')) return;
+        try {
+          renderOverviewTrendFromCache();
+        } catch (e) {
+          console.warn('[EyeMole][resize] redesenho da tendência falhou:', e);
+        }
+      }, 250);
     });
 
     function calculateMetrics() {
@@ -9071,7 +9468,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const agentSelect = document.getElementById('filter-agent-ui');
       if (!agentSelect) return;
       const agents = Array.from(new Set(rawData.map(item => `${item.agent_id || '-'} - ${item.agent_name || item.hostname || 'sem nome'}`))).sort();
-      agentSelect.innerHTML = '<option value="ALL">Todos os agentes</option>' + agents.map(agent => `<option value="${agent}">${agent}</option>`).join('');
+      // Fase 10 — rótulo e value vêm do inventário: escapar em ambos os contextos.
+      agentSelect.innerHTML = '<option value="ALL">Todos os agentes</option>' + agents.map(agent => `<option value="${escapeHtmlAttribute(agent)}">${escapeHtmlText(agent)}</option>`).join('');
     }
 
     function resetVisualFilters() {
@@ -9099,7 +9497,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (agent !== 'ALL' && agent !== 'Todos os agentes' && agentLabel !== agent) return false;
         if (severity !== 'todas' && severity !== 'all' && String(item.severity || '').toLowerCase() !== severity) return false;
         if (criticality !== 'todas' && criticality !== 'all' && String(item.criticality || 'unknown').toLowerCase() !== criticality) return false;
-        const itemExposure = String(getAssetExposure(item) || item.exposure || 'unknown').toLowerCase();
+        const itemExposure = normalizeExposure(item);
         if (exposure !== 'todas' && exposure !== 'all' && itemExposure !== exposure) return false;
         if (env !== 'todos' && env !== 'all' && String(item.environment || 'unknown').toLowerCase() !== env) return false;
         if (status.includes('vencido') && item.sla_status !== 'overdue') return false;
@@ -9179,11 +9577,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const card = document.createElement('div');
         card.className = 'vuln-queue-card';
 
-        let pClass = 'badge-p4';
-        if (item.priority === 'Priority 1+') pClass = 'badge-p1plus';
-        else if (item.priority === 'Priority 1') pClass = 'badge-p1';
-        else if (item.priority === 'Priority 2') pClass = 'badge-p2';
-        else if (item.priority === 'Priority 3') pClass = 'badge-p3';
+        // Fase 5.3 — rótulo e classe resolvidos por mapa interno.
+        const prio = normalizePriority(item.priority);
 
         let cvssClass = 'score-none';
         if (item.cvss !== null) {
@@ -9206,14 +9601,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         if (item.criticality === 'critical' || item.criticality === 'high') {
-          driversHtml += `<span class="rchip rchip-asset" style="text-transform:capitalize;">Ativo: ${item.criticality}</span>`;
+          driversHtml += `<span class="rchip rchip-asset" style="text-transform:capitalize;">Ativo: ${escapeHtmlText(item.criticality)}</span>`;
         }
 
+        // Fase 6 / D4 — 'version' é a versão INSTALADA do pacote; não indica
+        // disponibilidade de correção. O chip "Fix Available" foi removido por
+        // ser uma afirmação não sustentada pelo dado do índice. A variável
+        // permanece apenas para exibir a versão instalada.
         const ver = String(item.version || '').trim().toLowerCase();
-        const hasFix = ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-';
-        if (hasFix) {
-          driversHtml += `<span class="rchip rchip-fix">Fix Available</span>`;
-        }
+        const hasVersion = !!(ver && ver !== 'n/a' && ver !== 'unknown' && ver !== '-');
 
         // SLA status
         let slaHtml = '';
@@ -9225,10 +9621,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           slaHtml = `<span class="rchip ${slaClass}">${slaLabel}</span>`;
         }
 
-        const verStr = hasFix ? `v${item.version}` : 'N/A';
+        const verStr = hasVersion ? `v${item.version}` : 'N/A';
         const actionRec = item.is_kev ? 'Recomendação: Aplicar patch urgente (CISA KEV ativo).' :
                           item.priority === 'Priority 1' ? 'Recomendação: Remediação imediata via ciclo emergencial.' :
-                          hasFix ? 'Recomendação: Atualizar pacote na próxima janela de manutenção.' : 'Recomendação: Monitorar e aplicar controle compensatório.';
+                          'Recomendação: Avaliar atualização do pacote na próxima janela de manutenção.';
 
         const escAgentId = JSON.stringify(String(item.agent_id));
         const escAgentName = JSON.stringify(String(item.agent_name));
@@ -9236,17 +9632,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         card.innerHTML = `
           <div class="col-vuln">
             <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-              <a class="cve-id" href="https://nvd.nist.gov/vuln/detail/${item.cve}" target="_blank">${item.cve}</a>
-              <span class="badge ${pClass}">${item.priority}</span>
+              <a class="cve-id" href="https://nvd.nist.gov/vuln/detail/${encodeURIComponent(String(item.cve || ''))}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(item.cve)}</a>
+              <span class="badge ${prio.className}">${escapeHtmlText(prio.label)}</span>
             </div>
-            <div class="pkg-name">${item.package} <span style="color:var(--vm-faint); font-weight:normal;">(${verStr})</span></div>
-            <div style="font-size:0.76rem; color:var(--vm-muted); margin-top:0.15rem; font-style:italic;">${actionRec}</div>
+            <div class="pkg-name">${escapeHtmlText(item.package)} <span style="color:var(--vm-faint); font-weight:normal;">(${escapeHtmlText(verStr)})</span></div>
+            <div style="font-size:0.76rem; color:var(--vm-muted); margin-top:0.15rem; font-style:italic;">${escapeHtmlText(actionRec)}</div>
           </div>
           <div class="col-asset">
-            <div class="host-name" title="${item.agent_name}">${item.agent_name}</div>
-            <div class="agent-id">ID: ${item.agent_id} · <span style="text-transform:capitalize;">${item.environment || 'unknown'}</span></div>
+            <div class="host-name" title="${escapeHtmlAttribute(item.agent_name)}">${escapeHtmlText(item.agent_name)}</div>
+            <div class="agent-id">ID: ${escapeHtmlText(item.agent_id)} · <span style="text-transform:capitalize;">${escapeHtmlText(item.environment || 'unknown')}</span></div>
             <div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.2rem;">
-              <span class="badge" style="font-size:0.7rem; text-transform:capitalize; background:rgba(255,255,255,0.04); color:var(--vm-muted); border:1px solid var(--vm-stroke);">Z: ${item.network_zone || expLevel}</span>
+              <span class="badge" style="font-size:0.7rem; text-transform:capitalize; background:rgba(255,255,255,0.04); color:var(--vm-muted); border:1px solid var(--vm-stroke);">Z: ${escapeHtmlText(item.network_zone || expLevel)}</span>
             </div>
           </div>
           <div class="col-metrics">
@@ -9480,22 +9876,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (hRes.ok) {
           const hData = await hRes.json();
           if (hData && hData.status === 'ok') {
-            document.getElementById('status-api').innerHTML = '<span style="color: #10b981;">● Online</span>';
-            document.getElementById('status-api-detail').textContent = 'Versão: ' + (hData.version || '1.0.0');
+            safeSetHtml('status-api', '<span style="color: #10b981;">● Online</span>');
+            safeSetText('status-api-detail', 'Versão: ' + (hData.version || '1.0.0'));
             if (hApi) hApi.innerHTML = '<span style="color: #10b981;">● Online</span>';
           } else {
-            document.getElementById('status-api').innerHTML = '<span style="color: #ef4444;">● Resposta Inválida</span>';
-            document.getElementById('status-api-detail').textContent = 'Dados de health incorretos';
+            safeSetHtml('status-api', '<span style="color: #ef4444;">● Resposta Inválida</span>');
+            safeSetText('status-api-detail', 'Dados de health incorretos');
             if (hApi) hApi.innerHTML = '<span style="color: #ef4444;">● Erro</span>';
           }
         } else {
-          document.getElementById('status-api').innerHTML = '<span style="color: #ef4444;">● Erro HTTP ' + hRes.status + '</span>';
-          document.getElementById('status-api-detail').textContent = 'Endpoint ativo com erro';
+          safeSetHtml('status-api', '<span style="color: #ef4444;">● Erro HTTP ' + hRes.status + '</span>');
+          safeSetText('status-api-detail', 'Endpoint ativo com erro');
           if (hApi) hApi.innerHTML = '<span style="color: #ef4444;">● Erro HTTP ' + hRes.status + '</span>';
         }
       } catch (err) {
-        document.getElementById('status-api').innerHTML = '<span style="color: #ef4444;">● Offline / Inacessível</span>';
-        document.getElementById('status-api-detail').textContent = 'Sem comunicação com o proxy';
+        safeSetHtml('status-api', '<span style="color: #ef4444;">● Offline / Inacessível</span>');
+        safeSetText('status-api-detail', 'Sem comunicação com o proxy');
         const hApi = document.getElementById('header-status-api');
         if (hApi) hApi.innerHTML = '<span style="color: #ef4444;">● Offline</span>';
       }
@@ -9512,17 +9908,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
           // Modo de operação (seguro x web-run): controla o botão de execução manual.
           applyActionMode(sData.action_mode);
+          // Fase 7.6 / D14 — "Modo Seguro" reflete action_mode real da API.
+          // safe_no_sudoers -> Ativo | web_run_enabled -> Inativo | ausente -> Indeterminado.
+          updateSafeModeIndicator(sData.action_mode);
 
           // Report service status
           const reportLabel = sData.report_status_label || 'Desconhecido';
           const reportClass = sData.report_status_class || 'status-unknown';
-          document.getElementById('status-report-service').innerHTML = `<span class="${reportClass}">● ${reportLabel}</span>`;
-          document.getElementById('status-report-detail').textContent = 'Último Exit Code: ' + (sData.wrapper_exit_code !== undefined ? sData.wrapper_exit_code : '-');
+          safeSetHtml('status-report-service', `<span class="${reportClass}">● ${reportLabel}</span>`);
+          safeSetText('status-report-detail', 'Último Exit Code: ' + (sData.wrapper_exit_code !== undefined ? sData.wrapper_exit_code : '-'));
 
           // Timer Status
           const timerLabel = sData.timer_status_label || 'Desconhecido';
           const timerClass = sData.timer_status_class || 'status-unknown';
-          document.getElementById('status-timer').innerHTML = `<span class="${timerClass}">● ${timerLabel}</span>`;
+          safeSetHtml('status-timer', `<span class="${timerClass}">● ${timerLabel}</span>`);
 
           if (hTimer) {
             let color = '#9ca3af';
@@ -9540,26 +9939,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               nextTrigger = new Date(nextUs / 1000).toLocaleString();
             }
           }
-          document.getElementById('status-timer-detail').textContent = 'Próxima: ' + nextTrigger;
+          safeSetText('status-timer-detail', 'Próxima: ' + nextTrigger);
 
           // HTML / JSON Mtimes
           const indexTime = sData.index_html_mtime && sData.index_html_mtime !== 'N/A' ? new Date(sData.index_html_mtime).toLocaleString() : 'N/A';
           const jsonTime = sData.latest_json_mtime && sData.latest_json_mtime !== 'N/A' ? new Date(sData.latest_json_mtime).toLocaleString() : 'N/A';
-          document.getElementById('status-latest-report').textContent = sData.latest_report || 'N/A';
-          document.getElementById('status-latest-report').title = sData.latest_report || '';
-          document.getElementById('status-latest-report-detail').innerHTML = 'HTML: ' + indexTime + '<br/>JSON: ' + jsonTime;
+          safeSetText('status-latest-report', sData.latest_report || 'N/A');
+          const latestReportEl = safeGetEl('status-latest-report');
+          if (latestReportEl) latestReportEl.title = sData.latest_report || '';
+          safeSetHtml('status-latest-report-detail', 'HTML: ' + indexTime + '<br/>JSON: ' + jsonTime);
         } else {
-          document.getElementById('status-report-service').innerHTML = '<span style="color: #ef4444;">● Erro</span>';
-          document.getElementById('status-timer').innerHTML = '<span style="color: #ef4444;">● Erro</span>';
-          document.getElementById('status-latest-report').innerHTML = '<span style="color: #ef4444;">● Erro</span>';
+          safeSetHtml('status-report-service', '<span style="color: #ef4444;">● Erro</span>');
+          safeSetHtml('status-timer', '<span style="color: #ef4444;">● Erro</span>');
+          safeSetHtml('status-latest-report', '<span style="color: #ef4444;">● Erro</span>');
           if (hTimer) hTimer.innerHTML = '<span style="color: #ef4444;">● Erro</span>';
+          updateSafeModeIndicator(null);
         }
       } catch (err) {
-        document.getElementById('status-report-service').innerHTML = '<span style="color: #ef4444;">● Falha</span>';
-        document.getElementById('status-timer').innerHTML = '<span style="color: #ef4444;">● Falha</span>';
-        document.getElementById('status-latest-report').innerHTML = '<span style="color: #ef4444;">● Falha</span>';
-        const hTimer = document.getElementById('header-status-timer');
+        console.error('[EyeMole][bloco:status-service] falha de rede em /soar-api/status:', err);
+        safeSetHtml('status-report-service', '<span style="color: #ef4444;">● Falha</span>');
+        safeSetHtml('status-timer', '<span style="color: #ef4444;">● Falha</span>');
+        safeSetHtml('status-latest-report', '<span style="color: #ef4444;">● Falha</span>');
+        const hTimer = safeGetEl('header-status-timer');
         if (hTimer) hTimer.innerHTML = '<span style="color: #ef4444;">● Falha</span>';
+        // Fail-safe: nunca afirmar "Ativo" sem confirmação da API.
+        updateSafeModeIndicator(null);
       }
 
       // 3. Fetch Audit Logs
@@ -9570,89 +9974,102 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         });
         if (aRes.ok) {
           const aData = await aRes.json();
-          const tbody = document.getElementById('audit-table-body');
-          tbody.innerHTML = '';
-          const actions = aData.actions || [];
-          document.getElementById('audit-last-checked').textContent = 'Atualizado em: ' + new Date().toLocaleTimeString();
+          const tbody = safeGetEl('audit-table-body');
+          const actions = Array.isArray(aData.actions) ? aData.actions : [];
+          safeSetText('audit-last-checked', 'Atualizado em: ' + new Date().toLocaleTimeString());
 
-          if (actions.length === 0) {
-            tbody.innerHTML = `
+          if (!tbody) {
+            console.warn('[EyeMole] Elemento obrigatório ausente: audit-table-body');
+          } else {
+            tbody.innerHTML = '';
+            if (actions.length === 0) {
+              tbody.innerHTML = `
               <div class="empty-pretty">
                 <div class="ep-ic">🛡️</div>
                 <div class="ep-t">Nenhum registro de auditoria</div>
                 <div class="ep-d">Nenhuma ação recente foi gravada no log de auditoria.</div>
               </div>`;
-          } else {
-            const sortedActions = [...actions].sort((a, b) => {
-              const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
-              const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
-              return dateB - dateA;
-            });
+            } else {
+              const sortedActions = [...actions].filter(a => a && typeof a === 'object').sort((a, b) => {
+                const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
+                const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+                return dateB - dateA;
+              });
 
-            let lastTimeStr = '';
-            sortedActions.forEach(act => {
-              const div = document.createElement('div');
-              const actTime = act.timestamp ? new Date(act.timestamp).toLocaleString() : 'N/A';
-              const displayTime = (actTime === lastTimeStr) ? '' : actTime;
-              lastTimeStr = actTime;
+              let lastTimeStr = '';
+              sortedActions.forEach(act => {
+                const div = document.createElement('div');
+                const actDate = act.timestamp ? new Date(act.timestamp) : null;
+                const actTime = (actDate && Number.isFinite(actDate.getTime())) ? actDate.toLocaleString() : 'N/A';
+                const displayTime = (actTime === lastTimeStr) ? '' : actTime;
+                lastTimeStr = actTime;
 
-              let statusClass = 'ok';
-              if (act.result === 'error' || act.result === 'rejected') {
-                statusClass = 'fail';
-              }
+                let statusClass = 'ok';
+                if (act.result === 'error' || act.result === 'rejected') {
+                  statusClass = 'fail';
+                }
 
-              let resultText = 'Desconhecido';
-              if (act.result === 'success') resultText = 'Sucesso';
-              else if (act.result === 'rejected') resultText = 'Rejeitado';
-              else if (act.result === 'error') resultText = 'Erro';
+                let resultText = 'Desconhecido';
+                if (act.result === 'success') resultText = 'Sucesso';
+                else if (act.result === 'rejected') resultText = 'Rejeitado';
+                else if (act.result === 'error') resultText = 'Erro';
 
-              const exitVal = act.exit_code !== undefined ? act.exit_code : '-';
-              const user = act.remote_user || 'unknown';
-              const ip = act.client_ip || 'unknown';
-              const actionName = act.action || 'run-analysis';
+                // Fase 1.3 — todos os campos abaixo vêm da API e são escapados.
+                const exitVal = act.exit_code !== undefined ? act.exit_code : '-';
+                const user = act.remote_user || 'unknown';
+                const ip = act.client_ip || 'unknown';
+                const actionName = act.action || 'run-analysis';
 
-              div.className = `tl-item ${statusClass}`;
-              div.innerHTML = `
+                div.className = `tl-item ${statusClass}`;
+                div.innerHTML = `
                 <div class="tl-head">
-                  <span class="tl-act">${actionName}</span>
-                  ${displayTime ? `<span class="tl-time">${displayTime}</span>` : ''}
-                  <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-text); border:1px solid var(--vm-stroke); font-size: 0.68rem; padding: 0.1rem 0.35rem; margin-left: auto;">Exit: ${exitVal}</span>
+                  <span class="tl-act">${escapeHtmlText(actionName)}</span>
+                  ${displayTime ? `<span class="tl-time">${escapeHtmlText(displayTime)}</span>` : ''}
+                  <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--vm-text); border:1px solid var(--vm-stroke); font-size: 0.68rem; padding: 0.1rem 0.35rem; margin-left: auto;">Exit: ${escapeHtmlText(exitVal)}</span>
                 </div>
                 <div class="tl-meta">
-                  Operador: <strong style="color: #eaf2ff;">${user}</strong> (${ip}) &middot; Status: <strong style="color: ${statusClass === 'ok' ? '#34d399' : '#f87171'}">${resultText}</strong>
+                  Operador: <strong style="color: #eaf2ff;">${escapeHtmlText(user)}</strong> (${escapeHtmlText(ip)}) &middot; Status: <strong style="color: ${statusClass === 'ok' ? '#34d399' : '#f87171'}">${resultText}</strong>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--vm-muted); margin-top: 0.35rem; font-style: italic;">
-                  ${act.message || 'Sem detalhes adicionais fornecidos.'}
+                  ${escapeHtmlText(act.message || 'Sem detalhes adicionais fornecidos.')}
                 </div>
               `;
-              tbody.appendChild(div);
-            });
+                tbody.appendChild(div);
+              });
+            }
           }
+        } else {
+          console.warn('[EyeMole] /soar-api/audit-actions respondeu HTTP ' + aRes.status);
         }
       } catch (err) {
-        document.getElementById('audit-table-body').innerHTML = `
+        console.error('[EyeMole][bloco:status-audit]', err);
+        safeSetHtml('audit-table-body', `
           <div class="empty-pretty" style="border-color: var(--vm-crit); background: rgba(239,68,68,0.02);">
             <div class="ep-ic" style="color: var(--vm-crit);">⚠</div>
             <div class="ep-t">Falha ao carregar registros de auditoria</div>
-            <div class="ep-d">${err.message || err}</div>
-          </div>`;
+            <div class="ep-d">${escapeHtmlText(err && err.message ? err.message : err)}</div>
+          </div>`);
       }
 
 
-      const footerDate = document.getElementById('footer-report-date');
-      const footerApi = document.getElementById('footer-status-api');
-      const footerTimer = document.getElementById('footer-status-timer');
-      const headerApi = document.getElementById('header-status-api');
-      const headerTimer = document.getElementById('header-status-timer');
-      if (footerDate) footerDate.textContent = scanMeta.genTime || '-';
-      if (footerApi && headerApi) footerApi.innerHTML = headerApi.innerHTML;
-      if (footerTimer && headerTimer) footerTimer.innerHTML = headerTimer.innerHTML;
-      const ovStatApi = document.getElementById('overview-status-api');
-      const ovStatSvc = document.getElementById('overview-status-service');
-      if (ovStatApi && ovStatSvc) {
-        ovStatApi.innerHTML = document.getElementById('status-api').innerHTML;
-        ovStatSvc.innerHTML = 'Report Service: ' + document.getElementById('status-report-service').innerHTML;
-      }
+      // Fase 1.2 — espelhamento isolado: falha aqui não deve derrubar a função.
+      runBlock('status-mirror', () => {
+        const headerApi = safeGetEl('header-status-api');
+        const headerTimer = safeGetEl('header-status-timer');
+        const footerApi = safeGetEl('footer-status-api');
+        const footerTimer = safeGetEl('footer-status-timer');
+        safeSetText('footer-report-date', scanMeta.genTime || '-');
+        if (footerApi && headerApi) footerApi.innerHTML = headerApi.innerHTML;
+        if (footerTimer && headerTimer) footerTimer.innerHTML = headerTimer.innerHTML;
+
+        const ovStatApi = safeGetEl('overview-status-api');
+        const ovStatSvc = safeGetEl('overview-status-service');
+        const statApi = safeGetEl('status-api');
+        const statReportSvc = safeGetEl('status-report-service');
+        if (ovStatApi && statApi) ovStatApi.innerHTML = statApi.innerHTML;
+        if (ovStatSvc && statReportSvc) ovStatSvc.innerHTML = 'Report Service: ' + statReportSvc.innerHTML;
+      });
+
       if (btn) btn.disabled = false;
     }
 
@@ -9937,8 +10354,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       activeAgent.forEach(a => {
         const n = agentNodes[a.id];
         const pct = ((n.count / totalCount) * 100).toFixed(1);
-        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${n.fullLabel}: ${n.count} (${pct}%)</title></rect>`;
-        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="10" font-weight="600" text-anchor="end">${n.label} <tspan fill="var(--text-muted)" font-size="9">(${n.count})</tspan></text>`;
+        // Fase 10 — nomes de agentes são dados externos: apenas escape.
+        svgHtml += `<rect x="${n.x}" y="${n.y}" width="${colWidth}" height="${n.h}" rx="3" fill="${n.color}"><title>${escapeHtmlText(n.fullLabel)}: ${n.count} (${pct}%)</title></rect>`;
+        svgHtml += `<text x="${n.x - 8}" y="${n.y + Math.min(n.h/2 + 4, n.h)}" fill="var(--text-main)" font-size="10" font-weight="600" text-anchor="end">${escapeHtmlText(n.label)} <tspan fill="var(--text-muted)" font-size="9">(${n.count})</tspan></text>`;
       });
 
       svg.innerHTML = svgHtml;
@@ -9961,7 +10379,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
           cloudContainer.innerHTML = sortedPkgs.map(([pkg, count]) => {
             const fontSize = maxOcc === minOcc ? 0.8 : (0.72 + ((count - minOcc) / (maxOcc - minOcc || 1)) * 0.23).toFixed(2);
-            return `<span class="badge" style="font-size: ${fontSize}rem; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: var(--eyemole-cyan); padding: 0.25rem 0.6rem; border-radius: 6px;" title="${count} ocorrências"><code>${pkg}</code> <span style="opacity: 0.6; font-size: 0.7em;">(${count})</span></span>`;
+            // Fase 10 — apenas escape do nome do pacote (dado externo).
+            // Geometria, cores e algoritmo do painel alluvial permanecem intactos.
+            return `<span class="badge" style="font-size: ${fontSize}rem; background: var(--eyemole-surface); border: 1px solid var(--eyemole-border); color: var(--eyemole-cyan); padding: 0.25rem 0.6rem; border-radius: 6px;" title="${escapeHtmlAttribute(count + ' ocorrências')}"><code>${escapeHtmlText(pkg)}</code> <span style="opacity: 0.6; font-size: 0.7em;">(${escapeHtmlText(count)})</span></span>`;
           }).join('');
         }
       }
@@ -9977,90 +10397,81 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        if (rRes.ok) {
-          const rData = await rRes.json();
-          const sum = rData.summary || {};
+        // Fase 1 — falha de rede/HTTP/parsing é a ÚNICA que chega ao catch externo.
+        if (!rRes.ok) {
+          throw new Error('HTTP ' + rRes.status + ' em /soar-api/risk-summary');
+        }
 
-          document.getElementById('risk-total').textContent = sum.total_vulnerabilities !== undefined ? sum.total_vulnerabilities : '-';
-          document.getElementById('risk-critical').textContent = sum.critical !== undefined ? sum.critical : '-';
-          document.getElementById('risk-high').textContent = sum.high !== undefined ? sum.high : '-';
-          document.getElementById('risk-kev').textContent = sum.kev_count !== undefined ? sum.kev_count : '-';
-          document.getElementById('risk-epss').textContent = sum.epss_high_count !== undefined ? sum.epss_high_count : '-';
+        const rData = await rRes.json();
+        const sum = rData.summary || {};
 
-          const ovTotal = document.getElementById('overview-total-vulns');
-          if (ovTotal) ovTotal.textContent = sum.total_vulnerabilities !== undefined ? sum.total_vulnerabilities : '-';
-          const ovCrit = document.getElementById('overview-risk-critical');
-          if (ovCrit) ovCrit.textContent = sum.critical !== undefined ? sum.critical : '-';
-          const ovHigh = document.getElementById('overview-risk-high');
-          if (ovHigh) ovHigh.textContent = sum.high !== undefined ? sum.high : '-';
-          const ovKev = document.getElementById('overview-risk-kev');
-          if (ovKev) ovKev.textContent = sum.kev_count !== undefined ? sum.kev_count : '-';
-          const ovEpss = document.getElementById('overview-risk-epss');
-          if (ovEpss) ovEpss.textContent = sum.epss_high_count !== undefined ? sum.epss_high_count : '-';
-          const ovAgents = document.getElementById('overview-risk-agents');
-          if (ovAgents) ovAgents.textContent = sum.affected_agents !== undefined ? sum.affected_agents : '-';
+        // D5 — coleção acionável preferida, com compatibilidade retroativa.
+        const priorities = Array.isArray(rData.top_actionable_priorities)
+          ? rData.top_actionable_priorities
+          : (Array.isArray(rData.top_priorities) ? rData.top_priorities : []);
 
-          if (rData.timestamp) {
-            const rDate = new Date(rData.timestamp);
-            const now = new Date();
-            const diffMs = now - rDate;
-            const diffMins = Math.max(0, Math.floor(diffMs / 60000));
-            let ageStr = '';
-            if (diffMins < 60) {
-              ageStr = diffMins + ' min' + (diffMins !== 1 ? 's' : '') + ' atrás';
-            } else if (diffMins < 1440) {
-              const diffHours = Math.floor(diffMins / 60);
-              ageStr = diffHours + ' hora' + (diffHours !== 1 ? 's' : '') + ' atrás';
-            } else {
-              const diffDays = Math.floor(diffMins / 1440);
-              ageStr = diffDays + ' dia' + (diffDays !== 1 ? 's' : '') + ' atrás';
-            }
-            document.getElementById('overview-generation-age').textContent = ageStr;
-            document.getElementById('overview-generation-time').textContent = 'Gerado em: ' + rDate.toLocaleString();
+        // Fase 7.2 / 7.3 — procedência da API e aviso de divergência de fontes.
+        runBlock('panorama-source', () => {
+          const apiDate = parseDateSafe(rData.timestamp);
+          safeSetText('panorama-source-time', apiDate ? apiDate.toLocaleString() : '—');
+          reportSourceDivergence(sum.total_vulnerabilities);
+        });
+
+        runBlock('risk-kpis', () => {
+          const val = (v) => (v !== undefined && v !== null ? v : '-');
+          safeSetText('risk-total', val(sum.total_vulnerabilities), true);
+          safeSetText('risk-critical', val(sum.critical), true);
+          safeSetText('risk-high', val(sum.high), true);
+          safeSetText('risk-kev', val(sum.kev_count), true);
+          safeSetText('risk-epss', val(sum.epss_high_count), true);
+          safeSetText('risk-agents', val(sum.affected_agents), true);
+
+          // Elementos do grid legado oculto: opcionais, sem warning.
+          safeSetText('overview-total-vulns', val(sum.total_vulnerabilities));
+          safeSetText('overview-risk-critical', val(sum.critical));
+          safeSetText('overview-risk-high', val(sum.high));
+          safeSetText('overview-risk-kev', val(sum.kev_count));
+          safeSetText('overview-risk-epss', val(sum.epss_high_count));
+          safeSetText('overview-risk-agents', val(sum.affected_agents));
+        });
+
+        runBlock('risk-report-age', () => {
+          const rDate = parseDateSafe(rData.timestamp);
+          if (!rDate) {
+            safeSetText('risk-age', 'N/A', true);
+            return;
           }
-document.getElementById('risk-agents').textContent = sum.affected_agents !== undefined ? sum.affected_agents : '-';
+          const ageStr = formatRelativeAge(rDate);
+          safeSetText('overview-generation-age', ageStr);
+          safeSetText('overview-generation-time', 'Gerado em: ' + rDate.toLocaleString());
+          safeSetText('risk-age', ageStr, true);
+          const ageEl = safeGetEl('risk-age');
+          if (ageEl) ageEl.title = rDate.toLocaleString();
+        });
 
-          // Calcular idade do relatório
-          if (rData.timestamp) {
-            const reportDate = new Date(rData.timestamp);
-            const now = new Date();
-            const diffMs = now - reportDate;
-            const diffMins = Math.max(0, Math.floor(diffMs / 60000));
-            if (diffMins < 60) {
-              document.getElementById('risk-age').textContent = diffMins + ' min' + (diffMins !== 1 ? 's' : '') + ' atrás';
-            } else if (diffMins < 1440) {
-              const diffHours = Math.floor(diffMins / 60);
-              document.getElementById('risk-age').textContent = diffHours + ' hora' + (diffHours !== 1 ? 's' : '') + ' atrás';
-            } else {
-              const diffDays = Math.floor(diffMins / 1440);
-              document.getElementById('risk-age').textContent = diffDays + ' dia' + (diffDays !== 1 ? 's' : '') + ' atrás';
-            }
-            document.getElementById('risk-age').title = reportDate.toLocaleString();
-          } else {
-            document.getElementById('risk-age').textContent = 'N/A';
-          }
-
-          // Atualizar Alertas
-          const alertsContainer = document.getElementById('risk-alerts-container');
+        runBlock('risk-alerts', () => {
+          const alertsContainer = safeGetEl('risk-alerts-container');
+          if (!alertsContainer) return;
           alertsContainer.innerHTML = '';
-          const alerts = rData.alerts || [];
+          const alerts = Array.isArray(rData.alerts) ? rData.alerts : [];
           if (alerts.length === 0) {
             alertsContainer.innerHTML = '<div class="alert-item alert-info">✓ Nenhum alerta de risco pendente. Ambiente estável.</div>';
-          } else {
-            alerts.forEach(al => {
-              const div = document.createElement('div');
-              let alertClass = 'alert-info';
-              if (al.level === 'critical') alertClass = 'alert-critical';
-              else if (al.level === 'warning') alertClass = 'alert-warning';
-              div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
-              alertsContainer.appendChild(div);
-            });
+            return;
           }
+          alerts.forEach(al => {
+            const div = document.createElement('div');
+            let alertClass = 'alert-info';
+            if (al && al.level === 'critical') alertClass = 'alert-critical';
+            else if (al && al.level === 'warning') alertClass = 'alert-warning';
+            div.className = 'alert-item ' + alertClass;
+            // Dados externos escapados; <strong> é markup interno.
+            div.innerHTML = `<strong>${escapeHtmlText((al && al.title) || 'Alerta')}:</strong> ${escapeHtmlText((al && al.message) || '')}`;
+            alertsContainer.appendChild(div);
+          });
+        });
 
-          // Atualizar Top 10 Prioridades
-          const priorities = Array.isArray(rData.top_priorities) ? rData.top_priorities : [];
-          const prioritiesTbody = document.getElementById('risk-priorities-tbody');
+        runBlock('risk-top10', () => {
+          const prioritiesTbody = safeGetEl('risk-priorities-tbody');
           if (prioritiesTbody) {
             prioritiesTbody.innerHTML = '';
             if (priorities.length === 0) {
@@ -10073,48 +10484,56 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                   ? '<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">Sim</span>'
                   : '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-color);">Não</span>';
 
-                const epssVal = p.epss !== null && p.epss !== undefined ? (p.epss * 100).toFixed(2) + '%' : '-';
+                const epssNum = Number(p.epss);
+                const epssVal = (p.epss != null && Number.isFinite(epssNum)) ? (epssNum * 100).toFixed(2) + '%' : '-';
 
                 let sevColor = 'var(--text-muted)';
                 if (String(p.severity).toLowerCase() === 'critical') sevColor = '#f87171';
                 else if (String(p.severity).toLowerCase() === 'high') sevColor = '#fb923c';
 
-                let scoreColor = '#34d399';
-                if (p.priority_score >= 80) scoreColor = '#f87171';
-                else if (p.priority_score >= 50) scoreColor = '#fb923c';
+                // Lote A2 — normalização numérica (não substitui o escape de texto).
+                const scoreValue = (p.priority_score != null && Number.isFinite(Number(p.priority_score))) ? Number(p.priority_score) : 0;
+                const rankValue = (p.rank != null && Number.isFinite(Number(p.rank))) ? Number(p.rank) : '-';
+                const affectedAgentsValue = (p.affected_agents != null && Number.isFinite(Number(p.affected_agents))) ? Number(p.affected_agents) : 0;
 
+                let scoreColor = '#34d399';
+                if (scoreValue >= 80) scoreColor = '#f87171';
+                else if (scoreValue >= 50) scoreColor = '#fb923c';
+
+                // Lote A2 — campos externos escapados; kevBadge é markup interno.
                 tr.innerHTML = `
-                  <td style="font-weight: 700; text-align: center;">${p.rank || '-'}</td>
-                  <td style="font-weight: 700; color: var(--text-main);">${p.cve || '-'}</td>
-                  <td><code>${p.package || '-'}</code></td>
-                  <td><span style="font-weight: 600; color: ${sevColor};">${p.severity || '-'}</span></td>
+                  <td style="font-weight: 700; text-align: center;">${rankValue}</td>
+                  <td style="font-weight: 700; color: var(--text-main);">${escapeHtmlText(p.cve || '-')}</td>
+                  <td><code>${escapeHtmlText(p.package || '-')}</code></td>
+                  <td><span style="font-weight: 600; color: ${sevColor};">${escapeHtmlText(p.severity || '-')}</span></td>
                   <td style="text-align: center;">${kevBadge}</td>
                   <td><code style="color: #a78bfa;">${epssVal}</code></td>
-                  <td style="text-align: center; font-weight: 600; color: #3b82f6;">${p.affected_agents || 0}</td>
-                  <td style="text-align: center;"><span class="badge" style="font-weight: 800; background: rgba(255,255,255,0.05); color: ${scoreColor}; border: 1px solid ${scoreColor}50;">${p.priority_score || 0}</span></td>
-                  <td style="font-size: 0.85rem; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${p.reason || ''}">${p.reason || '-'}</td>
+                  <td style="text-align: center; font-weight: 600; color: #3b82f6;">${affectedAgentsValue}</td>
+                  <td style="text-align: center;"><span class="badge" style="font-weight: 800; background: rgba(255,255,255,0.05); color: ${scoreColor}; border: 1px solid ${scoreColor}50;">${scoreValue}</span></td>
+                  <td style="font-size: 0.85rem; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtmlAttribute(p.reason || '')}">${escapeHtmlText(p.reason || '-')}</td>
                 `;
                 prioritiesTbody.appendChild(tr);
               });
             }
           }
+        });
 
-          // ==========================================
-          // Renderizar Dashboard Panorama de Risco
-          // ==========================================
+        // ==========================================
+        // Renderizar Dashboard Panorama de Risco
+        // ==========================================
 
-          // 1. Visão Geral - Donut de Severidade
-          if (document.getElementById('overview-chart-severity')) {
-            renderDonutChart('overview-chart-severity', [
-              { label: 'Críticas', value: sum.critical || 0, color: '#f87171' },
-              { label: 'Altas', value: sum.high || 0, color: '#fb923c' },
-              { label: 'Médias', value: sum.medium || 0, color: '#facc15' },
-              { label: 'Baixas', value: sum.low || 0, color: '#3b82f6' }
-            ], { totalLabel: 'Severidade' });
-          }
+        runBlock('overview-severity-chart', () => {
+          if (!safeGetEl('overview-chart-severity')) return;
+          renderPieChart('overview-chart-severity', [
+            { label: 'Críticas', value: sum.critical || 0, color: '#f87171' },
+            { label: 'Altas', value: sum.high || 0, color: '#fb923c' },
+            { label: 'Médias', value: sum.medium || 0, color: '#facc15' },
+            { label: 'Baixas', value: sum.low || 0, color: '#3b82f6' }
+          ], { totalLabel: 'Severidade' });
+        });
 
-          // 2. Visão Geral - Top 10 Prioridades Table Compacta
-          const ovTop10Tbody = document.getElementById('overview-top10-tbody');
+        runBlock('overview-top10', () => {
+          const ovTop10Tbody = safeGetEl('overview-top10-tbody');
           if (ovTop10Tbody) {
             ovTop10Tbody.innerHTML = '';
             const top10 = priorities.slice(0, 10);
@@ -10123,56 +10542,63 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             } else {
               top10.forEach(p => {
                 const tr = document.createElement('tr');
-                const epssVal = p.epss !== null && p.epss !== undefined ? (p.epss * 100).toFixed(2) + '%' : '-';
+                const epssNum = Number(p.epss);
+                const epssVal = (p.epss != null && Number.isFinite(epssNum)) ? (epssNum * 100).toFixed(2) + '%' : '-';
                 let sevColor = 'var(--text-muted)';
                 if (String(p.severity).toLowerCase() === 'critical') sevColor = '#f87171';
                 else if (String(p.severity).toLowerCase() === 'high') sevColor = '#fb923c';
 
-                let pClass = 'badge-p4';
-                if (p.priority === 'Priority 1+') pClass = 'badge-p1plus';
-                else if (p.priority === 'Priority 1') pClass = 'badge-p1';
-                else if (p.priority === 'Priority 2') pClass = 'badge-p2';
-                else if (p.priority === 'Priority 3') pClass = 'badge-p3';
+                // Fase 5.3 — rótulo e classe resolvidos por mapa interno.
+                const prio = normalizePriority(p.priority);
 
                 let tagsHtml = '';
                 if (p.kev) tagsHtml += `<span class="badge badge-kev" style="margin-right: 0.25rem;">KEV</span>`;
 
+                // Lote A2 — normalização numérica (não substitui o escape de texto).
+                const rankValue = (p.rank != null && Number.isFinite(Number(p.rank))) ? Number(p.rank) : '-';
+                const affectedAgentsValue = (p.affected_agents != null && Number.isFinite(Number(p.affected_agents))) ? Number(p.affected_agents) : 0;
+                const cvssValue = (p.cvss != null && Number.isFinite(Number(p.cvss))) ? Number(p.cvss).toFixed(1) : '-';
+
+                // Lote A2 — campos externos escapados; tagsHtml é markup interno.
                 tr.innerHTML = `
-                  <td style="font-weight: 700; text-align: center;">${p.rank || '-'}</td>
-                  <td><span class="badge ${pClass}">${p.priority || 'P1'}</span></td>
-                  <td style="text-align: center; font-weight: 600; color: #3b82f6;">${p.affected_agents || 0}</td>
-                  <td style="font-weight: 700; color: var(--text-main);">${p.cve || '-'}</td>
-                  <td><code>${p.package || '-'}</code></td>
-                  <td><code>${p.cvss !== null && p.cvss !== undefined ? p.cvss.toFixed(1) : '-'}</code></td>
+                  <td style="font-weight: 700; text-align: center;">${rankValue}</td>
+                  <td><span class="badge ${prio.className}">${escapeHtmlText(prio.label)}</span></td>
+                  <td style="text-align: center; font-weight: 600; color: #3b82f6;">${affectedAgentsValue}</td>
+                  <td style="font-weight: 700; color: var(--text-main);">${escapeHtmlText(p.cve || '-')}</td>
+                  <td><code>${escapeHtmlText(p.package || '-')}</code></td>
+                  <td><code>${cvssValue}</code></td>
                   <td><code style="color: #a78bfa;">${epssVal}</code></td>
-                  <td><span style="font-weight: 600; color: ${sevColor};">${p.severity || '-'}</span></td>
-                  <td style="font-size: 0.85rem;" title="${p.reason || ''}">${tagsHtml}${p.reason || '-'}</td>
+                  <td><span style="font-weight: 600; color: ${sevColor};">${escapeHtmlText(p.severity || '-')}</span></td>
+                  <td style="font-size: 0.85rem;" title="${escapeHtmlAttribute(p.reason || '')}">${tagsHtml}${escapeHtmlText(p.reason || '-')}</td>
                 `;
                 ovTop10Tbody.appendChild(tr);
               });
             }
           }
+        });
 
-          // 3. Painel Panorama de Risco Unificado (Sankey/Alluvial)
+        runBlock('risk-flow', () => {
+          // Painel Panorama de Risco Unificado (Sankey/Alluvial) — algoritmo inalterado.
           renderRiskFlowPanel('risk-flow-panel-container', Array.isArray(filteredData) ? filteredData : rawData);
+        });
 
-        } else {
-          document.getElementById('risk-alerts-container').innerHTML = '<div class="alert-item alert-critical">Erro HTTP ao carregar inteligência de risco (' + rRes.status + ').</div>';
-          clearRiskCharts('Erro HTTP');
-        }
       } catch (err) {
-        document.getElementById('risk-alerts-container').innerHTML = '<div class="alert-item alert-critical">Falha de rede ao carregar inteligência de risco.</div>';
-        clearRiskCharts(err.message);
+        // Somente falha real de rede / HTTP / parsing chega aqui.
+        console.error('[EyeMole][refreshRiskIntelligence] falha de rede/HTTP/parsing:', err);
+        const msg = (err && err.message) ? err.message : String(err);
+        safeSetHtml('risk-alerts-container', '<div class="alert-item alert-critical">Não foi possível carregar a inteligência de risco: ' + escapeHtmlText(msg) + '</div>');
+        clearRiskCharts(msg);
       }
 
       function clearRiskCharts(msg) {
+        const safeMsg = escapeHtmlText(msg);
         const charts = ['overview-chart-severity', 'risk-chart-severity', 'risk-chart-priority', 'risk-chart-kev-epss', 'risk-chart-packages', 'risk-chart-agents'];
         charts.forEach(id => {
-          const c = document.getElementById(id);
-          if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${msg}</div>`;
+          const c = safeGetEl(id);
+          if (c) c.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${safeMsg}</div>`;
         });
-        const ovTop10 = document.getElementById('overview-top10-tbody');
-        if (ovTop10) ovTop10.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Tabela indisponível: ${msg}</td></tr>`;
+        const ovTop10 = safeGetEl('overview-top10-tbody');
+        if (ovTop10) ovTop10.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Tabela indisponível: ${safeMsg}</td></tr>`;
       }
 
       // 2. Fetch Risk Delta
@@ -10214,9 +10640,12 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           setDeltaMetricValue('delta-new-critical', delta.new_critical, true, false);
           setDeltaMetricValue('delta-worsened-agents', delta.agents_worsened, true, false);
           setDeltaMetricValue('delta-improved-agents', delta.agents_improved, true, true);
+        } else {
+          console.warn('[EyeMole][risk-delta] HTTP ' + dRes.status + ' em /soar-api/risk-delta');
         }
       } catch (err) {
-        // Silently handle delta error
+        // Bloco secundário: não invalida o restante do painel, mas o erro é registrado.
+        console.warn('[EyeMole][risk-delta] falha ao carregar delta de risco:', err);
       }
 
       if (btn) btn.disabled = false;
@@ -10584,7 +11013,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               if (assets.classified === 0) {
                 showChartEmptyState('assets-chart-criticality', 'Ativo pendente de classificação');
               } else {
-                renderDonutChart('assets-chart-criticality', [
+                renderPieChart('assets-chart-criticality', [
                   { label: 'Crítico', value: assets.critical || 0, color: '#f87171' },
                   { label: 'Alto', value: assets.high || 0, color: '#fb923c' },
                   { label: 'Médio', value: assets.medium || 0, color: '#facc15' },
@@ -10686,7 +11115,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               if (al.level === 'critical') alertClass = 'alert-critical';
               else if (al.level === 'warning') alertClass = 'alert-warning';
               div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
+              div.innerHTML = `<strong>${escapeHtmlText(al.title || 'Alerta')}:</strong> ${escapeHtmlText(al.message || '')}`;
               alertEl.appendChild(div);
             });
           } else {
@@ -10750,8 +11179,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
-                <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
-                <td>${al.message || ''}</td>
+                <td style="font-weight: 600;">${escapeHtmlText(al.title || 'Alerta')}</td>
+                <td>${escapeHtmlText(al.message || '')}</td>
               `;
               alertsTbody.appendChild(tr);
             });
@@ -10788,7 +11217,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             if (assets.with_exposure_context === 0) {
               showChartEmptyState('assets-chart-exposure', 'Contexto de exposição pendente');
             } else {
-              renderDonutChart('assets-chart-exposure', [
+              renderPieChart('assets-chart-exposure', [
                 { label: 'Internet', value: assets.internet_facing || 0, color: '#ef4444' },
                 { label: 'DMZ', value: assets.dmz || 0, color: '#f97316' },
                 { label: 'Interno', value: internalExpo, color: '#34d399' }
@@ -10878,14 +11307,14 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const backlogAssets = data.top_backlog_assets || [];
           const backlogOwners = data.top_backlog_owners || [];
 
-          document.getElementById('sla-total-open').textContent = sum.total_open !== undefined ? sum.total_open : '-';
-          document.getElementById('sla-overdue').textContent = sum.overdue !== undefined ? sum.overdue : '-';
-          document.getElementById('sla-due-soon').textContent = sum.due_soon !== undefined ? sum.due_soon : '-';
-          document.getElementById('sla-within-sla').textContent = sum.within_sla !== undefined ? sum.within_sla : '-';
-          document.getElementById('sla-no-sla').textContent = sum.unknown !== undefined ? sum.unknown : '-';
-          document.getElementById('sla-avg-age').textContent = sum.average_age_days !== undefined ? sum.average_age_days + 'd' : '-';
-          document.getElementById('sla-max-age').textContent = sum.max_age_days !== undefined ? sum.max_age_days + 'd' : '-';
-          document.getElementById('sla-persistent').textContent = sum.persistent_vulnerabilities !== undefined ? sum.persistent_vulnerabilities : '-';
+          safeSetText('sla-total-open', sum.total_open !== undefined ? sum.total_open : '-');
+          safeSetText('sla-overdue', sum.overdue !== undefined ? sum.overdue : '-');
+          safeSetText('sla-due-soon', sum.due_soon !== undefined ? sum.due_soon : '-');
+          safeSetText('sla-within-sla', sum.within_sla !== undefined ? sum.within_sla : '-');
+          safeSetText('sla-no-sla', sum.unknown !== undefined ? sum.unknown : '-');
+          safeSetText('sla-avg-age', sum.average_age_days !== undefined ? sum.average_age_days + 'd' : '-');
+          safeSetText('sla-max-age', sum.max_age_days !== undefined ? sum.max_age_days + 'd' : '-');
+          safeSetText('sla-persistent', sum.persistent_vulnerabilities !== undefined ? sum.persistent_vulnerabilities : '-');
 
           const ovSlaStatus = document.getElementById('overview-sla-status');
           const ovSlaDetails = document.getElementById('overview-sla-details');
@@ -10895,27 +11324,32 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             ovSlaStatus.innerHTML = `<span style="color: #f87171;">${overdue}</span> / <span style="color: #fb923c;">${dueSoon}</span>`;
             ovSlaDetails.textContent = `Overdue: ${overdue} | Due soon: ${dueSoon}`;
           }
-          document.getElementById('sla-recurring').textContent = sum.recurring_vulnerabilities !== undefined ? sum.recurring_vulnerabilities : '-';
+          safeSetText('sla-recurring', sum.recurring_vulnerabilities !== undefined ? sum.recurring_vulnerabilities : '-');
 
-          const alertEl = document.getElementById('sla-alerts-container');
-          if (alerts.length > 0) {
-            alertEl.style.display = 'flex';
-            alertEl.innerHTML = '';
-            alerts.forEach(al => {
-              const div = document.createElement('div');
-              let alertClass = 'alert-info';
-              if (al.level === 'critical') alertClass = 'alert-critical';
-              else if (al.level === 'warning') alertClass = 'alert-warning';
-              div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
-              alertEl.appendChild(div);
-            });
-          } else {
-            alertEl.style.display = 'none';
-          }
+          runBlock('sla-alerts-banner', () => {
+            const alertEl = safeGetEl('sla-alerts-container');
+            if (!alertEl) return;
+            if (alerts.length > 0) {
+              alertEl.style.display = 'flex';
+              alertEl.innerHTML = '';
+              alerts.forEach(al => {
+                const div = document.createElement('div');
+                let alertClass = 'alert-info';
+                if (al && al.level === 'critical') alertClass = 'alert-critical';
+                else if (al && al.level === 'warning') alertClass = 'alert-warning';
+                div.className = 'alert-item ' + alertClass;
+                div.innerHTML = `<strong>${escapeHtmlText((al && al.title) || 'Alerta')}:</strong> ${escapeHtmlText((al && al.message) || '')}`;
+                alertEl.appendChild(div);
+              });
+            } else {
+              alertEl.style.display = 'none';
+            }
+          });
 
+          runBlock('sla-tables', () => {
           // Render overdue list
-          const overdueTbody = document.getElementById('sla-overdue-tbody');
+          const overdueTbody = safeGetEl('sla-overdue-tbody');
+          if (!overdueTbody) return;
           overdueTbody.innerHTML = '';
           if (topOverdue.length === 0) {
             overdueTbody.innerHTML = `
@@ -11160,20 +11594,22 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
-                <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
-                <td>${al.message || ''}</td>
+                <td style="font-weight: 600;">${escapeHtmlText((al && al.title) || 'Alerta')}</td>
+                <td>${escapeHtmlText((al && al.message) || '')}</td>
               `;
               alertsTbody.appendChild(tr);
             });
           }
+          });
 
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de SLA
           // ==========================================
 
+          runBlock('sla-charts', () => {
           // 1. Visão Geral - Donut de SLA
           if (document.getElementById('overview-chart-sla')) {
-            renderDonutChart('overview-chart-sla', [
+            renderPieChart('overview-chart-sla', [
               { label: 'Vencidas', value: sum.overdue || 0, color: '#f87171' },
               { label: 'Próximas', value: sum.due_soon || 0, color: '#fb923c' },
               { label: 'Dentro SLA', value: sum.within_sla || 0, color: '#34d399' }
@@ -11222,11 +11658,13 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               renderMiniBarChart('sla-chart-backlog-owner', ownerBacklog);
             }
           }
+          });
 
         } else {
           showFallbackSla('Falha HTTP ao contatar a API');
         }
       } catch (e) {
+        console.error('[EyeMole][refreshSlaSummary] falha de rede/HTTP/parsing:', e);
         showFallbackSla('Erro de comunicação com o servidor');
       } finally {
         if (btn) btn.disabled = false;
@@ -11284,47 +11722,51 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           const invalidRules = data.invalid_rules || [];
           const matchedSample = data.matched_items_sample || [];
 
-          document.getElementById('ra-rules-total').textContent = sum.rules_total !== undefined ? sum.rules_total : '-';
-          document.getElementById('ra-rules-invalid').textContent = sum.rules_invalid !== undefined ? sum.rules_invalid : '-';
-          document.getElementById('ra-accepted-count').textContent = sum.accepted !== undefined ? sum.accepted : '-';
-          document.getElementById('ra-fp-count').textContent = sum.false_positive !== undefined ? sum.false_positive : '-';
-          document.getElementById('ra-planned-count').textContent = sum.planned_remediation !== undefined ? sum.planned_remediation : '-';
-          document.getElementById('ra-compensating-count').textContent = sum.compensating_control !== undefined ? sum.compensating_control : '-';
-          document.getElementById('ra-waiting-count').textContent = sum.waiting_change_window !== undefined ? sum.waiting_change_window : '-';
-          document.getElementById('ra-expired-count').textContent = sum.expired !== undefined ? sum.expired : '-';
+          safeSetText('ra-rules-total', sum.rules_total !== undefined ? sum.rules_total : '-');
+          safeSetText('ra-rules-invalid', sum.rules_invalid !== undefined ? sum.rules_invalid : '-');
+          safeSetText('ra-accepted-count', sum.accepted !== undefined ? sum.accepted : '-');
+          safeSetText('ra-fp-count', sum.false_positive !== undefined ? sum.false_positive : '-');
+          safeSetText('ra-planned-count', sum.planned_remediation !== undefined ? sum.planned_remediation : '-');
+          safeSetText('ra-compensating-count', sum.compensating_control !== undefined ? sum.compensating_control : '-');
+          safeSetText('ra-waiting-count', sum.waiting_change_window !== undefined ? sum.waiting_change_window : '-');
+          safeSetText('ra-expired-count', sum.expired !== undefined ? sum.expired : '-');
 
           const ovAct = document.getElementById('overview-actionable-priorities');
           if (ovAct) ovAct.textContent = sum.actionable_after_acceptance !== undefined ? sum.actionable_after_acceptance : '-';
-          document.getElementById('ra-actionable-count').textContent = sum.actionable_after_acceptance !== undefined ? sum.actionable_after_acceptance : '-';
+          safeSetText('ra-actionable-count', sum.actionable_after_acceptance !== undefined ? sum.actionable_after_acceptance : '-');
 
-          const alertEl = document.getElementById('ra-alerts-container');
-          if (alerts.length > 0) {
-            alertEl.style.display = 'flex';
-            alertEl.innerHTML = '';
-            alerts.forEach(al => {
-              const div = document.createElement('div');
-              let alertClass = 'alert-info';
-              if (al.level === 'critical') alertClass = 'alert-critical';
-              else if (al.level === 'warning') alertClass = 'alert-warning';
-              div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
-              alertEl.appendChild(div);
-            });
-          } else {
-            alertEl.style.display = 'none';
-          }
+          runBlock('ra-alerts-banner', () => {
+            const alertEl = safeGetEl('ra-alerts-container');
+            if (!alertEl) return;
+            if (alerts.length > 0) {
+              alertEl.style.display = 'flex';
+              alertEl.innerHTML = '';
+              alerts.forEach(al => {
+                const div = document.createElement('div');
+                let alertClass = 'alert-info';
+                if (al && al.level === 'critical') alertClass = 'alert-critical';
+                else if (al && al.level === 'warning') alertClass = 'alert-warning';
+                div.className = 'alert-item ' + alertClass;
+                div.innerHTML = `<strong>${escapeHtmlText((al && al.title) || 'Alerta')}:</strong> ${escapeHtmlText((al && al.message) || '')}`;
+                alertEl.appendChild(div);
+              });
+            } else {
+              alertEl.style.display = 'none';
+            }
+          });
 
+          runBlock('ra-tables', () => {
           // Helper: format CVE or Package
           const formatCveOrPkg = (item) => {
             if (item.cve) {
-              return `<a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${item.cve}" target="_blank">${item.cve}</a>${item.package_name ? '<br/><span style="font-size:0.7rem; color:var(--text-muted);">' + item.package_name + '</span>' : ''}`;
+              return `<a class="cve-link" href="https://nvd.nist.gov/vuln/detail/${encodeURIComponent(item.cve)}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(item.cve)}</a>${item.package_name ? '<br/><span style="font-size:0.7rem; color:var(--text-muted);">' + escapeHtmlText(item.package_name) + '</span>' : ''}`;
             }
-            return item.package_name ? `<code>${item.package_name}</code>` : '-';
+            return item.package_name ? `<code>${escapeHtmlText(item.package_name)}</code>` : '-';
           };
 
           // Helper: format Agent
           const formatAgent = (item) => {
-            return `<code>${item.agent_id || '-'}</code>${item.agent_name ? '<br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">' + item.agent_name + '</span>' : ''}`;
+            return `<code>${escapeHtmlText(item.agent_id || '-')}</code>${item.agent_name ? '<br/><span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">' + escapeHtmlText(item.agent_name) + '</span>' : ''}`;
           };
 
           const getStatusBadge = (status, expired = false) => {
@@ -11407,8 +11849,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               tr.innerHTML = `
                 <td>${formatCveOrPkg(item)}</td>
                 <td>${formatAgent(item)}</td>
-                <td>${item.reason || item.business_justification || '-'}</td>
-                <td>${item.approved_by || '-'}</td>
+                <td>${escapeHtmlText(item.reason || item.business_justification || '-')}</td>
+                <td>${escapeHtmlText(item.approved_by || '-')}</td>
               `;
               fpTbody.appendChild(tr);
             });
@@ -11426,7 +11868,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               tr.innerHTML = `
                 <td>${formatCveOrPkg(item)}</td>
                 <td>${formatAgent(item)}</td>
-                <td><strong>Motivo:</strong> ${item.reason || '-'}<br/><span style="font-size:0.75rem; color:var(--text-muted);"><strong>Justificativa:</strong> ${item.business_justification || '-'}</span></td>
+                <td><strong>Motivo:</strong> ${escapeHtmlText(item.reason || '-')}<br/><span style="font-size:0.75rem; color:var(--text-muted);"><strong>Justificativa:</strong> ${escapeHtmlText(item.business_justification || '-')}</span></td>
                 <td><code style="font-size:0.75rem;">${item.valid_until ? new Date(item.valid_until).toLocaleString() : '-'}</code></td>
               `;
               acceptedTbody.appendChild(tr);
@@ -11445,7 +11887,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               tr.innerHTML = `
                 <td>${formatCveOrPkg(item)}</td>
                 <td>${formatAgent(item)}</td>
-                <td><code>${item.ticket || '-'}</code></td>
+                <td><code>${escapeHtmlText(item.ticket || '-')}</code></td>
                 <td><code style="font-size:0.75rem;">${item.valid_until ? new Date(item.valid_until).toLocaleString() : '-'}</code></td>
               `;
               plannedTbody.appendChild(tr);
@@ -11464,16 +11906,16 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               let controlsHtml = '-';
               if (item.compensating_controls) {
                 if (Array.isArray(item.compensating_controls)) {
-                  controlsHtml = `<ul style="margin: 0; padding-left: 1rem;">${item.compensating_controls.map(c => `<li>${c}</li>`).join('')}</ul>`;
+                  controlsHtml = `<ul style="margin: 0; padding-left: 1rem;">${item.compensating_controls.map(c => `<li>${escapeHtmlText(c)}</li>`).join('')}</ul>`;
                 } else {
-                  controlsHtml = item.compensating_controls;
+                  controlsHtml = escapeHtmlText(item.compensating_controls);
                 }
               }
               tr.innerHTML = `
                 <td>${formatCveOrPkg(item)}</td>
                 <td>${formatAgent(item)}</td>
                 <td>${controlsHtml}</td>
-                <td><strong>Dono:</strong> ${item.owner || '-'}<br/><span style="font-size:0.75rem; color:var(--text-muted);"><strong>Validade:</strong> ${item.valid_until ? new Date(item.valid_until).toLocaleDateString() : '-'}</span></td>
+                <td><strong>Dono:</strong> ${escapeHtmlText(item.owner || '-')}<br/><span style="font-size:0.75rem; color:var(--text-muted);"><strong>Validade:</strong> ${escapeHtmlText(item.valid_until ? new Date(item.valid_until).toLocaleDateString() : '-')}</span></td>
               `;
               compensatingTbody.appendChild(tr);
             });
@@ -11488,9 +11930,9 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             invalidRules.forEach((rule, idx) => {
               const tr = document.createElement('tr');
               tr.innerHTML = `
-                <td><code>${rule.id || 'Regra ' + idx}</code></td>
+                <td><code>${escapeHtmlText(rule.id || 'Regra ' + idx)}</code></td>
                 <td><span class="badge badge-p1plus">Erro</span></td>
-                <td style="color: #f87171;">${rule.validation_error || 'Erro desconhecido na validação de campos.'}</td>
+                <td style="color: #f87171;">${escapeHtmlText(rule.validation_error || 'Erro desconhecido na validação de campos.')}</td>
               `;
               invalidTbody.appendChild(tr);
             });
@@ -11507,7 +11949,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               tr.innerHTML = `
                 <td>${formatCveOrPkg(item)}</td>
                 <td>${formatAgent(item)}</td>
-                <td><code>${item.rule_id || '-'}</code></td>
+                <td><code>${escapeHtmlText(item.rule_id || '-')}</code></td>
                 <td>${getStatusBadge(item.status, item.days_to_expiration !== null && item.days_to_expiration < 0)}</td>
               `;
               matchedSampleTbody.appendChild(tr);
@@ -11528,8 +11970,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
-                <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
-                <td>${al.message || ''}</td>
+                <td style="font-weight: 600;">${escapeHtmlText(al.title || 'Alerta')}</td>
+                <td>${escapeHtmlText(al.message || '')}</td>
               `;
               alertsTbody.appendChild(tr);
             });
@@ -11578,6 +12020,7 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               ]);
             }
           }
+          });
 
         } else {
           showFallbackRiskAcceptance('Falha HTTP ao contatar a API');
@@ -11645,35 +12088,40 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
           const ovTreatNow = document.getElementById('overview-treatment-now');
           if (ovTreatNow) ovTreatNow.textContent = sum.now !== undefined ? sum.now : '-';
-          document.getElementById('treatment-metrics-now').textContent = sum.now !== undefined ? sum.now : '-';
-          document.getElementById('treatment-metrics-7d').textContent = sum.next_7_days !== undefined ? sum.next_7_days : '-';
-          document.getElementById('treatment-metrics-15d').textContent = sum.next_15_days !== undefined ? sum.next_15_days : '-';
-          document.getElementById('treatment-metrics-30d').textContent = sum.next_30_days !== undefined ? sum.next_30_days : '-';
-          document.getElementById('treatment-metrics-monitor').textContent = sum.monitor !== undefined ? sum.monitor : '-';
-          document.getElementById('treatment-metrics-exc-fp').textContent = `Exceções: ${sum.accepted_or_exception || 0} | FP: ${sum.false_positive || 0}`;
-          document.getElementById('treatment-metrics-owners').textContent = sum.owners !== undefined ? sum.owners : '-';
-          document.getElementById('treatment-metrics-wins-change').textContent = `Quick Wins: ${sum.quick_wins || 0} | Janelas: ${sum.change_window_candidates || 0}`;
+          safeSetText('treatment-metrics-now', sum.now !== undefined ? sum.now : '-');
+          safeSetText('treatment-metrics-7d', sum.next_7_days !== undefined ? sum.next_7_days : '-');
+          safeSetText('treatment-metrics-15d', sum.next_15_days !== undefined ? sum.next_15_days : '-');
+          safeSetText('treatment-metrics-30d', sum.next_30_days !== undefined ? sum.next_30_days : '-');
+          safeSetText('treatment-metrics-monitor', sum.monitor !== undefined ? sum.monitor : '-');
+          safeSetText('treatment-metrics-exc-fp', `Exceções: ${sum.accepted_or_exception || 0} | FP: ${sum.false_positive || 0}`);
+          safeSetText('treatment-metrics-owners', sum.owners !== undefined ? sum.owners : '-');
+          safeSetText('treatment-metrics-wins-change', `Quick Wins: ${sum.quick_wins || 0} | Janelas: ${sum.change_window_candidates || 0}`);
 
-          // Render Alertas de Tratativa
-          const alertEl = document.getElementById('treatment-alerts-container');
-          if (alerts.length > 0 && alerts[0].title !== "Plano Operacional Estável") {
-            alertEl.style.display = 'flex';
-            alertEl.innerHTML = '';
-            alerts.forEach(al => {
-              const div = document.createElement('div');
-              let alertClass = 'alert-info';
-              if (al.level === 'critical') alertClass = 'alert-critical';
-              else if (al.level === 'warning') alertClass = 'alert-warning';
-              div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
-              alertEl.appendChild(div);
-            });
-          } else {
-            alertEl.style.display = 'none';
-          }
+          runBlock('treatment-alerts-banner', () => {
+            // Render Alertas de Tratativa
+            const alertEl = safeGetEl('treatment-alerts-container');
+            if (!alertEl) return;
+            if (alerts.length > 0 && alerts[0] && alerts[0].title !== "Plano Operacional Estável") {
+              alertEl.style.display = 'flex';
+              alertEl.innerHTML = '';
+              alerts.forEach(al => {
+                const div = document.createElement('div');
+                let alertClass = 'alert-info';
+                if (al && al.level === 'critical') alertClass = 'alert-critical';
+                else if (al && al.level === 'warning') alertClass = 'alert-warning';
+                div.className = 'alert-item ' + alertClass;
+                div.innerHTML = `<strong>${escapeHtmlText((al && al.title) || 'Alerta')}:</strong> ${escapeHtmlText((al && al.message) || '')}`;
+                alertEl.appendChild(div);
+              });
+            } else {
+              alertEl.style.display = 'none';
+            }
+          });
 
+          runBlock('treatment-tables', () => {
           // Render Top Items List
-          const topTbody = document.getElementById('treatment-top-tbody');
+          const topTbody = safeGetEl('treatment-top-tbody');
+          if (!topTbody) return;
           topTbody.innerHTML = '';
           if (topItems.length === 0) {
             topTbody.innerHTML = `
@@ -11744,16 +12192,16 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               if (ow.total_actionable >= 15) statusColor = 'var(--vm-crit)';
               else if (ow.total_actionable >= 7) statusColor = 'var(--vm-high)';
 
-              let topAssetsList = ow.top_assets.slice(0, 2).map(a => `${a.agent_name} (${a.total_vulnerabilities})`).join(', ') || 'Nenhum';
-              let topCvesList = ow.top_cves.slice(0, 3).map(c => c.cve).join(', ') || 'Nenhuma';
+              let topAssetsList = ow.top_assets.slice(0, 2).map(a => `${escapeHtmlText(a.agent_name)} (${escapeHtmlText(a.total_vulnerabilities)})`).join(', ') || 'Nenhum';
+              let topCvesList = ow.top_cves.slice(0, 3).map(c => escapeHtmlText(c.cve)).join(', ') || 'Nenhuma';
 
               card.innerHTML = `
                 <div class="prof-hdr">
                   <div>
-                    <div class="prof-name">${ow.technical_owner}</div>
+                    <div class="prof-name">${escapeHtmlText(ow.technical_owner)}</div>
                     <div class="prof-sub">Responsável Técnico</div>
                   </div>
-                  <span class="badge" style="background: rgba(255,255,255,0.04); color: ${statusColor}; font-weight:800; font-size:1.1rem; border:1px solid ${statusColor}40;">${ow.total_actionable}</span>
+                  <span class="badge" style="background: rgba(255,255,255,0.04); color: ${statusColor}; font-weight:800; font-size:1.1rem; border:1px solid ${statusColor}40;">${escapeHtmlText(ow.total_actionable)}</span>
                 </div>
                 <div class="prof-meter">
                   <div class="prof-meter-lbl">
@@ -11768,11 +12216,11 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 <div class="prof-details">
                   <div class="prof-item">
                     <span style="font-size:0.66rem; text-transform:uppercase; color:var(--vm-faint);">Buckets (7d / 15d / 30d)</span>
-                    <span class="prof-item-val" style="font-size:0.8rem;">${ow.next_7_days} / ${ow.next_15_days} / ${ow.next_30_days}</span>
+                    <span class="prof-item-val" style="font-size:0.8rem;">${escapeHtmlText(ow.next_7_days)} / ${escapeHtmlText(ow.next_15_days)} / ${escapeHtmlText(ow.next_30_days)}</span>
                   </div>
                   <div class="prof-item">
                     <span style="font-size:0.66rem; text-transform:uppercase; color:var(--vm-faint);">Overdue / Due Soon</span>
-                    <span class="prof-item-val" style="font-size:0.8rem; color:#f87171;">${ow.overdue} <span style="color:var(--vm-muted);">/</span> ${ow.due_soon}</span>
+                    <span class="prof-item-val" style="font-size:0.8rem; color:#f87171;">${escapeHtmlText(ow.overdue)} <span style="color:var(--vm-muted);">/</span> ${escapeHtmlText(ow.due_soon)}</span>
                   </div>
                 </div>
                 <div style="font-size: 0.74rem; color: var(--vm-muted); border-top: 1px solid var(--vm-stroke-soft); padding-top: 0.5rem; display:flex; flex-direction:column; gap:0.2rem;">
@@ -11863,39 +12311,48 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               divCard.innerHTML = `
                 <div class="c-info">
                   <div style="font-weight: 700; color: #fff; font-size: 0.92rem; display:flex; align-items:center; gap:0.5rem;">
-                    <span class="badge ${badgeClass}">${al.level}</span>
-                    <span>${al.title}</span>
+                    <span class="badge ${badgeClass}">${escapeHtmlText(al.level)}</span>
+                    <span>${escapeHtmlText(al.title)}</span>
                   </div>
-                  <div style="font-size: 0.78rem; color: var(--vm-muted); margin-top: 0.2rem;">${al.message}</div>
+                  <div style="font-size: 0.78rem; color: var(--vm-muted); margin-top: 0.2rem;">${escapeHtmlText(al.message)}</div>
                 </div>
               `;
               alertsTbody.appendChild(divCard);
             });
           }
 
-          // Render Buckets and Effort Lists
-          const bucketsUl = document.getElementById('treatment-summary-buckets');
-          bucketsUl.innerHTML = '';
-          byBucket.forEach(b => {
-            const li = document.createElement('li');
-            li.style.padding = '0.25rem 0';
-            li.innerHTML = `<span style="font-weight:700; text-transform:capitalize;">${b.bucket}:</span> <code>${b.count}</code>`;
-            bucketsUl.appendChild(li);
           });
 
-          const effortUl = document.getElementById('treatment-summary-effort');
-          effortUl.innerHTML = '';
-          byEffort.forEach(e => {
-            const li = document.createElement('li');
-            li.style.padding = '0.25rem 0';
-            li.innerHTML = `<span style="font-weight:700; text-transform:capitalize;">Esforço ${e.effort}:</span> <code>${e.count}</code>`;
-            effortUl.appendChild(li);
+          runBlock('treatment-summary-lists', () => {
+            // Render Buckets and Effort Lists
+            const bucketsUl = safeGetEl('treatment-summary-buckets');
+            if (bucketsUl) {
+              bucketsUl.innerHTML = '';
+              byBucket.forEach(b => {
+                const li = document.createElement('li');
+                li.style.padding = '0.25rem 0';
+                li.innerHTML = `<span style="font-weight:700; text-transform:capitalize;">${escapeHtmlText(b && b.bucket)}:</span> <code>${escapeHtmlText(b && b.count)}</code>`;
+                bucketsUl.appendChild(li);
+              });
+            }
+
+            const effortUl = safeGetEl('treatment-summary-effort');
+            if (effortUl) {
+              effortUl.innerHTML = '';
+              byEffort.forEach(e => {
+                const li = document.createElement('li');
+                li.style.padding = '0.25rem 0';
+                li.innerHTML = `<span style="font-weight:700; text-transform:capitalize;">Esforço ${escapeHtmlText(e && e.effort)}:</span> <code>${escapeHtmlText(e && e.count)}</code>`;
+                effortUl.appendChild(li);
+              });
+            }
           });
 
           // ==========================================
           // Fase 3H.2 - Renderizar Gráficos de Tratativa
           // ==========================================
 
+          runBlock('treatment-charts', () => {
           // 1. Visão Geral - Mini Bar de Buckets de Tratativa
           if (document.getElementById('overview-chart-treatment')) {
             renderMiniBarChart('overview-chart-treatment', [
@@ -11949,11 +12406,13 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               { label: 'Esforço Alto', value: highCount, color: '#f87171' }
             ]);
           }
+          });
 
         } else {
           showFallbackTreatmentPlan(response.statusText);
         }
       } catch (err) {
+        console.error('[EyeMole][refreshTreatmentPlan] falha de rede/HTTP/parsing:', err);
         showFallbackTreatmentPlan(err.message);
       } finally {
         if (btn) btn.disabled = false;
@@ -11961,25 +12420,26 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
     }
 
     function showFallbackTreatmentPlan(msg) {
-      document.getElementById('treatment-metrics-now').textContent = '-';
-      document.getElementById('treatment-metrics-7d').textContent = '-';
-      document.getElementById('treatment-metrics-15d').textContent = '-';
-      document.getElementById('treatment-metrics-30d').textContent = '-';
-      document.getElementById('treatment-metrics-monitor').textContent = '-';
-      document.getElementById('treatment-metrics-exc-fp').textContent = '-';
-      document.getElementById('treatment-metrics-owners').textContent = '-';
-      document.getElementById('treatment-metrics-wins-change').textContent = '-';
+      safeSetText('treatment-metrics-now', '-');
+      safeSetText('treatment-metrics-7d', '-');
+      safeSetText('treatment-metrics-15d', '-');
+      safeSetText('treatment-metrics-30d', '-');
+      safeSetText('treatment-metrics-monitor', '-');
+      safeSetText('treatment-metrics-exc-fp', '-');
+      safeSetText('treatment-metrics-owners', '-');
+      safeSetText('treatment-metrics-wins-change', '-');
 
-      document.getElementById('treatment-alerts-container').style.display = 'none';
+      const treatAlertEl = safeGetEl('treatment-alerts-container');
+      if (treatAlertEl) treatAlertEl.style.display = 'none';
 
-      document.getElementById('treatment-top-tbody').innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
-      document.getElementById('treatment-workload-tbody').innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
-      document.getElementById('treatment-wins-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
-      document.getElementById('treatment-change-tbody').innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
-      document.getElementById('treatment-plan-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`;
+      safeSetHtml('treatment-top-tbody', `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`);
+      safeSetHtml('treatment-workload-tbody', `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`);
+      safeSetHtml('treatment-wins-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`);
+      safeSetHtml('treatment-change-tbody', `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`);
+      safeSetHtml('treatment-plan-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Plano indisponível: ${msg}</td></tr>`);
 
-      document.getElementById('treatment-summary-buckets').innerHTML = '<li>indisponível</li>';
-      document.getElementById('treatment-summary-effort').innerHTML = '<li>indisponível</li>';
+      safeSetHtml('treatment-summary-buckets', '<li>indisponível</li>');
+      safeSetHtml('treatment-summary-effort', '<li>indisponível</li>');
 
       const charts = ['overview-chart-treatment', 'treat-chart-buckets', 'treat-chart-workload', 'treat-chart-quickwins', 'treat-chart-changes'];
       charts.forEach(id => {
@@ -12032,8 +12492,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             ovTrendHealth.innerHTML = execHealthHtml;
             ovTrendDir.innerHTML = 'Direção Risco: -';
           }
-          document.getElementById('trend-exec-health').innerHTML = execHealthHtml;
-          document.getElementById('trend-period-days').textContent = `Período: ${sum.period_days !== undefined ? sum.period_days : 0} Dias`;
+          safeSetHtml('trend-exec-health', execHealthHtml);
+          safeSetText('trend-period-days', `Período: ${sum.period_days !== undefined ? sum.period_days : 0} Dias`);
 
           // Formatar direção do risco
           let riskDirHtml = '-';
@@ -12046,46 +12506,50 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           } else {
             riskDirHtml = '<span style="color: var(--text-muted); font-weight: 700;">Desconhecido</span>';
           }
-          document.getElementById('trend-risk-direction').innerHTML = riskDirHtml;
+          safeSetHtml('trend-risk-direction', riskDirHtml);
 
           const ovTrendDirAfter = document.getElementById('overview-trend-direction');
           if (ovTrendDirAfter) {
             ovTrendDirAfter.innerHTML = `Direção Risco: ${riskDirHtml}`;
           }
-          document.getElementById('trend-snapshots-analyzed').textContent = `Snapshots analisados: ${sum.snapshots_analyzed || 0} (${sum.trend_status || 'unknown'})`;
+          safeSetText('trend-snapshots-analyzed', `Snapshots analisados: ${sum.snapshots_analyzed || 0} (${sum.trend_status || 'unknown'})`);
 
           // Delta total
           let deltaTotalVal = delta.total_vulnerabilities || 0;
           let deltaTotalColor = deltaTotalVal > 0 ? '#ef4444' : (deltaTotalVal < 0 ? '#10b981' : 'var(--text-main)');
           let deltaTotalSign = deltaTotalVal > 0 ? '+' : '';
-          document.getElementById('trend-delta-total').innerHTML = `<span style="color: ${deltaTotalColor}; font-weight: 800;">${deltaTotalSign}${deltaTotalVal}</span>`;
-          document.getElementById('trend-delta-critical-high').textContent = `Críticas: ${delta.critical > 0 ? '+' : ''}${delta.critical || 0} | Altas: ${delta.high > 0 ? '+' : ''}${delta.high || 0}`;
+          safeSetHtml('trend-delta-total', `<span style="color: ${deltaTotalColor}; font-weight: 800;">${deltaTotalSign}${deltaTotalVal}</span>`);
+          safeSetText('trend-delta-critical-high', `Críticas: ${delta.critical > 0 ? '+' : ''}${delta.critical || 0} | Altas: ${delta.high > 0 ? '+' : ''}${delta.high || 0}`);
 
           // Delta SLA / Backlog
           let deltaSlaVal = delta.sla_overdue || 0;
           let deltaSlaColor = deltaSlaVal > 0 ? '#ef4444' : (deltaSlaVal < 0 ? '#10b981' : 'var(--text-main)');
           let deltaSlaSign = deltaSlaVal > 0 ? '+' : '';
-          document.getElementById('trend-delta-sla-actionable').innerHTML = `<span style="color: ${deltaSlaColor}; font-weight: 800;">${deltaSlaSign}${deltaSlaVal}</span>`;
-          document.getElementById('trend-delta-details').textContent = `SLA Vencido: ${delta.sla_overdue > 0 ? '+' : ''}${delta.sla_overdue || 0} | KEV: ${delta.kev_count > 0 ? '+' : ''}${delta.kev_count || 0}`;
+          safeSetHtml('trend-delta-sla-actionable', `<span style="color: ${deltaSlaColor}; font-weight: 800;">${deltaSlaSign}${deltaSlaVal}</span>`);
+          safeSetText('trend-delta-details', `SLA Vencido: ${delta.sla_overdue > 0 ? '+' : ''}${delta.sla_overdue || 0} | KEV: ${delta.kev_count > 0 ? '+' : ''}${delta.kev_count || 0}`);
 
-          // Alertas
-          const alertEl = document.getElementById('trend-alerts-container');
-          if (alerts.length > 0 && sum.executive_health !== 'healthy') {
-            alertEl.style.display = 'flex';
-            alertEl.innerHTML = '';
-            alerts.forEach(al => {
-              const div = document.createElement('div');
-              let alertClass = 'alert-info';
-              if (al.level === 'critical') alertClass = 'alert-critical';
-              else if (al.level === 'warning') alertClass = 'alert-warning';
-              div.className = 'alert-item ' + alertClass;
-              div.innerHTML = `<strong>${al.title || 'Alerta'}:</strong> ${al.message || ''}`;
-              alertEl.appendChild(div);
-            });
-          } else {
-            alertEl.style.display = 'none';
-          }
+          runBlock('trend-alerts-banner', () => {
+            // Alertas
+            const alertEl = safeGetEl('trend-alerts-container');
+            if (!alertEl) return;
+            if (alerts.length > 0 && sum.executive_health !== 'healthy') {
+              alertEl.style.display = 'flex';
+              alertEl.innerHTML = '';
+              alerts.forEach(al => {
+                const div = document.createElement('div');
+                let alertClass = 'alert-info';
+                if (al && al.level === 'critical') alertClass = 'alert-critical';
+                else if (al && al.level === 'warning') alertClass = 'alert-warning';
+                div.className = 'alert-item ' + alertClass;
+                div.innerHTML = `<strong>${escapeHtmlText((al && al.title) || 'Alerta')}:</strong> ${escapeHtmlText((al && al.message) || '')}`;
+                alertEl.appendChild(div);
+              });
+            } else {
+              alertEl.style.display = 'none';
+            }
+          });
 
+          runBlock('trend-tables', () => {
           // Formatar direção em texto/badge
           const getDirBadge = (dir) => {
             if (dir === 'worsening') return '<span class="badge badge-p1plus" style="font-size:0.7rem;">Piora ↗</span>';
@@ -12098,7 +12562,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           };
 
           // 1. Render Worsening Table
-          const worseningTbody = document.getElementById('trend-worsening-tbody');
+          const worseningTbody = safeGetEl('trend-worsening-tbody');
+          if (!worseningTbody) return;
           worseningTbody.innerHTML = '';
           if (worseningAssets.length === 0) {
             worseningTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #10b981; padding: 1.5rem; font-weight: 600;">✓ Nenhum ativo piorou o risco!</td></tr>';
@@ -12260,26 +12725,24 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
 
               tr.innerHTML = `
                 <td>${lvlBadge}</td>
-                <td style="font-weight: 600;">${al.title || 'Alerta'}</td>
-                <td>${al.message || ''}</td>
+                <td style="font-weight: 600;">${escapeHtmlText((al && al.title) || 'Alerta')}</td>
+                <td>${escapeHtmlText((al && al.message) || '')}</td>
               `;
               alertsTbody.appendChild(tr);
             });
           }
+          });
 
+          runBlock('trend-charts', () => {
           // Renderização de Gráficos (Fase 3H.2)
           if (severityTrend && severityTrend.length > 0) {
-            // 1. Visão Geral - Evolução do Risco
+            // 1. Visão Geral - Evolução do Risco (Fase 2: série única "Total")
             const totalTrendData = severityTrend.map(s => ({
               timestamp: s.timestamp,
               total: (s.critical || 0) + (s.high || 0) + (s.medium || 0) + (s.low || 0)
             }));
-            if (document.getElementById('overview-chart-trend')) {
-              renderTrendSvgChart('overview-chart-trend', [
-                { key: 'critical', label: 'Criticas', color: '#f43f7f' },
-                { key: 'high', label: 'Altas', color: '#f59e0b' }
-              ], { data: totalTrendData });
-            }
+            overviewTrendCache = totalTrendData;
+            renderOverviewTrendFromCache();
 
             // 2. Tendências - Evolução do Total
             if (document.getElementById('trend-chart-total')) {
@@ -12295,6 +12758,10 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
                 { key: 'high', label: 'Altas', color: '#fb923c' }
               ], { data: severityTrend });
             }
+          } else {
+            // Fase 2 / D2 — estado vazio explícito apenas no card do Dashboard.
+            overviewTrendCache = [];
+            renderOverviewTrendFromCache();
           }
 
           if (slaTrend && slaTrend.length > 0) {
@@ -12315,11 +12782,13 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
               ], { data: acceptanceTrend });
             }
           }
+          });
 
         } else {
           showFallbackTrend('Falha HTTP ao contatar a API');
         }
       } catch (e) {
+        console.error('[EyeMole][refreshTrendSummary] falha de rede/HTTP/parsing:', e);
         showFallbackTrend('Erro de comunicação com o servidor: ' + e.message);
       } finally {
         if (btn) btn.disabled = false;
@@ -12327,26 +12796,27 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
     }
 
     function showFallbackTrend(msg) {
-      document.getElementById('trend-exec-health').innerHTML = '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>';
-      document.getElementById('trend-risk-direction').innerHTML = '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>';
-      document.getElementById('trend-period-days').textContent = 'Período: -';
-      document.getElementById('trend-snapshots-analyzed').textContent = 'Snapshots analisados: -';
+      safeSetHtml('trend-exec-health', '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>');
+      safeSetHtml('trend-risk-direction', '<span style="color: var(--text-muted); font-weight: 700;">Indisponível</span>');
+      safeSetText('trend-period-days', 'Período: -');
+      safeSetText('trend-snapshots-analyzed', 'Snapshots analisados: -');
 
-      document.getElementById('trend-delta-total').textContent = '-';
-      document.getElementById('trend-delta-critical-high').textContent = 'Críticas: - | Altas: -';
-      document.getElementById('trend-delta-sla-actionable').textContent = '-';
-      document.getElementById('trend-delta-details').textContent = 'SLA Vencido: - | KEV: -';
+      safeSetText('trend-delta-total', '-');
+      safeSetText('trend-delta-critical-high', 'Críticas: - | Altas: -');
+      safeSetText('trend-delta-sla-actionable', '-');
+      safeSetText('trend-delta-details', 'SLA Vencido: - | KEV: -');
 
-      document.getElementById('trend-alerts-container').style.display = 'none';
+      const trendAlertEl = safeGetEl('trend-alerts-container');
+      if (trendAlertEl) trendAlertEl.style.display = 'none';
 
-      document.getElementById('trend-worsening-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-improving-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-owner-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-persistent-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-severity-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-sla-tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-acceptance-tbody').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
-      document.getElementById('trend-alerts-tbody').innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`;
+      safeSetHtml('trend-worsening-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-improving-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-owner-tbody', `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-persistent-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-severity-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-sla-tbody', `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-acceptance-tbody', `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
+      safeSetHtml('trend-alerts-tbody', `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Indisponível: ${msg}</td></tr>`);
 
       const tTotal = document.getElementById('trend-chart-total');
       if (tTotal) tTotal.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">Gráfico indisponível: ${msg}</div>`;
@@ -12396,8 +12866,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           html += `
             <div style="display: flex; flex-direction: column; gap: 0.2rem;">
               <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 600; color: var(--text-main);">
-                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;" title="${label}">${label}</span>
-                <span>${val}${options.unit || ''}</span>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;" title="${escapeHtmlAttribute(label)}">${escapeHtmlText(label)}</span>
+                <span>${escapeHtmlText(val)}${options.unit || ''}</span>
               </div>
               <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
                 <div style="width: ${pct}%; height: 100%; background: ${color}; border-radius: 3px; transition: width 0.4s ease;"></div>
@@ -12413,8 +12883,10 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
       }
     }
 
-    function renderDonutChart(containerId, items, options = {}) {
-      // NB: nome mantido por compatibilidade; renderiza PIE CHART (pizza).
+    // Fase 9.5 — renomeada de renderDonutChart para refletir o desenho real
+    // (pizza, não donut). O desenho NÃO foi alterado. Sem alias: não há
+    // consumidor externo (todas as chamadas estão neste mesmo <script>).
+    function renderPieChart(containerId, items, options = {}) {
       const container = safeGetEl(containerId);
       if (!container) {
         console.warn(`[SOAR Dashboard] Container ausente: ${containerId}`);
@@ -12483,8 +12955,8 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           legendHtml += `
             <div class="pie-legend-row">
               <span class="pie-dot" style="background: ${color};"></span>
-              <span class="pie-label" title="${label}">${label}</span>
-              <span class="pie-value">${val} <span class="pie-pct">${pct}%</span></span>
+              <span class="pie-label" title="${escapeHtmlAttribute(label)}">${escapeHtmlText(label)}</span>
+              <span class="pie-value">${escapeHtmlText(val)} <span class="pie-pct">${pct}%</span></span>
             </div>
           `;
         });
@@ -12554,8 +13026,9 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
           svgHtml += `<line x1="${x}" y1="${paddingTop}" x2="${x}" y2="${paddingTop + plotHeight}" stroke="rgba(255,255,255,0.04)" stroke-dasharray="2,2" stroke-width="1" />`;
           const rawDate = d.timestamp || d.date;
           const date = new Date(rawDate);
-          const label = (date.getMonth() + 1) + '/' + date.getDate();
-          if (xPoints <= 6 || idx === 0 || idx === xPoints - 1 || idx === Math.floor(xPoints / 2)) {
+          // Fase 2 — data inválida não deve gerar rótulo "NaN/NaN".
+          const label = Number.isFinite(date.getTime()) ? ((date.getMonth() + 1) + '/' + date.getDate()) : '';
+          if (label && (xPoints <= 6 || idx === 0 || idx === xPoints - 1 || idx === Math.floor(xPoints / 2))) {
             svgHtml += `<text x="${x}" y="${paddingTop + plotHeight + 12}" fill="var(--text-muted)" font-size="8" text-anchor="middle">${label}</text>`;
           }
         });
@@ -12580,8 +13053,10 @@ document.getElementById('risk-agents').textContent = sum.affected_agents !== und
             const val = d[key] !== undefined ? Number(d[key]) : 0;
             const x = paddingLeft + idx * xStep;
             const y = paddingTop + plotHeight - (plotHeight * val / maxValue);
+            const ptDate = new Date(d.timestamp || d.date);
+            const ptDateLabel = Number.isFinite(ptDate.getTime()) ? ptDate.toLocaleString() : 'data inválida';
             svgHtml += `<circle cx="${x}" cy="${y}" r="3.5" fill="${color}" stroke="#0f172a" stroke-width="1">
-              <title>${s.label}: ${val}\n${new Date(d.timestamp || d.date).toLocaleString()}</title>
+              <title>${escapeHtmlText(s.label)}: ${escapeHtmlText(val)} - ${escapeHtmlText(ptDateLabel)}</title>
             </circle>`;
           });
         });
