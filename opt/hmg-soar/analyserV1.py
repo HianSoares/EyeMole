@@ -9768,17 +9768,54 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }, 250);
     });
 
-    function calculateMetrics() {
+    function updateVulnerabilityFilterMetrics(filteredRows) {
       const setInner = (id, val) => {
         const el = document.getElementById(id);
-        if (el) el.innerText = val;
+        if (el) el.textContent = val;
       };
-      setInner('count-total', rawData.length);
-      setInner('count-p1plus', rawData.filter(r => r.priority === 'Priority 1+').length);
-      setInner('count-p1', rawData.filter(r => r.priority === 'Priority 1').length);
-      setInner('count-p2', rawData.filter(r => r.priority === 'Priority 2').length);
-      setInner('count-p3', rawData.filter(r => r.priority === 'Priority 3').length);
-      setInner('count-p4', rawData.filter(r => r.priority === 'Priority 4').length);
+
+      const total = filteredRows.length;
+      const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
+
+      let crit = 0, high = 0, kev = 0, epss = 0;
+      let p1plus = 0, p1 = 0, p2 = 0, p3 = 0, p4 = 0;
+
+      filteredRows.forEach(v => {
+        const sev = String(v.severity || '').toLowerCase();
+        if (sev === 'critical') crit++;
+        else if (sev === 'high') high++;
+
+        if (v.is_kev) kev++;
+
+        const ep = Number(v.epss || 0);
+        if (!isNaN(ep) && ep >= th) epss++;
+
+        if (v.priority === 'Priority 1+') p1plus++;
+        else if (v.priority === 'Priority 1') p1++;
+        else if (v.priority === 'Priority 2') p2++;
+        else if (v.priority === 'Priority 3') p3++;
+        else if (v.priority === 'Priority 4') p4++;
+      });
+
+      // Update Resume Cards
+      setInner('vs-total', total);
+      setInner('vs-crit', crit);
+      setInner('vs-high', high);
+      setInner('vs-kev', kev);
+      setInner('vs-epss', epss);
+      setInner('vs-fix', 'N/D');
+
+      // Update Priority Cards
+      setInner('count-total', total);
+      setInner('count-p1plus', p1plus);
+      setInner('count-p1', p1);
+      setInner('count-p2', p2);
+      setInner('count-p3', p3);
+      setInner('count-p4', p4);
+    }
+
+    function calculateMetrics() {
+      updateVulnerabilityFilterMetrics(rawData);
     }
 
     function filterByPriority(priority) {
@@ -9827,6 +9864,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function applyVisualFilters() {
+      applyFilters();
+    }
+
+    function applyFilters() {
       const read = id => {
         const el = document.getElementById(id);
         return el ? el.value : 'ALL';
@@ -9839,6 +9880,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const status = read('filter-status-ui').toLowerCase();
 
       filteredData = rawData.filter(item => {
+        // 1. Visual Filters
         const agentLabel = `${item.agent_id || '-'} - ${item.agent_name || item.hostname || 'sem nome'}`;
         if (agent !== 'ALL' && agent !== 'Todos os agentes' && agentLabel !== agent) return false;
         if (severity !== 'todas' && severity !== 'all' && String(item.severity || '').toLowerCase() !== severity) return false;
@@ -9849,24 +9891,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (status.includes('vencido') && item.sla_status !== 'overdue') return false;
         if (status.includes('proximo') && item.sla_status !== 'due_soon') return false;
         if (status.includes('dentro') && item.sla_status !== 'within_sla') return false;
-        return true;
-      });
-      currentPage = 1;
-      sortData();
-    }
 
-    function applyFilters() {
-      filteredData = rawData.filter(item => {
+        // 2. Priority Filter
         if (activePriorityFilter !== 'ALL' && item.priority !== activePriorityFilter) return false;
+
+        // 3. Ransomware Filter
         if (filterRansomwareOnly && !item.is_ransomware) return false;
+
+        // 4. Search Term Filter
         if (searchTerm) {
           const matchText = `${item.agent_id} ${item.agent_name} ${item.cve} ${item.package} ${item.version} ${item.severity} ${item.criticality || ''} ${item.environment || ''} ${item.exposure || ''} ${item.asset_type || ''} ${item.exposure_level || ''} ${item.network_zone || ''} ${(item.top_services || []).join(' ')} ${(item.tags || []).join(' ')} ${item.sla_status || ''} ${item.technical_owner || ''} ${item.business_owner || ''}`.toLowerCase();
           if (!matchText.includes(searchTerm)) return false;
         }
+
         return true;
       });
+
       currentPage = 1;
       sortData();
+      updateVulnerabilityFilterMetrics(filteredData);
     }
 
     function sortTable(column) {
