@@ -438,9 +438,28 @@ Nenhuma alteração deve ser implantada sem:
 
 ## Documentação
 
-- [Instalação do EyeMole](docs/INSTALL_EYEMOLE.md)
-- [Hardening e modo de produção](docs/SECURITY_HARDENING.md)
-- [Histórico de alterações](CHANGELOG.md)
+### Comece aqui
+
+- [Guia do usuário](docs/USER_GUIDE.md)
+- [Roteiro de demonstração](docs/DEMO_GUIDE.md)
+- [Glossário](docs/GLOSSARY.md)
+
+### Referência técnica
+
+- [Referência do dashboard](docs/DASHBOARD_REFERENCE.md)
+- [Métricas e fórmulas](docs/METRICS_AND_SCORING.md)
+- [Arquitetura](docs/ARCHITECTURE.md)
+
+### Administração e operação
+
+- [Instalação](docs/INSTALL_EYEMOLE.md)
+- [Operação](docs/OPERATIONS.md)
+- [Segurança e hardening](docs/SECURITY_HARDENING.md)
+
+### Histórico
+
+- [Changelog](CHANGELOG.md)
+- [Arquivo de documentos legados](docs/archive/README.md)
 
 ---
 
