@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Política de atualização genérica — DESABILITADA por padrão"
+  },
+  "enabled": false,
+  "approved_by": null,
+  "approved_at": null,
+  "allowed_combinations": []
+}
