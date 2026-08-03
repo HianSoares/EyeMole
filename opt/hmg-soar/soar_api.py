@@ -33,6 +33,78 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse, parse_qs, unquote
 
+# Remediation Guidance (Wave 2) — importações lazy para isolamento de erros
+_remediation_engine = None
+_guidance_cache = None
+
+try:
+    from remediation.rate_limiter import SlidingWindowLog
+    _guidance_rate_limiter = SlidingWindowLog(max_tokens=60, window_seconds=60)
+    _audit_rate_limiter = SlidingWindowLog(max_tokens=10, window_seconds=60)
+except Exception:
+    logger.error("Falha ao carregar rate limiter de remediação")
+    _guidance_rate_limiter = None
+    _audit_rate_limiter = None
+
+_remediation_audit_lock = Lock()
+_init_lock = Lock()
+_init_state = "uninitialized"
+_last_failure_time = 0.0
+_backoff_seconds = 30.0
+
+def _init_remediation_module() -> bool:
+    """Inicializa o módulo de remediação de forma lazy com lock e backoff de falha.
+
+    Qualquer erro aqui NÃO afeta os demais endpoints.
+    """
+    global _remediation_engine, _guidance_cache, _init_state, _last_failure_time
+
+    with _init_lock:
+        if _init_state == "ready":
+            return True
+
+        now = time.monotonic()
+        if _init_state == "failed":
+            if now - _last_failure_time < _backoff_seconds:
+                # Durante o backoff, retornar False imediatamente sem tentar carregar nada
+                return False
+            # Se passou o prazo de backoff, tentar novamente
+            _init_state = "uninitialized"
+
+        if _init_state == "initializing":
+            return False
+
+        if _remediation_engine is not None and _guidance_cache is not None:
+            _init_state = "ready"
+            return True
+
+        _init_state = "initializing"
+        try:
+            from remediation.engine import RemediationEngine
+            from remediation.cache import GuidanceCache
+            _remediation_engine = RemediationEngine()
+            _guidance_cache = GuidanceCache(
+                snapshot_path=LATEST_JSON,
+                ttl_seconds=21600,  # 6 hours
+                max_entries=10000,
+            )
+            _init_state = "ready"
+            logger.info("Módulo de remediação inicializado com sucesso.")
+            return True
+        except Exception:
+            _init_state = "failed"
+            _last_failure_time = time.monotonic()
+            logger.error("Falha ao inicializar modulo de remediacao")
+            return False
+
+
+# Regex para validação de finding_id (SHA-256 hex, 64 chars)
+_FINDING_ID_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
+# Regex para validação de guidance_id (UUID4 format)
+_GUIDANCE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
 # ==========================================
 # CONFIGURAÇÃO
 # ==========================================
@@ -470,14 +542,22 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             self._handle_trend_summary()
         elif path == "/treatment-plan":
             self._handle_treatment_plan()
+        elif path.startswith("/remediation-guidance/"):
+            self._handle_remediation_guidance_get(parsed_url)
         else:
             self._send_json(404, {"error": "Endpoint não encontrado"})
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
 
         if path == "/run-analysis":
             self._handle_run_analysis()
+            return
+
+        # POST /remediation-guidance/<guidance_id>/audit
+        if path.startswith("/remediation-guidance/") and path.endswith("/audit"):
+            self._handle_remediation_audit_post(parsed_url)
             return
 
         # POST /assets-context/<agent_id>  (ou /context/assets/<agent_id>)
@@ -1127,6 +1207,341 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
                 "due_soon_actions": 0
             }
         })
+
+    def _handle_remediation_guidance_get(self, parsed_url) -> None:
+        """GET /remediation-guidance/<finding_id>
+
+        Gera orientação de correção para um achado de vulnerabilidade.
+        Isolado: erros aqui NÃO afetam outros endpoints.
+        """
+        try:
+            self._handle_remediation_guidance_get_internal(parsed_url)
+        except Exception:
+            logger.error("Erro inesperado no handler de GET guidance")
+            self._send_guidance_json(500, {"error": "Erro interno do servidor"})
+
+    def _handle_remediation_guidance_get_internal(self, parsed_url) -> None:
+        """Implementação interna do GET /remediation-guidance/<finding_id>."""
+        path = parsed_url.path
+        remote_user = self._get_remote_user()
+        client_ip = self._get_client_ip()
+
+        # 1. Autenticação por X-Remote-User
+        if not remote_user or remote_user == "unknown":
+            self._send_guidance_json(401, {"error": "Autenticação necessária"})
+            return
+
+        # 2. Extração estrutural do finding_id
+        prefix = "/remediation-guidance/"
+        finding_id = path[len(prefix):]
+
+        # 3. Rejeição de sub-path e caracteres inválidos
+        if "/" in finding_id:
+            self._send_guidance_json(404, {"error": "Endpoint não encontrado"})
+            return
+        if not re.match(r"^[A-Za-z0-9_-]+$", finding_id):
+            self._send_guidance_json(400, {
+                "error": "finding_id inválido"
+            })
+            return
+
+        # 4. Rate limit
+        if _guidance_rate_limiter is not None:
+            if not _guidance_rate_limiter.is_allowed(remote_user):
+                retry_after = _guidance_rate_limiter.get_retry_after(remote_user)
+                self._send_guidance_json(429, {
+                    "error": "Limite de requisições excedido",
+                    "retry_after": retry_after,
+                }, extra_headers={"Retry-After": str(retry_after)})
+                return
+
+        # 5. Rejeição de query string
+        if parsed_url.query:
+            self._send_guidance_json(400, {
+                "error": "Parâmetros de consulta não permitidos"
+            })
+            return
+
+        # 6. Rejeição de body
+        content_length = 0
+        try:
+            content_length = int(self.headers.get("Content-Length") or "0")
+        except (ValueError, TypeError):
+            pass
+        if content_length > 0:
+            # Consume body to avoid connection issues
+            self.rfile.read(min(content_length, 1024))
+            self._send_guidance_json(400, {
+                "error": "Corpo da requisição não permitido"
+            })
+            return
+
+        # 7. Validação completa do finding_id
+        if not _FINDING_ID_RE.match(finding_id):
+            self._send_guidance_json(400, {
+                "error": "finding_id inválido",
+                "pattern": "[A-Fa-f0-9]{64}",
+            })
+            return
+
+        # 8. Inicialização lazy do engine/cache
+        if not _init_remediation_module():
+            self._send_guidance_json(503, {
+                "error": "Serviço temporariamente indisponível",
+                "retry_after": 30,
+            })
+            return
+
+        # 9. Cache ou engine
+        record = _guidance_cache.get_by_finding_id(finding_id)
+        if record is None:
+            try:
+                record = _remediation_engine.generate_guidance(finding_id)
+            except Exception:
+                logger.error("Erro interno no RemediationEngine")
+                self._send_guidance_json(500, {"error": "Erro interno do servidor"})
+                return
+
+            if record.status == "not_found":
+                self._send_guidance_json(404, {
+                    "error": "Achado não encontrado no snapshot"
+                })
+                return
+
+            if record.status == "provider_unavailable":
+                self._send_guidance_json(503, {
+                    "error": "Serviço temporariamente indisponível",
+                    "retry_after": 30,
+                })
+                return
+
+            _guidance_cache.put(finding_id, record)
+
+        # 10. Auditoria view (falha silenciada, apenas log sanitizado)
+        try:
+            self._log_guidance_audit(
+                action="view", remote_user=remote_user, client_ip=client_ip,
+                finding_id=finding_id, record=record,
+            )
+        except Exception:
+            logger.warning("Falha de auditoria (view)")
+
+        # 11. Resposta
+        self._send_guidance_response(record)
+
+    def _handle_remediation_audit_post(self, parsed_url) -> None:
+        """POST /remediation-guidance/<guidance_id>/audit
+
+        Registra evento de cópia de comando.
+        Isolado: erros aqui NÃO afetam outros endpoints.
+        """
+        try:
+            self._handle_remediation_audit_post_internal(parsed_url)
+        except Exception:
+            logger.error("Erro inesperado no handler POST de auditoria")
+            self._send_guidance_json(500, {"error": "Erro interno do servidor"})
+
+    def _handle_remediation_audit_post_internal(self, parsed_url) -> None:
+        """Implementação interna do POST /remediation-guidance/<guid>/audit."""
+        path = parsed_url.path
+        remote_user = self._get_remote_user()
+        client_ip = self._get_client_ip()
+
+        # 1. Autenticação por X-Remote-User
+        if not remote_user or remote_user == "unknown":
+            self._send_guidance_json(401, {"error": "Autenticação necessária"})
+            return
+
+        # 2. Extração estrutural do guidance_id
+        prefix = "/remediation-guidance/"
+        suffix = "/audit"
+        middle = path[len(prefix):-len(suffix)]
+        guidance_id = middle
+
+        # 3. Rate limit por usuário (copy:user:<remote_user>)
+        rate_key = f"copy:user:{remote_user}"
+        if _audit_rate_limiter is not None:
+            if not _audit_rate_limiter.is_allowed(rate_key):
+                retry_after = _audit_rate_limiter.get_retry_after(rate_key)
+                self._send_guidance_json(429, {
+                    "error": "Limite excedido",
+                    "retry_after": retry_after,
+                }, extra_headers={"Retry-After": str(retry_after)})
+                return
+
+        # 4. Rejeição de query string
+        if parsed_url.query:
+            self._send_guidance_json(400, {
+                "error": "Parâmetros de consulta não permitidos"
+            })
+            return
+
+        # 5. Content-Type e tamanho
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            self._send_guidance_json(400, {
+                "error": "Content-Type deve ser application/json"
+            })
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length") or "0")
+        except (ValueError, TypeError):
+            content_length = 0
+
+        if content_length <= 0:
+            self._send_guidance_json(400, {"error": "Corpo da requisição vazio"})
+            return
+
+        if content_length > 256:
+            # Consume to avoid connection issues
+            self.rfile.read(min(content_length, 512))
+            self._send_guidance_json(400, {
+                "error": "Payload excede o tamanho máximo"
+            })
+            return
+
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) > 256:
+            self._send_guidance_json(400, {
+                "error": "Payload excede o tamanho máximo"
+            })
+            return
+
+        # 6. Parsing e validação do JSON
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._send_guidance_json(400, {"error": "JSON inválido"})
+            return
+
+        if not isinstance(payload, dict):
+            self._send_guidance_json(400, {"error": "Payload deve ser um objeto JSON"})
+            return
+
+        if set(payload.keys()) != {"action"}:
+            self._send_guidance_json(400, {
+                "error": "Campos não permitidos no payload"
+            })
+            return
+
+        action_value = payload.get("action")
+        if action_value != "copy":
+            self._send_guidance_json(400, {
+                "error": "Ação inválida. Apenas 'copy' é aceito"
+            })
+            return
+
+        # 7. Validação completa do guidance_id
+        if not _GUIDANCE_ID_RE.match(guidance_id):
+            self._send_guidance_json(400, {
+                "error": "guidance_id inválido"
+            })
+            return
+
+        # 8. Inicialização/cache lookup
+        if not _init_remediation_module():
+            self._send_guidance_json(503, {
+                "error": "Serviço temporariamente indisponível",
+                "retry_after": 30,
+            })
+            return
+
+        record = _guidance_cache.get_by_guidance_id(guidance_id)
+        if record is None:
+            self._send_guidance_json(404, {
+                "error": "Registro de orientação não encontrado"
+            })
+            return
+
+        # 9. Auditoria copy (fatal: se falhar, retorna HTTP 500 genérico e nunca sucesso)
+        try:
+            self._log_guidance_audit(
+                action="copy", remote_user=remote_user, client_ip=client_ip,
+                finding_id=record.finding_id, record=record,
+            )
+        except Exception:
+            logger.error("Falha de escrita na auditoria (copy)")
+            self._send_guidance_json(500, {
+                "error": "Erro interno do servidor"
+            })
+            return
+
+        # 10. Resposta
+        self._send_guidance_json(200, {"status": "ok", "action": "copy"})
+
+    def _send_guidance_json(self, status_code: int, data: dict,
+                            extra_headers: dict = None) -> None:
+        """Envia resposta JSON para endpoints de remediation guidance.
+
+        Inclui X-Execution-Allowed: false em TODAS as respostas.
+        """
+        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Execution-Allowed", "false")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_guidance_response(self, record) -> None:
+        """Envia GuidanceRecord como resposta HTTP 200.
+
+        Enforce max 32 KB payload.
+        """
+        data = record.to_dict()
+        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+
+        # Enforce 32 KB limit
+        if len(body) > 32768:
+            self._send_guidance_json(500, {"error": "Erro interno do servidor"})
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Execution-Allowed", "false")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _log_guidance_audit(self, action: str, remote_user: str,
+                            client_ip: str, finding_id: str,
+                            record=None) -> None:
+        """Registra evento de auditoria para guidance (view/copy).
+
+        NUNCA loga: command content, verification_command, passwords, tokens.
+        Thread-safe via lock. Propaga OSError para que o chamador decida a política.
+        """
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": f"guidance_{action}",
+            "remote_user": remote_user or "unknown",
+            "client_ip": client_ip or "unknown",
+            "finding_id": finding_id or "",
+        }
+
+        if record is not None:
+            entry["guidance_id"] = record.guidance_id or ""
+            entry["provider"] = record.source or ""
+            entry["status"] = record.status or ""
+            entry["confidence"] = record.confidence or ""
+            entry["agent_id"] = record.agent_id or ""
+            entry["cve"] = record.cve or ""
+
+        entry["result"] = "ok"
+
+        with _remediation_audit_lock:
+            try:
+                AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+            with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def _handle_run_analysis(self) -> None:
         remote_user = self._get_remote_user()
