@@ -372,6 +372,45 @@ Consulte:
 
 ---
 
+## Orientação de Correção (Remediation Guidance)
+
+O EyeMole oferece orientação de correção para achados de vulnerabilidade, apresentando sugestões de comandos e procedimentos ao operador.
+
+### Princípios de segurança
+
+- **Interface somente cópia (copy-only):** o sistema nunca executa comandos automaticamente. O operador visualiza a orientação e pode copiar manualmente o conteúdo.
+- **Sem execução pelo sistema:** nenhum comando é disparado pelo backend, pela API ou pela interface web. O campo `execution_allowed` é sempre `false`, imposto pelo backend.
+- **Gating por confiança:** orientações com comandos são exibidas apenas quando o nível de confiança é `high` ou `medium`. Achados com confiança `low` recebem apenas texto descritivo.
+- **Auditoria de ações:** toda visualização e cópia de orientação é registrada no log de auditoria com timestamp, usuário e ação realizada (`view` ou `copy`).
+
+### Instalação de configurações padrão
+
+- Em uma **instalação nova (fresh install)**, os arquivos de configuração padrão são instalados automaticamente em `/opt/hmg-soar/config/`:
+  - `generic_update_policy.json`
+  - `remediation_allowlist.json`
+  - `remediation_providers.json`
+  - `remediation_templates.json`
+  - `risk_acceptance.json`
+  - `sla_policy.json`
+  - `treatment_policy.json`
+- Em uma **atualização**, configurações existentes são preservadas (nunca sobrescritas).
+
+### Endpoints da API
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/soar-api/remediation-guidance/<finding_id>` | Retorna a orientação de correção para um achado |
+| POST | `/soar-api/remediation-guidance/<guidance_id>/audit` | Registra ação de auditoria (body: `{"action":"copy"}`) |
+
+A API escuta somente em `127.0.0.1:8765` (loopback). O acesso externo é mediado pelo proxy Nginx com Basic Auth.
+
+### Riscos residuais
+
+- **Confiança no header X-Remote-User:** a identidade do operador é extraída do header injetado pelo Nginx. Processos locais com acesso à porta 8765 podem forjar esse header.
+- **Sem autorização granular:** qualquer usuário autenticado no proxy pode consultar orientações e registrar ações de auditoria. Não há controle por papel (role) ou por escopo de ativos.
+
+---
+
 ## Estrutura do projeto
 
 ```text

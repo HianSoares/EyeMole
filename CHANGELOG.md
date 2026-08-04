@@ -1,5 +1,21 @@
 # CHANGELOG - HMG Wazuh SOAR Brain
 
+## [Unreleased]
+
+### Corrigido
+
+- fix(installer): install default remediation configs on fresh install
+- fix(installer): validate all Python modules including soar_api.py and remediation/
+- fix(installer): remove || true masking from critical systemd operations
+- fix(installer): add API health check validation
+- fix(installer): add JSON validation for all configuration files
+
+### Documentação
+
+- docs: document remediation guidance installation and operations
+
+---
+
 ## [Fase 4] - 2026-06-23 - Premium Dashboard
 
 ### Adicionado
