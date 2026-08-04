@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Templates de comandos de remediação por gerenciador de pacotes",
+    "updated_at": "2026-07-28T00:00:00Z",
+    "source": "controlled_local_file"
+  },
+  "allowlist": {
+    "os_to_package_manager": {
+      "ubuntu": "apt",
+      "debian": "apt",
+      "raspbian": "apt",
+      "rhel8": "dnf",
+      "rhel9": "dnf",
+      "rocky": "dnf",
+      "alma": "dnf",
+      "almalinux": "dnf",
+      "fedora": "dnf",
+      "rhel7": "yum",
+      "centos7": "yum",
+      "centos": "yum",
+      "amazon_linux_2": "yum",
+      "sles": "zypper",
+      "opensuse": "zypper",
+      "alpine": "apk"
+    }
+  },
+  "templates": {
+    "apt": {
+      "package_manager": "apt",
+      "os_families": ["ubuntu", "debian", "raspbian"],
+      "remediation": {
+        "with_version": "sudo apt-get install --only-upgrade {package_name}={fixed_version}",
+        "generic_update": "sudo apt-get install --only-upgrade {package_name}"
+      },
+      "verification": {
+        "check_version": "dpkg-query -W {package_name}"
+      },
+      "notes": "Requer apt-get update prévio para atualizar índices."
+    },
+    "dnf": {
+      "package_manager": "dnf",
+      "os_families": ["rhel8", "rhel9", "rocky", "alma", "almalinux", "fedora"],
+      "remediation": {
+        "with_version": "sudo dnf update {package_name}-{fixed_version}",
+        "generic_update": "sudo dnf update {package_name}"
+      },
+      "verification": {
+        "check_version": "rpm -q {package_name}"
+      },
+      "notes": "Para RHEL 8+, Fedora, Rocky Linux, AlmaLinux."
+    },
+    "yum": {
+      "package_manager": "yum",
+      "os_families": ["rhel7", "centos7", "centos", "amazon_linux_2"],
+      "remediation": {
+        "with_version": "sudo yum update {package_name}-{fixed_version}",
+        "generic_update": "sudo yum update {package_name}"
+      },
+      "verification": {
+        "check_version": "rpm -q {package_name}"
+      },
+      "notes": "Para RHEL 7, CentOS 7, Amazon Linux 2."
+    },
+    "zypper": {
+      "package_manager": "zypper",
+      "os_families": ["sles", "opensuse"],
+      "remediation": {
+        "with_version": "sudo zypper install --oldpackage {package_name}={fixed_version}",
+        "generic_update": "sudo zypper update {package_name}"
+      },
+      "verification": {
+        "check_version": "rpm -q {package_name}"
+      },
+      "notes": "Para SLES e openSUSE."
+    },
+    "apk": {
+      "package_manager": "apk",
+      "os_families": ["alpine"],
+      "remediation": {
+        "with_version": "apk add {package_name}={fixed_version}",
+        "generic_update": "apk upgrade {package_name}"
+      },
+      "verification": {
+        "check_version": "apk info {package_name}"
+      },
+      "notes": "Para Alpine Linux (containers)."
+    }
+  }
+}
