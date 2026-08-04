@@ -410,3 +410,100 @@ sensíveis** (apenas os nomes dos campos alterados).
 Hardening do serviço da API para esta função: `ReadWritePaths` inclui
 `/opt/hmg-soar/config` (além de `/opt/hmg-soar/audit`), mantendo o restante de
 `/opt/hmg-soar` como somente leitura.
+
+---
+
+## 13. Hardening do módulo Remediation Guidance
+
+### Interface copy-only (sem execução)
+
+O módulo de orientação de correção opera exclusivamente em modo **copy-only**:
+
+- O backend **nunca** executa comandos, scripts ou verificações de forma
+  automatizada.
+- O campo `execution_allowed` na resposta da API é **sempre `false`**, imposto
+  pelo backend independentemente da configuração.
+- O operador pode apenas visualizar e copiar o conteúdo apresentado.
+- Nenhuma funcionalidade de "auto-remediation" ou "self-healing" está presente.
+
+### Gating por nível de confiança
+
+Orientações que incluem referência a comandos são apresentadas **somente**
+quando o nível de confiança (`confidence`) da orientação é `high` ou `medium`.
+
+- Achados com confiança `low` recebem apenas texto descritivo e referências.
+- Isso reduz o risco de o operador aplicar procedimentos inadequados baseados
+  em correspondências fracas.
+
+### Confiança no header X-Remote-User
+
+A identidade do operador nas ações de auditoria é extraída do header
+`X-Remote-User`, injetado pelo proxy Nginx após autenticação Basic Auth.
+
+**Risco residual:** qualquer processo local com acesso à porta `127.0.0.1:8765`
+pode enviar requisições com um header `X-Remote-User` arbitrário, pois a API
+não valida a origem da requisição além do loopback. Esse é um trust boundary
+aceito dado que:
+
+- A API escuta **somente** em loopback (`127.0.0.1:8765`).
+- Em produção, apenas o Nginx tem acesso direto à porta.
+- Processos locais executando como outro usuário precisariam de acesso à
+  rede loopback, que é restrita ao próprio servidor.
+
+### API vinculada somente ao loopback
+
+A API de remediação está vinculada a `127.0.0.1:8765`, assim como todos os
+demais endpoints. Não há bind em `0.0.0.0` ou em interfaces externas.
+
+Validação:
+```bash
+ss -tlnp | grep 8765
+```
+
+Resultado esperado: `127.0.0.1:8765` apenas.
+
+### Processos locais como fronteira de confiança residual
+
+Processos executando no mesmo servidor com acesso à rede loopback podem:
+
+- Consultar orientações de remediação sem autenticação Nginx.
+- Registrar ações de auditoria com `X-Remote-User` arbitrário.
+
+**Mitigação:** o hardening do servidor (conta de serviço dedicada, sandbox
+systemd, `NoNewPrivileges=true`) limita quais processos podem explorar essa
+fronteira. Em ambientes com requisitos mais rígidos, considere adição de
+autenticação mTLS ou token na camada da API.
+
+### Generic update policy desabilitada por padrão
+
+O arquivo `generic_update_policy.json` é instalado com a política de
+atualização genérica **desabilitada** (`"enabled": false`). A ativação
+requer edição manual do arquivo pelo administrador.
+
+### Logs nunca contêm conteúdo de comandos
+
+O sistema de logging **não registra** o conteúdo dos campos `command` ou
+`verification_command` presentes nas orientações de remediação.
+
+Os logs registram apenas:
+- `guidance_id`
+- `finding_id`
+- `action` (`view` / `copy`)
+- `user`
+- `timestamp`
+- `confidence`
+
+Isso garante que, mesmo em caso de vazamento de logs, nenhum procedimento
+de correção específico é exposto.
+
+### Campo execution_allowed
+
+O campo `execution_allowed` é retornado como `false` em **toda** resposta
+do endpoint de remediação. Esse valor é:
+
+- Definido pelo backend de forma incondicional (hardcoded).
+- Não configurável via arquivo de configuração.
+- Não alterável por header, parâmetro ou body da requisição.
+
+Clientes da API devem tratar esse campo como informativo (interface pode
+exibir "somente cópia") e nunca condicionar execução local a esse valor.

@@ -698,6 +698,74 @@ Prefira `git revert` a `git reset --hard` para commits já publicados.
 
 ---
 
+## Remediation Guidance — Observabilidade e Operação
+
+### Visão geral
+
+O módulo de Remediation Guidance fornece orientações de correção para achados de vulnerabilidade. A interface é estritamente **copy-only**: o operador visualiza ou copia o conteúdo, mas o sistema nunca executa comandos.
+
+### Auditoria (audit trail)
+
+Toda interação com orientações de remediação é registrada:
+
+| Ação | Descrição | Registro |
+|---|---|---|
+| `view` | Operador visualizou a orientação | Automático ao consultar o endpoint |
+| `copy` | Operador copiou o conteúdo da orientação | Registrado via POST de auditoria |
+
+O registro inclui: `timestamp`, `user` (via X-Remote-User), `guidance_id`, `finding_id`, `action` e `remote_addr`.
+
+Log de auditoria: `/opt/hmg-soar/audit/audit_actions.jsonl`
+
+### Códigos HTTP do endpoint de Remediation Guidance
+
+| Código | Significado |
+|---|---|
+| 200 | Orientação retornada com sucesso / auditoria registrada |
+| 400 | Requisição malformada (body inválido, action não reconhecida) |
+| 401 | Autenticação ausente ou inválida (Basic Auth / X-Remote-User) |
+| 404 | Finding ou guidance_id não encontrado |
+| 429 | Rate limit excedido — respeitar header `Retry-After` |
+| 500 | Erro interno do servidor |
+| 503 | Serviço temporariamente indisponível (ex: cache em reconstrução) |
+
+### Header Retry-After
+
+Quando o endpoint retorna HTTP 429, o header `Retry-After` indica o número de segundos que o cliente deve aguardar antes de uma nova requisição.
+
+Exemplo de resposta:
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+Content-Type: application/json
+
+{"error": "rate_limit_exceeded", "retry_after": 60}
+```
+
+### Invalidação do guidance_id
+
+O `guidance_id` é um identificador temporário mantido em cache. Ele pode ser invalidado nas seguintes situações:
+
+- Reinício do serviço `hmg-soar-api.service`
+- Limpeza manual ou expiração do cache
+- Atualização da configuração de templates
+
+Após invalidação, uma nova consulta com o `finding_id` gera um novo `guidance_id`. Tentativas de usar um `guidance_id` expirado retornam HTTP 404.
+
+### Monitoramento
+
+Verificar se o módulo de remediação está operacional:
+
+```bash
+# Health check geral da API
+curl -s http://127.0.0.1:8765/health | python3 -m json.tool
+
+# Logs da API (filtrar por remediation)
+journalctl -u hmg-soar-api.service --no-pager | grep -i remediation | tail -20
+```
+
+---
+
 ## Dados que não devem entrar no Git
 
 | Tipo | Exemplo | Motivo |
