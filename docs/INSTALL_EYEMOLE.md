@@ -473,6 +473,129 @@ https://<servidor>/soar/
 
 ---
 
+## 17. Remediation Guidance — Instalação e Configuração
+
+### Fresh install vs atualização
+
+| Cenário | Comportamento |
+|---|---|
+| Fresh install (primeira instalação) | Arquivos de configuração padrão são copiados para `/opt/hmg-soar/config/` |
+| Atualização (configs já existem) | Arquivos existentes são **preservados** — nunca sobrescritos |
+
+O instalador usa a lógica **only-if-missing**: cada arquivo de configuração é copiado apenas se ainda não existir no destino.
+
+### Arquivos de configuração instalados
+
+| Arquivo | Finalidade |
+|---|---|
+| `generic_update_policy.json` | Política genérica de atualização (desabilitada por padrão) |
+| `remediation_allowlist.json` | Lista de pacotes/ações permitidos nas orientações |
+| `remediation_providers.json` | Provedores de orientação configurados |
+| `remediation_templates.json` | Templates de orientação por tipo de achado |
+| `risk_acceptance.json` | Registros de aceitação de risco |
+| `sla_policy.json` | Política de SLA por severidade |
+| `treatment_policy.json` | Política de tratamento de vulnerabilidades |
+
+### Verificações fail-fast
+
+O instalador executa verificações obrigatórias que interrompem a instalação em caso de falha:
+
+1. **Validação JSON:** todos os arquivos `.json` em `/opt/hmg-soar/config/` são validados sintaticamente.
+2. **Validação Python:** todos os módulos Python são compilados, incluindo `soar_api.py` e o pacote `remediation/`.
+3. **Health check da API:** após iniciar o serviço, o instalador verifica se `GET /health` responde HTTP 200 em `127.0.0.1:8765`.
+
+Se qualquer verificação falhar, a instalação é interrompida com mensagem de erro clara.
+
+### Validação pós-instalação
+
+Após a instalação, confirme que os arquivos de configuração de remediação existem:
+
+```bash
+ls -la /opt/hmg-soar/config/remediation_allowlist.json
+ls -la /opt/hmg-soar/config/remediation_providers.json
+ls -la /opt/hmg-soar/config/remediation_templates.json
+ls -la /opt/hmg-soar/config/treatment_policy.json
+ls -la /opt/hmg-soar/config/risk_acceptance.json
+ls -la /opt/hmg-soar/config/sla_policy.json
+ls -la /opt/hmg-soar/config/generic_update_policy.json
+```
+
+Valide o JSON de cada arquivo:
+
+```bash
+python3 -m json.tool /opt/hmg-soar/config/remediation_allowlist.json > /dev/null
+python3 -m json.tool /opt/hmg-soar/config/treatment_policy.json > /dev/null
+```
+
+Confirme que a API responde e inclui o módulo de remediação:
+
+```bash
+curl -s http://127.0.0.1:8765/health | python3 -m json.tool
+```
+
+### Testando os endpoints de Remediation Guidance
+
+Para verificar o endpoint sem incluir dados reais:
+
+```bash
+read -s -p "Senha web: " SOAR_PASS
+echo
+
+# Consultar orientação para um achado
+curl -kfsS \
+  -u "admmaster:${SOAR_PASS}" \
+  "https://<servidor>/soar-api/remediation-guidance/<finding_id>" | python3 -m json.tool
+
+# Registrar ação de auditoria
+curl -kfsS -X POST \
+  -u "admmaster:${SOAR_PASS}" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"copy"}' \
+  "https://<servidor>/soar-api/remediation-guidance/<guidance_id>/audit" | python3 -m json.tool
+
+unset SOAR_PASS
+```
+
+Substitua `<finding_id>` e `<guidance_id>` pelos identificadores reais do ambiente.
+
+---
+
+## 18. Troubleshooting — Remediation Guidance
+
+### 18.1 Arquivo de configuração ausente
+
+**Sintoma:** API retorna erro ao consultar orientação de remediação.
+
+**Diagnóstico:**
+```bash
+ls -la /opt/hmg-soar/config/remediation_*.json
+ls -la /opt/hmg-soar/config/treatment_policy.json
+```
+
+**Solução:** reinstale no modo seguro para restaurar os arquivos padrão (configs existentes são preservadas):
+```bash
+sudo ./install.sh
+```
+
+### 18.2 API não responde ao endpoint de remediação
+
+**Sintoma:** HTTP 502 ou timeout em `/soar-api/remediation-guidance/<finding_id>`.
+
+**Diagnóstico:**
+```bash
+systemctl status hmg-soar-api.service --no-pager
+journalctl -u hmg-soar-api.service -n 50 --no-pager
+curl -s http://127.0.0.1:8765/health
+```
+
+**Solução:** reinicie a API e verifique se o módulo `remediation/` está acessível:
+```bash
+python3 -m py_compile /opt/hmg-soar/remediation/engine.py
+sudo systemctl restart hmg-soar-api.service
+```
+
+---
+
 ## Segurança e modo de produção
 
 Consulte [Hardening de segurança e modo de produção](SECURITY_HARDENING.md) para detalhes sobre:
