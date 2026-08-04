@@ -168,6 +168,63 @@ ensure_api_audit_dirs() {
   chmod 0660 "${WEB_DIR}/data/audit_actions.jsonl"
 }
 
+validate_json_configs() {
+  log "Validando integridade dos JSONs obrigatórios..."
+  local src_config="${REPO_ROOT}/opt/hmg-soar/config"
+  local src_templates="${REPO_ROOT}/opt/hmg-soar/remediation/data/remediation_templates.json"
+
+  local json_files=(
+    "${src_config}/generic_update_policy.json"
+    "${src_config}/remediation_allowlist.json"
+    "${src_config}/remediation_providers.json"
+    "${src_config}/risk_acceptance.json"
+    "${src_config}/sla_policy.json"
+    "${src_config}/treatment_policy.json"
+    "${src_templates}"
+  )
+
+  local f
+  for f in "${json_files[@]}"; do
+    if [[ ! -f "${f}" ]]; then
+      die "JSON obrigatório ausente no repositório: ${f}"
+    fi
+    if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "${f}" 2>/dev/null; then
+      die "JSON inválido: ${f}"
+    fi
+  done
+  log "Todos os JSONs obrigatórios são válidos."
+}
+
+install_default_configs() {
+  log "Instalando configurações padrão (somente se ausentes)..."
+  local src_config="${REPO_ROOT}/opt/hmg-soar/config"
+  local dest_config="${APP_DIR}/config"
+
+  local config_files=(
+    generic_update_policy.json
+    remediation_allowlist.json
+    remediation_providers.json
+    risk_acceptance.json
+    sla_policy.json
+    treatment_policy.json
+  )
+
+  local f
+  for f in "${config_files[@]}"; do
+    local src="${src_config}/${f}"
+    local dest="${dest_config}/${f}"
+    if [[ ! -f "${src}" ]]; then
+      die "Arquivo de configuração padrão ausente no repositório: ${src}"
+    fi
+    if [[ -f "${dest}" ]]; then
+      log "  Preservado (existente): ${f}"
+    else
+      install -o "${APP_USER}" -g "${WEB_GROUP}" -m 0640 "${src}" "${dest}"
+      log "  Instalado: ${f}"
+    fi
+  done
+}
+
 install_app_files() {
   log "Instalando aplicação em ${APP_DIR}..."
 
@@ -194,21 +251,66 @@ install_app_files() {
 }
 
 validate_python() {
-log "Validando sintaxe Python..."
+  log "Validando sintaxe Python de todos os módulos de produção..."
 
-runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/analyserV1.py"
+  local py_files=()
+  py_files+=("${APP_DIR}/analyserV1.py")
+  py_files+=("${APP_DIR}/soar_api.py")
 
-if [[ -f "${APP_DIR}/context_bootstrap.py" ]]; then
-runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/context_bootstrap.py"
-fi
+  # Módulos opcionais
+  local optional
+  for optional in context_bootstrap.py preview_dashboard.py preview_server.py; do
+    if [[ -f "${APP_DIR}/${optional}" ]]; then
+      py_files+=("${APP_DIR}/${optional}")
+    fi
+  done
 
-if [[ -f "${APP_DIR}/preview_dashboard.py" ]]; then
-runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/preview_dashboard.py"
-fi
+  # Todos os .py em remediation/
+  while IFS= read -r -d '' pyf; do
+    py_files+=("${pyf}")
+  done < <(find "${APP_DIR}/remediation" -name '*.py' -print0 2>/dev/null || true)
 
-if [[ -f "${APP_DIR}/preview_server.py" ]]; then
-runuser -u "${APP_USER}" -- python3 -m py_compile "${APP_DIR}/preview_server.py"
-fi
+  local f
+  for f in "${py_files[@]}"; do
+    if ! PYTHONDONTWRITEBYTECODE=1 runuser -u "${APP_USER}" -- python3 -c "
+import sys, py_compile
+try:
+    py_compile.compile(sys.argv[1], doraise=True)
+except py_compile.PyCompileError as e:
+    print(f'Erro de sintaxe: {e}', file=sys.stderr)
+    sys.exit(1)
+" "${f}"; then
+      die "Falha na validação Python: ${f}"
+    fi
+  done
+
+  # Smoke test de importação (sem iniciar servidor)
+  log "Smoke test de importação dos módulos de remediação..."
+  if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="${APP_DIR}" runuser -u "${APP_USER}" -- python3 -c "
+import importlib, sys
+modules = [
+    'remediation',
+    'remediation.engine',
+    'remediation.cache',
+    'remediation.rate_limiter',
+    'remediation.validation',
+    'remediation.templates',
+    'remediation.providers.wazuh_provider',
+]
+for mod in modules:
+    try:
+        importlib.import_module(mod)
+    except Exception as e:
+        print(f'Falha ao importar {mod}: {e}', file=sys.stderr)
+        sys.exit(1)
+"; then
+    die "Falha no smoke test de importação dos módulos de remediação."
+  fi
+
+  # Limpar bytecode gerado
+  find "${APP_DIR}" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+  find "${APP_DIR}" -name '*.pyc' -delete 2>/dev/null || true
+  log "Validação Python concluída com sucesso."
 }
 
 configure_web_run_mode() {
@@ -327,7 +429,7 @@ secure_credentials_env() {
 }
 
 install_systemd() {
-  log "Instalando unidades systemd, se existirem no repositório..."
+  log "Instalando unidades systemd..."
 
   if [[ -f "${REPO_ROOT}/systemd/${SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
@@ -356,13 +458,60 @@ install_systemd() {
 
   systemctl daemon-reload
 
+  # Timer: enable e verificar
   if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
-    systemctl enable --now "${TIMER_FILE}" >/dev/null 2>&1 || true
+    systemctl enable --now "${TIMER_FILE}"
+    if ! systemctl is-active --quiet "${TIMER_FILE}"; then
+      warn "Timer ${TIMER_FILE} não está ativo após enable."
+      systemctl status "${TIMER_FILE}" --no-pager || true
+      die "Falha ao ativar timer ${TIMER_FILE}."
+    fi
+    log "Timer ${TIMER_FILE} ativo."
   fi
 
+  # API: enable, restart e health check
   if [[ -f "/etc/systemd/system/${API_SERVICE_FILE}" ]]; then
-    systemctl enable --now "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
-    systemctl restart "${API_SERVICE_FILE}" >/dev/null 2>&1 || true
+    systemctl enable --now "${API_SERVICE_FILE}"
+    systemctl restart "${API_SERVICE_FILE}"
+
+    if ! systemctl is-active --quiet "${API_SERVICE_FILE}"; then
+      warn "API ${API_SERVICE_FILE} não está ativa após restart."
+      systemctl status "${API_SERVICE_FILE}" --no-pager || true
+      journalctl -u "${API_SERVICE_FILE}" -n 20 --no-pager || true
+      die "Falha ao iniciar a API ${API_SERVICE_FILE}."
+    fi
+
+    # Health check local
+    log "Verificando health da API em http://127.0.0.1:8765/health..."
+    local health_ok=0
+    local attempt
+    for attempt in 1 2 3 4 5; do
+      sleep 2
+      if python3 -c "
+import urllib.request, json, sys
+try:
+    req = urllib.request.Request('http://127.0.0.1:8765/health', method='GET')
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        if resp.status == 200:
+            data = json.loads(resp.read())
+            if data.get('status') == 'ok':
+                sys.exit(0)
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+        health_ok=1
+        break
+      fi
+    done
+
+    if [[ "${health_ok}" -ne 1 ]]; then
+      warn "Health check da API falhou após 5 tentativas."
+      systemctl status "${API_SERVICE_FILE}" --no-pager || true
+      journalctl -u "${API_SERVICE_FILE}" -n 30 --no-pager || true
+      die "API não respondeu ao health check em http://127.0.0.1:8765/health."
+    fi
+    log "API respondendo corretamente ao health check."
   fi
 }
 
@@ -543,17 +692,29 @@ run_report_once_if_possible() {
 
   if [[ -f "${ETC_DIR}/credentials.env" ]]; then
     log "Executando serviço real uma vez para publicar o dashboard..."
-    systemctl restart "${SERVICE_FILE}" || true
+    if ! systemctl restart "${SERVICE_FILE}"; then
+      warn "Falha ao executar ${SERVICE_FILE}."
+      systemctl status "${SERVICE_FILE}" --no-pager || true
+      journalctl -u "${SERVICE_FILE}" -n 20 --no-pager || true
+      die "Execução inicial do serviço de relatório falhou."
+    fi
   else
-    warn "Arquivo ${ETC_DIR}/credentials.env não encontrado. Gerando bootstrap inicial offline."
+    warn "Credenciais não encontradas em ${ETC_DIR}/credentials.env. Gerando bootstrap offline."
   fi
 
   log "Executando bootstrap de contexto (context_bootstrap.py)..."
-  python3 "${APP_DIR}/context_bootstrap.py" --auto || true
+  if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="${APP_DIR}" runuser -u "${APP_USER}" -- python3 "${APP_DIR}/context_bootstrap.py" --auto; then
+    die "Falha no bootstrap de contexto (context_bootstrap.py)."
+  fi
 
   if [[ -f "${ETC_DIR}/credentials.env" ]]; then
-    log "Executando novamente hmg-soar-report.service após o bootstrap..."
-    systemctl restart "${SERVICE_FILE}" || true
+    log "Executando novamente ${SERVICE_FILE} após o bootstrap..."
+    if ! systemctl restart "${SERVICE_FILE}"; then
+      warn "Falha na segunda execução do ${SERVICE_FILE}."
+      systemctl status "${SERVICE_FILE}" --no-pager || true
+      journalctl -u "${SERVICE_FILE}" -n 20 --no-pager || true
+      die "Segunda execução do serviço de relatório falhou."
+    fi
     log "Últimas linhas do serviço:"
     journalctl -u "${SERVICE_FILE}" -n 40 --no-pager || true
   fi
@@ -602,6 +763,8 @@ main() {
 
   create_user_and_dirs
   install_app_files
+  validate_json_configs
+  install_default_configs
   ensure_api_audit_dirs
   validate_python
   configure_web_run_mode
@@ -615,4 +778,6 @@ main() {
   final_message
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
