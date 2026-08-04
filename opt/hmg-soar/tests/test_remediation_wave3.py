@@ -319,12 +319,23 @@ class TestNodeSyntaxCheck:
 
     def test_node_check_rendered_js(self, rendered_js):
         """node --check passa no JavaScript renderizado (exit code 0)."""
+        import shutil
+        import subprocess
+        node_bin = shutil.which("node")
+        if node_bin is None:
+            pytest.skip("Node.js não disponível; validação node --check não executada")
         with tempfile.NamedTemporaryFile(suffix=".js", mode="w", encoding="utf-8", delete=False) as f:
             f.write(rendered_js)
             temp_path = Path(f.name)
         try:
-            status = os.system(f'node --check "{temp_path}"')
-            assert status == 0, f"node --check falhou com exit code {status}"
+            result = subprocess.run(
+                [node_bin, "--check", str(temp_path)],
+                capture_output=True, text=True, timeout=30
+            )
+            assert result.returncode == 0, (
+                f"node --check falhou (rc={result.returncode}).\n"
+                f"stderr: {result.stderr}"
+            )
         finally:
             if temp_path.exists():
                 temp_path.unlink()
