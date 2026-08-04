@@ -11,6 +11,7 @@ HTPASSWD_FILE="${HTPASSWD_FILE:-/etc/nginx/.htpasswd-wazuh-soar}"
 SNIPPET_FILE="${SNIPPET_FILE:-/etc/nginx/snippets/eyemole-soar-locations.conf}"
 SERVICE_FILE="${SERVICE_FILE:-hmg-soar-report.service}"
 TIMER_FILE="${TIMER_FILE:-hmg-soar-report.timer}"
+SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TS="$(date +%Y%m%d-%H%M%S)"
@@ -101,6 +102,28 @@ apt-get install -y "${pkg_name}"
 else
 die "Comando '${bin_name}' ausente. Instale o pacote '${pkg_name}' manualmente."
 fi
+}
+
+ensure_python_runtime_dependencies() {
+  log "Verificando dependências Python de runtime..."
+
+  if python3 -c "import requests, urllib3" 2>/dev/null; then
+    log "Dependências Python de runtime já disponíveis."
+    return 0
+  fi
+
+  log "Instalando dependências Python de runtime..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y
+    apt-get install -y python3-requests python3-urllib3
+  else
+    die "Módulos Python 'requests' e 'urllib3' ausentes. Instale-os manualmente (python3-requests, python3-urllib3)."
+  fi
+
+  if ! python3 -c "import requests, urllib3" 2>/dev/null; then
+    die "Módulos Python 'requests' e 'urllib3' continuam indisponíveis após instalação."
+  fi
+  log "Dependências Python de runtime instaladas com sucesso."
 }
 
 backup_path() {
@@ -434,7 +457,7 @@ install_systemd() {
   if [[ -f "${REPO_ROOT}/systemd/${SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
       "${REPO_ROOT}/systemd/${SERVICE_FILE}" \
-      "/etc/systemd/system/${SERVICE_FILE}"
+      "${SYSTEMD_UNIT_DIR}/${SERVICE_FILE}"
   else
     warn "Service não encontrado no repo: systemd/${SERVICE_FILE}"
   fi
@@ -442,7 +465,7 @@ install_systemd() {
   if [[ -f "${REPO_ROOT}/systemd/${TIMER_FILE}" ]]; then
     install -o root -g root -m 0644 \
       "${REPO_ROOT}/systemd/${TIMER_FILE}" \
-      "/etc/systemd/system/${TIMER_FILE}"
+      "${SYSTEMD_UNIT_DIR}/${TIMER_FILE}"
   else
     warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
   fi
@@ -451,7 +474,7 @@ install_systemd() {
   if [[ -f "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
       "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" \
-      "/etc/systemd/system/${API_SERVICE_FILE}"
+      "${SYSTEMD_UNIT_DIR}/${API_SERVICE_FILE}"
   else
     warn "Service API não encontrado no repo: systemd/${API_SERVICE_FILE}"
   fi
@@ -459,7 +482,7 @@ install_systemd() {
   systemctl daemon-reload
 
   # Timer: enable e verificar
-  if [[ -f "/etc/systemd/system/${TIMER_FILE}" ]]; then
+  if [[ -f "${SYSTEMD_UNIT_DIR}/${TIMER_FILE}" ]]; then
     systemctl enable --now "${TIMER_FILE}"
     if ! systemctl is-active --quiet "${TIMER_FILE}"; then
       warn "Timer ${TIMER_FILE} não está ativo após enable."
@@ -470,7 +493,7 @@ install_systemd() {
   fi
 
   # API: enable, restart e health check
-  if [[ -f "/etc/systemd/system/${API_SERVICE_FILE}" ]]; then
+  if [[ -f "${SYSTEMD_UNIT_DIR}/${API_SERVICE_FILE}" ]]; then
     systemctl enable --now "${API_SERVICE_FILE}"
     systemctl restart "${API_SERVICE_FILE}"
 
@@ -685,7 +708,7 @@ systemctl reload nginx
 }
 
 run_report_once_if_possible() {
-  if [[ ! -f "/etc/systemd/system/${SERVICE_FILE}" ]]; then
+  if [[ ! -f "${SYSTEMD_UNIT_DIR}/${SERVICE_FILE}" ]]; then
     warn "Service systemd não instalado. Pulando execução."
     return 0
   fi
@@ -751,6 +774,8 @@ main() {
   install_package_if_missing python3 python3
   install_package_if_missing rsync rsync
   install_package_if_missing nginx nginx
+
+  ensure_python_runtime_dependencies
 
   mkdir -p "${BACKUP_DIR}"
 

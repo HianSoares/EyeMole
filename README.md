@@ -383,6 +383,12 @@ O EyeMole oferece orientação de correção para achados de vulnerabilidade, ap
 - **Gating por confiança:** orientações com comandos são exibidas apenas quando o nível de confiança é `high` ou `medium`. Achados com confiança `low` recebem apenas texto descritivo.
 - **Auditoria de ações:** toda visualização e cópia de orientação é registrada no log de auditoria com timestamp, usuário e ação realizada (`view` ou `copy`).
 
+### Dependências de runtime
+
+O serviço requer Python 3 com os módulos `requests` e `urllib3`. O instalador verifica e instala automaticamente os pacotes do sistema (`python3-requests`, `python3-urllib3`) em Debian/Ubuntu. Em outros sistemas, instale manualmente antes de executar `install.sh`.
+
+Node.js **não** é necessário em produção — é usado apenas para validação de sintaxe JavaScript durante o desenvolvimento.
+
 ### Instalação de configurações padrão
 
 - Em uma **instalação nova (fresh install)**, os arquivos de configuração padrão são instalados automaticamente em `/opt/hmg-soar/config/`:

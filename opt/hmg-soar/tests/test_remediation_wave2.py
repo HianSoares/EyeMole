@@ -1349,13 +1349,21 @@ class TestRegressionAnalyserUntouched:
         assert analyser.exists(), "analyserV1.py deve existir"
 
 
-# TEST 47: Frontend untouched
-class TestRegressionFrontendUntouched:
-    """Test 47: index.html não foi modificado pelo Wave 2."""
+# TEST 47: Frontend HTML template integrity
+class TestRegressionFrontendTemplate:
+    """Test 47: HTML_TEMPLATE do analyserV1 existe e contém estrutura válida."""
 
-    def test_index_html_exists(self):
-        index_html = Path(__file__).parent.parent.parent.parent / "var-www-wazuh-soar" / "index.html"
-        assert index_html.exists(), "index.html deve existir"
+    def test_html_template_exists_and_valid(self):
+        """HTML_TEMPLATE está presente, é string não vazia com estrutura HTML."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        import analyserV1
+        tpl = analyserV1.HTML_TEMPLATE
+        assert isinstance(tpl, str), "HTML_TEMPLATE deve ser string"
+        assert len(tpl) > 1000, "HTML_TEMPLATE deve ser substancial"
+        assert "<!DOCTYPE html>" in tpl or "<!doctype html>" in tpl.lower()
+        assert "</html>" in tpl
+        assert "</body>" in tpl
 
 
 # TEST 48: No forbidden imports in new code

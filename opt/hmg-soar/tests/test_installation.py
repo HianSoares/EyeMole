@@ -749,17 +749,22 @@ class TestInstallSystemd:
 @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
 class TestRunReportOnce:
     def test_21_no_service_file_skips_gracefully(self, sandbox):
-        """run_report_once_if_possible skips if service file missing."""
-        script = dedent("""\
+        """run_report_once_if_possible skips if service file missing in sandbox."""
+        fake_systemd = sandbox["tmp_path"] / "fake_systemd"
+        fake_systemd.mkdir()
+        systemd_wsl = _to_wsl_path(fake_systemd)
+        # Directory exists but has no service file inside
+        script = dedent(f"""\
             set -Eeuo pipefail
             SERVICE_FILE="hmg-soar-report.service"
+            SYSTEMD_UNIT_DIR="{systemd_wsl}"
 
-            log() { echo "[+] $*"; }
-            warn() { echo "[!] $*" >&2; }
-            die() { echo "[x] $*" >&2; exit 1; }
+            log() {{ echo "[+] $*"; }}
+            warn() {{ echo "[!] $*" >&2; }}
+            die() {{ echo "[x] $*" >&2; exit 1; }}
 
-            # Logic from run_report_once_if_possible
-            if [[ ! -f "/etc/systemd/system/${SERVICE_FILE}" ]]; then
+            # Logic from run_report_once_if_possible using SYSTEMD_UNIT_DIR
+            if [[ ! -f "${{SYSTEMD_UNIT_DIR}}/${{SERVICE_FILE}}" ]]; then
               warn "Service systemd não instalado. Pulando execução."
               exit 0
             fi
@@ -887,3 +892,173 @@ class TestSourceGuard:
             f"Source guard failed. stdout: {result.stdout}\n"
             f"stderr: {result.stderr}"
         )
+
+
+# ============================================================================
+# TEST 26-30: Runtime dependencies and SYSTEMD_UNIT_DIR isolation
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestRuntimeDependencies:
+    def test_26_imports_present_no_apt(self, sandbox):
+        """When requests/urllib3 importable, apt-get is NOT called."""
+        script = dedent("""\
+            set -Eeuo pipefail
+            log() { echo "[+] $*"; }
+            die() { echo "[x] $*" >&2; exit 1; }
+
+            # Mock: python3 import succeeds
+            python3() {
+                if [[ "$2" == "import requests, urllib3" ]]; then
+                    return 0
+                fi
+                command python3 "$@"
+            }
+            apt_called=0
+            apt-get() { apt_called=1; }
+
+            ensure_python_runtime_dependencies() {
+              log "Verificando dependências Python de runtime..."
+              if python3 -c "import requests, urllib3" 2>/dev/null; then
+                log "Dependências Python de runtime já disponíveis."
+                return 0
+              fi
+              die "Should not reach here"
+            }
+
+            ensure_python_runtime_dependencies
+            [[ "${apt_called}" -eq 0 ]] || die "apt-get should not be called"
+            echo "OK_NO_APT"
+        """)
+        result = _run_bash(script)
+        assert "OK_NO_APT" in result.stdout
+
+    def test_27_imports_absent_calls_apt(self, sandbox):
+        """When imports fail initially, apt-get install is called."""
+        script = dedent("""\
+            set -Eeuo pipefail
+            log() { echo "[+] $*"; }
+            die() { echo "[x] $*" >&2; exit 1; }
+
+            call_count=0
+            python3() {
+                if [[ "$2" == "import requests, urllib3" ]]; then
+                    call_count=$((call_count + 1))
+                    if [[ "${call_count}" -le 1 ]]; then
+                        return 1
+                    fi
+                    return 0
+                fi
+                command python3 "$@"
+            }
+            apt_packages=""
+            apt-get() {
+                if [[ "$1" == "install" ]]; then
+                    shift; shift  # skip -y
+                    apt_packages="$*"
+                fi
+                return 0
+            }
+            command() {
+                if [[ "$2" == "apt-get" ]]; then return 0; fi
+                builtin command "$@"
+            }
+
+            ensure_python_runtime_dependencies() {
+              log "Verificando dependências Python de runtime..."
+              if python3 -c "import requests, urllib3" 2>/dev/null; then
+                log "Dependências Python de runtime já disponíveis."
+                return 0
+              fi
+              log "Instalando dependências Python de runtime..."
+              if command -v apt-get >/dev/null 2>&1; then
+                apt-get update -y
+                apt-get install -y python3-requests python3-urllib3
+              else
+                die "Módulos ausentes."
+              fi
+              if ! python3 -c "import requests, urllib3" 2>/dev/null; then
+                die "Módulos continuam indisponíveis."
+              fi
+              log "Instaladas."
+            }
+
+            ensure_python_runtime_dependencies
+            echo "PKGS=${apt_packages}"
+        """)
+        result = _run_bash(script)
+        assert "python3-requests" in result.stdout
+        assert "python3-urllib3" in result.stdout
+
+    def test_28_import_still_fails_after_install_dies(self, sandbox):
+        """If imports still fail after apt-get, installer dies."""
+        script = dedent("""\
+            set -Eeuo pipefail
+            log() { echo "[+] $*"; }
+            die() { echo "[x] $*" >&2; exit 1; }
+
+            python3() {
+                if [[ "$2" == "import requests, urllib3" ]]; then
+                    return 1
+                fi
+                command python3 "$@"
+            }
+            apt-get() { return 0; }
+            command() {
+                if [[ "$2" == "apt-get" ]]; then return 0; fi
+                builtin command "$@"
+            }
+
+            ensure_python_runtime_dependencies() {
+              log "Verificando..."
+              if python3 -c "import requests, urllib3" 2>/dev/null; then
+                return 0
+              fi
+              if command -v apt-get >/dev/null 2>&1; then
+                apt-get update -y
+                apt-get install -y python3-requests python3-urllib3
+              else
+                die "Módulos ausentes."
+              fi
+              if ! python3 -c "import requests, urllib3" 2>/dev/null; then
+                die "Módulos continuam indisponíveis."
+              fi
+            }
+
+            ensure_python_runtime_dependencies
+        """)
+        _run_bash(script, expect_fail=True)
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestSystemdUnitDirIsolation:
+    def test_29_default_systemd_unit_dir(self):
+        """SYSTEMD_UNIT_DIR defaults to /etc/systemd/system."""
+        content = INSTALL_SH.read_text(encoding="utf-8")
+        assert 'SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"' in content
+
+    def test_30_unit_present_in_sandbox(self, sandbox):
+        """With unit file present in sandbox SYSTEMD_UNIT_DIR, skip path is NOT taken."""
+        fake_systemd = sandbox["tmp_path"] / "fake_systemd_present"
+        fake_systemd.mkdir()
+        (fake_systemd / "hmg-soar-report.service").write_text("[Service]\n")
+        systemd_wsl = _to_wsl_path(fake_systemd)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            SERVICE_FILE="hmg-soar-report.service"
+            SYSTEMD_UNIT_DIR="{systemd_wsl}"
+
+            log() {{ echo "[+] $*"; }}
+            warn() {{ echo "[!] $*" >&2; }}
+            die() {{ echo "[x] $*" >&2; exit 1; }}
+
+            if [[ ! -f "${{SYSTEMD_UNIT_DIR}}/${{SERVICE_FILE}}" ]]; then
+              warn "Pulando."
+              exit 0
+            fi
+            echo "UNIT_FOUND"
+        """)
+        result = _run_bash(script)
+        assert "UNIT_FOUND" in result.stdout
