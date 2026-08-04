@@ -18,6 +18,10 @@
 
 - docs: document remediation guidance installation and operations
 
+### Adicionado
+
+- feat(uninstaller): add safe EyeMole removal workflow with dry-run, preserve, purge modes
+
 ---
 
 ## [Fase 4] - 2026-06-23 - Premium Dashboard
