@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Configuração de providers de remediação — ordem de prioridade"
+  },
+  "providers": [
+    {
+      "name": "wazuh_snapshot",
+      "enabled": true,
+      "priority": 1,
+      "timeout_seconds": 5
+    }
+  ],
+  "future_providers": [
+    {"name": "grype", "enabled": false, "priority": 0},
+    {"name": "osv", "enabled": false, "priority": 0},
+    {"name": "compliance_as_code", "enabled": false, "priority": 0}
+  ]
+}

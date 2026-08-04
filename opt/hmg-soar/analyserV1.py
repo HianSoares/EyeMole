@@ -5309,6 +5309,7 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
         recurring = (occ_count >= recurring_threshold)
 
         vuln_list.append({
+            "finding_id": generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity),
             "agent_id": r.agent_id,
             "agent_name": r.agent_name,
             "cve": r.cve,
@@ -6785,6 +6786,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       .risk-flow-badges { width: 100%; }
       .risk-flow-chart { height: 430px; }
       .risk-flow-packages { margin-top: 0.45rem; padding-top: 0.5rem; }
+    }
+    .vm-spinner {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -9736,6 +9744,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           if (ev.target === ov && typeof closeClassifyModal === 'function') closeClassifyModal();
         });
       } catch (e) { console.warn('[EyeMole][init:modal-listeners]', e); }
+
+      // Modal de orientação: ESC fecha; clique no overlay (fora do painel) fecha.
+      try {
+        document.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Escape') {
+            const gov = document.getElementById('guidance-modal-overlay');
+            if (gov && gov.style.display !== 'none' && typeof closeGuidanceModal === 'function') closeGuidanceModal();
+          }
+        });
+        const gov = document.getElementById('guidance-modal-overlay');
+        if (gov) gov.addEventListener('click', (ev) => {
+          if (ev.target === gov && typeof closeGuidanceModal === 'function') closeGuidanceModal();
+        });
+
+        const closeBtn = document.getElementById('guidance-close-btn');
+        if (closeBtn) closeBtn.addEventListener('click', () => closeGuidanceModal());
+        const closeFooterBtn = document.getElementById('guidance-close-footer-btn');
+        if (closeFooterBtn) closeFooterBtn.addEventListener('click', () => closeGuidanceModal());
+
+        const copyRemBtn = document.getElementById('guidance-copy-remediation-btn');
+        if (copyRemBtn) copyRemBtn.addEventListener('click', () => copyGuidanceCommand('remediation', copyRemBtn));
+        const copyVerBtn = document.getElementById('guidance-copy-verification-btn');
+        if (copyVerBtn) copyVerBtn.addEventListener('click', () => copyGuidanceCommand('verification', copyVerBtn));
+
+        if (typeof setupGuidanceFocusTrap === 'function') setupGuidanceFocusTrap();
+      } catch (e) { console.warn('[EyeMole][init:guidance-modal-listeners]', e); }
     });
 
     window.addEventListener('hashchange', () => {
@@ -10018,6 +10052,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const escAgentId = JSON.stringify(String(item.agent_id));
         const escAgentName = JSON.stringify(String(item.agent_name));
 
+        const isValidFindingId = item.finding_id && /^[A-Fa-f0-9]{64}$/.test(item.finding_id);
+        const guidanceBtnHtml = isValidFindingId ? `<button type="button" class="vm-btn guidance-btn" style="padding:0.4rem 0.75rem; font-size:0.74rem; font-weight:750; margin-left:0.5rem;" data-finding-id="${escapeHtmlAttribute(item.finding_id)}" aria-label="Ver correção para ${escapeHtmlAttribute(item.cve)}">Ver correção</button>` : '';
+
         card.innerHTML = `
           <div class="col-vuln">
             <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
@@ -10046,9 +10083,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
           <div class="col-actions">
             <button class="vm-btn" style="padding:0.4rem 0.75rem; font-size:0.74rem; font-weight:750;" onclick='openClassifyModal(${escAgentId}, ${escAgentName})'>⚙️ Editar Contexto</button>
+            ${guidanceBtnHtml}
           </div>
         `;
         container.appendChild(card);
+
+        if (isValidFindingId) {
+          const btn = card.querySelector('.guidance-btn');
+          if (btn) {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              openGuidanceModal(item.finding_id, btn);
+            });
+          }
+        }
       });
       renderPagination(maxPage);
     }
@@ -13644,6 +13692,351 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         showChartEmptyState(containerId, 'Erro ao gerar o gráfico.');
       }
     }
+    // ==========================================
+    // Wave 3 — Orientação de Correção (Remediation Guidance)
+    // ==========================================
+    let activeGuidanceRecord = null;
+    let guidanceModalTriggerBtn = null;
+    const pendingGuidanceRequests = new Set();
+    let activeGuidanceRequestId = 0;
+
+    async function openGuidanceModal(findingId, triggerBtn) {
+      // 1. Validar findingId
+      if (!findingId || !/^[A-Fa-f0-9]{64}$/.test(findingId)) {
+        return;
+      }
+
+      // 2. Validar/capturar elemento de origem com segurança
+      let safeBtn = null;
+      let originalText = '';
+      try {
+        if (triggerBtn && typeof triggerBtn === 'object' && 'disabled' in triggerBtn) {
+          safeBtn = triggerBtn;
+          originalText = safeBtn.textContent || '';
+        }
+      } catch (e) {
+        // botão inválido — prosseguir sem ele
+      }
+
+      // 3. Verificar se já existe requisição pendente
+      if (pendingGuidanceRequests.has(findingId)) {
+        return;
+      }
+
+      // 4. Gerar identificador único da requisição (monotônico)
+      activeGuidanceRequestId++;
+      const thisRequestId = activeGuidanceRequestId;
+
+      // 5. Adicionar ao Set — DENTRO do bloco protegido
+      pendingGuidanceRequests.add(findingId);
+
+      try {
+        // Desativa o botão de origem e exibe carregamento
+        guidanceModalTriggerBtn = safeBtn;
+        if (safeBtn) {
+          safeBtn.disabled = true;
+          safeBtn.textContent = 'Carregando...';
+        }
+
+        // Limpeza completa do modal antes de exibir novo conteúdo
+        activeGuidanceRecord = null;
+        document.getElementById('guidance-meta-cve').textContent = '';
+        document.getElementById('guidance-meta-provider').textContent = '';
+        document.getElementById('guidance-meta-package').textContent = '';
+        document.getElementById('guidance-meta-confidence').textContent = '';
+        document.getElementById('guidance-meta-confidence').className = 'badge';
+        document.getElementById('guidance-meta-confidence').style.cssText = '';
+        document.getElementById('guidance-meta-installed').textContent = '';
+        document.getElementById('guidance-meta-fixed').textContent = 'N/D';
+        document.getElementById('guidance-meta-rationale').textContent = '';
+        document.getElementById('guidance-remediation-code').textContent = '';
+        document.getElementById('guidance-verification-code').textContent = '';
+
+        document.getElementById('guidance-remediation-section').style.display = 'none';
+        document.getElementById('guidance-verification-section').style.display = 'none';
+        document.getElementById('guidance-content').style.display = 'none';
+
+        const msgBox = document.getElementById('guidance-message-box');
+        msgBox.style.display = 'none';
+        msgBox.textContent = '';
+        msgBox.className = 'classify-msg';
+
+        // Exibe estado de carregamento do modal
+        document.getElementById('guidance-loading').style.display = 'block';
+        document.getElementById('guidance-modal-overlay').style.display = 'flex';
+
+        // Move o foco inicial para o botão de fechar do modal por acessibilidade
+        const closeBtn = document.getElementById('guidance-close-btn');
+        if (closeBtn) closeBtn.focus();
+
+        const resp = await fetch(`/soar-api/remediation-guidance/${findingId}`, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        // Verificar se esta requisição ainda é a ativa (descarte de resposta obsoleta)
+        if (thisRequestId !== activeGuidanceRequestId) {
+          return;
+        }
+
+        document.getElementById('guidance-loading').style.display = 'none';
+
+        if (resp.status === 401) {
+          showGuidanceError('Sessão não autorizada ou expirada.', 'error');
+          return;
+        }
+        if (resp.status === 404) {
+          showGuidanceError('Orientação expirada ou achado indisponível.', 'error');
+          return;
+        }
+        if (resp.status === 429) {
+          const retryHeader = resp.headers.get('Retry-After');
+          let seconds = parseInt(retryHeader, 10);
+          if (isNaN(seconds) || seconds <= 0) {
+            seconds = 60;
+          }
+          showGuidanceError(`Muitas requisições. Por favor, aguarde ${seconds} segundos.`, 'warning');
+          return;
+        }
+        if (resp.status === 503) {
+          showGuidanceError('Serviço temporariamente indisponível. Tente novamente mais tarde.', 'warning');
+          return;
+        }
+        if (!resp.ok) {
+          showGuidanceError('Erro interno do servidor ao consultar orientação.', 'error');
+          return;
+        }
+
+        let record = null;
+        try {
+          record = await resp.json();
+        } catch (e) {
+          if (thisRequestId !== activeGuidanceRequestId) return;
+          showGuidanceError('Resposta inválida do servidor.', 'error');
+          return;
+        }
+
+        // Verificar novamente após segundo await (json parse)
+        if (thisRequestId !== activeGuidanceRequestId) {
+          return;
+        }
+
+        if (!record || typeof record !== 'object') {
+          showGuidanceError('Resposta inválida do servidor.', 'error');
+          return;
+        }
+
+        renderGuidanceContent(record);
+
+      } catch (err) {
+        // Verificar se esta requisição ainda é a ativa antes de alterar UI
+        if (thisRequestId !== activeGuidanceRequestId) return;
+        document.getElementById('guidance-loading').style.display = 'none';
+        showGuidanceError('Erro de conexão ao buscar orientação.', 'error');
+      } finally {
+        pendingGuidanceRequests.delete(findingId);
+        if (safeBtn) {
+          safeBtn.disabled = false;
+          safeBtn.textContent = originalText;
+        }
+      }
+    }
+
+    function renderGuidanceContent(record) {
+      // Validação de segurança de contrato - fail-closed
+      if (!record || typeof record.status !== 'string' || record.execution_allowed !== false) {
+        showGuidanceError('Dados de orientação inválidos ou inconsistentes.', 'error');
+        return;
+      }
+
+      activeGuidanceRecord = record;
+
+      document.getElementById('guidance-content').style.display = 'flex';
+
+      // Popula campos públicos
+      document.getElementById('guidance-meta-cve').textContent = record.cve || 'N/A';
+      document.getElementById('guidance-meta-provider').textContent = record.source || 'Wazuh';
+      document.getElementById('guidance-meta-package').textContent = record.package_name || 'N/A';
+      document.getElementById('guidance-meta-installed').textContent = record.installed_version || 'N/A';
+      document.getElementById('guidance-meta-fixed').textContent = record.fixed_version || 'N/D';
+
+      const confidenceSpan = document.getElementById('guidance-meta-confidence');
+      const conf = String(record.confidence || '').toLowerCase();
+      confidenceSpan.textContent = record.confidence || 'unknown';
+
+      if (conf === 'high') {
+        confidenceSpan.className = 'badge';
+        confidenceSpan.style.background = 'rgba(16, 185, 129, 0.1)';
+        confidenceSpan.style.color = '#34d399';
+        confidenceSpan.style.border = '1px solid rgba(16, 185, 129, 0.2)';
+      } else if (conf === 'medium') {
+        confidenceSpan.className = 'badge';
+        confidenceSpan.style.background = 'rgba(245, 158, 11, 0.1)';
+        confidenceSpan.style.color = '#fbbf24';
+        confidenceSpan.style.border = '1px solid rgba(245, 158, 11, 0.2)';
+      } else if (conf === 'low') {
+        confidenceSpan.className = 'badge';
+        confidenceSpan.style.background = 'rgba(239, 68, 68, 0.1)';
+        confidenceSpan.style.color = '#f87171';
+        confidenceSpan.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+      } else {
+        confidenceSpan.className = 'badge';
+        confidenceSpan.style.background = 'rgba(255, 255, 255, 0.05)';
+        confidenceSpan.style.color = 'var(--text-muted)';
+        confidenceSpan.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+      }
+
+      const rationaleText = record.rationale || record.reason || 'Nenhuma justificativa fornecida.';
+      document.getElementById('guidance-meta-rationale').textContent = rationaleText;
+
+      // Exibição estrita de comandos
+      const isStatusSuccess = record.status === 'success';
+      const isConfidenceSufficient = conf === 'high' || conf === 'medium';
+      const hasCommand = typeof record.command === 'string' && record.command.trim().length > 0;
+
+      if (isStatusSuccess && isConfidenceSufficient && hasCommand) {
+        document.getElementById('guidance-remediation-code').textContent = record.command.trim();
+        document.getElementById('guidance-remediation-section').style.display = 'flex';
+
+        const hasVerification = typeof record.verification_command === 'string' && record.verification_command.trim().length > 0;
+        if (hasVerification) {
+          document.getElementById('guidance-verification-code').textContent = record.verification_command.trim();
+          document.getElementById('guidance-verification-section').style.display = 'flex';
+        } else {
+          document.getElementById('guidance-verification-section').style.display = 'none';
+        }
+      } else {
+        document.getElementById('guidance-remediation-section').style.display = 'none';
+        document.getElementById('guidance-verification-section').style.display = 'none';
+
+        const reason = record.reason || 'Orientação textual disponível. Consulte o canal oficial do fornecedor.';
+        showGuidanceError(reason, 'info');
+      }
+    }
+
+    function showGuidanceError(msg, kind) {
+      const msgBox = document.getElementById('guidance-message-box');
+      msgBox.textContent = msg;
+
+      let cssClass = 'classify-msg';
+      if (kind === 'error') {
+        cssClass += ' error';
+        msgBox.style.background = 'rgba(239, 68, 68, 0.1)';
+        msgBox.style.color = '#f87171';
+        msgBox.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+      } else if (kind === 'warning') {
+        cssClass += ' warning';
+        msgBox.style.background = 'rgba(245, 158, 11, 0.1)';
+        msgBox.style.color = '#fbbf24';
+        msgBox.style.border = '1px solid rgba(245, 158, 11, 0.2)';
+      } else if (kind === 'info') {
+        cssClass += ' info';
+        msgBox.style.background = 'rgba(59, 130, 246, 0.1)';
+        msgBox.style.color = '#60a5fa';
+        msgBox.style.border = '1px solid rgba(59, 130, 246, 0.2)';
+      } else {
+        msgBox.style.background = 'rgba(255, 255, 255, 0.05)';
+        msgBox.style.color = 'var(--text-muted)';
+        msgBox.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+      }
+
+      msgBox.className = cssClass;
+      msgBox.style.display = 'block';
+    }
+
+    function closeGuidanceModal() {
+      // Invalidar a requisição ativa para que respostas pendentes sejam descartadas
+      activeGuidanceRequestId++;
+      document.getElementById('guidance-modal-overlay').style.display = 'none';
+      if (guidanceModalTriggerBtn) {
+        try {
+          guidanceModalTriggerBtn.focus();
+        } catch (e) {}
+      }
+      activeGuidanceRecord = null;
+      guidanceModalTriggerBtn = null;
+    }
+
+    async function copyGuidanceCommand(type, btn) {
+      if (!activeGuidanceRecord || !activeGuidanceRecord.guidance_id) {
+        return;
+      }
+
+      let textToCopy = '';
+      if (type === 'remediation') {
+        textToCopy = activeGuidanceRecord.command;
+      } else if (type === 'verification') {
+        textToCopy = activeGuidanceRecord.verification_command;
+      }
+
+      if (!textToCopy || textToCopy.trim().length === 0) {
+        return;
+      }
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Copiando...';
+
+      try {
+        // 1. Cópia local via Clipboard API
+        await navigator.clipboard.writeText(textToCopy);
+
+        // 2. Envio da auditoria POST apenas se cópia local tiver sucesso
+        const auditResp = await fetch(`/soar-api/remediation-guidance/${activeGuidanceRecord.guidance_id}/audit`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify({ action: 'copy' })
+        });
+
+        if (auditResp.ok) {
+          btn.textContent = 'Copiado! ✓';
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = originalText;
+          }, 2000);
+        } else {
+          showGuidanceError('Ação de cópia não pôde ser confirmada pelo servidor.', 'warning');
+          btn.disabled = false;
+          btn.textContent = originalText;
+        }
+      } catch (err) {
+        showGuidanceError('Falha ao copiar para a área de transferência local.', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
+    function setupGuidanceFocusTrap() {
+      const modalOverlay = document.getElementById('guidance-modal-overlay');
+      if (!modalOverlay) return;
+
+      modalOverlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          const focusables = Array.from(modalOverlay.querySelectorAll('button:not([disabled]), [tabindex="0"]'));
+          if (focusables.length === 0) return;
+
+          const first = focusables[0];
+          const last = focusables[focusables.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === first) {
+              last.focus();
+              e.preventDefault();
+            }
+          } else {
+            if (document.activeElement === last) {
+              first.focus();
+              e.preventDefault();
+            }
+          }
+        }
+      });
+    }
+
   </script>
 
   <!-- Footer institucional -->
@@ -13656,6 +14049,91 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <span style="margin: 0 0.5rem;">·</span>
     <span>Painel passivo &amp; analítico</span>
   </footer>
+
+  <!-- Modal de Orientação de Correção (Fase 3/Wave 3) — Global (fora de qualquer tab-panel) -->
+  <div id="guidance-modal-overlay" class="classify-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="guidance-modal-title">
+    <div class="classify-modal" style="max-width: 650px;">
+      <div class="classify-modal-header">
+        <h3 id="guidance-modal-title" style="margin: 0; font-size: 1.1rem; font-weight: 800;">💡 Orientação de Correção</h3>
+        <button type="button" class="classify-close" id="guidance-close-btn" aria-label="Fechar">✕</button>
+      </div>
+      <div class="classify-modal-body" style="grid-template-columns: 1fr; display: flex; flex-direction: column; gap: 1rem;">
+
+        <!-- Loading State -->
+        <div id="guidance-loading" style="display: none; text-align: center; padding: 2rem 0;">
+          <div class="vm-spinner" style="margin: 0 auto 1rem auto; width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--eyemole-cyan); border-radius: 50%;"></div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;" aria-live="polite">Consultando orientação...</div>
+        </div>
+
+        <!-- Error/No Guidance/Status State -->
+        <div id="guidance-message-box" class="classify-msg" style="display: none; grid-column: 1 / -1; margin-bottom: 0.5rem;" aria-live="assertive"></div>
+
+        <!-- Content State -->
+        <div id="guidance-content" style="display: none; flex-direction: column; gap: 1rem;">
+          <!-- Metadata Grid -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1rem;">
+            <div class="classify-field">
+              <label>CVE</label>
+              <div id="guidance-meta-cve" style="font-size: 0.85rem; font-weight: 600; color: #fff;"></div>
+            </div>
+            <div class="classify-field">
+              <label>Provedor</label>
+              <div id="guidance-meta-provider" style="font-size: 0.85rem; font-weight: 600; color: #fff;"></div>
+            </div>
+            <div class="classify-field">
+              <label>Pacote</label>
+              <div id="guidance-meta-package" style="font-size: 0.85rem; font-weight: 600; color: #fff;"></div>
+            </div>
+            <div class="classify-field">
+              <label>Confiança</label>
+              <div><span id="guidance-meta-confidence" class="badge" style="font-size: 0.75rem;"></span></div>
+            </div>
+            <div class="classify-field">
+              <label>Versão Instalada</label>
+              <div id="guidance-meta-installed" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+            </div>
+            <div class="classify-field">
+              <label>Versão Corrigida</label>
+              <div id="guidance-meta-fixed" style="font-size: 0.85rem; color: var(--text-muted);">N/D</div>
+            </div>
+          </div>
+
+          <!-- Rationale -->
+          <div class="classify-field" style="margin-top: 0.5rem;">
+            <label>Análise / Rationale</label>
+            <div id="guidance-meta-rationale" style="font-size: 0.82rem; line-height: 1.4; color: var(--text-muted); background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; max-height: 150px; overflow-y: auto;"></div>
+          </div>
+
+          <!-- Permanent Disclaimer -->
+          <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.25); border-radius: 8px; padding: 0.75rem; display: flex; align-items: flex-start; gap: 0.6rem; margin-top: 0.5rem;">
+            <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
+            <span style="font-size: 0.78rem; color: #ffedd5; font-weight: 600; line-height: 1.35;">O EyeMole não executa este comando. Valide em homologação antes de aplicar.</span>
+          </div>
+
+          <!-- Remediation Command Section -->
+          <div id="guidance-remediation-section" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;">Comando de Correção</label>
+            <div style="position: relative;">
+              <pre style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem 5rem 0.75rem 0.75rem; overflow-x: auto; margin: 0; font-family: monospace; font-size: 0.8rem; color: #38bdf8; min-height: 38px; display: flex; align-items: center;"><code id="guidance-remediation-code"></code></pre>
+              <button type="button" class="btn" id="guidance-copy-remediation-btn" style="position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); padding: 0.3rem 0.6rem; font-size: 0.72rem; display: flex; align-items: center; gap: 0.25rem;" aria-label="Copiar comando de remediação">📋 Copiar</button>
+            </div>
+          </div>
+
+          <!-- Verification Command Section -->
+          <div id="guidance-verification-section" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;">Comando de Verificação</label>
+            <div style="position: relative;">
+              <pre style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem 5rem 0.75rem 0.75rem; overflow-x: auto; margin: 0; font-family: monospace; font-size: 0.8rem; color: #34d399; min-height: 38px; display: flex; align-items: center;"><code id="guidance-verification-code"></code></pre>
+              <button type="button" class="btn" id="guidance-copy-verification-btn" style="position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); padding: 0.3rem 0.6rem; font-size: 0.72rem; display: flex; align-items: center; gap: 0.25rem;" aria-label="Copiar comando de verificação">📋 Copiar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="classify-modal-footer">
+        <button type="button" class="btn" id="guidance-close-footer-btn">Fechar</button>
+      </div>
+    </div>
+  </div>
 
 </body>
 </html>

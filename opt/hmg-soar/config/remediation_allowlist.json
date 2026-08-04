@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Sistemas operacionais e gerenciadores de pacotes permitidos",
+    "updated_by": "security-team",
+    "updated_at": "2026-07-28T00:00:00Z"
+  },
+  "os_to_package_manager": {
+    "ubuntu": "apt",
+    "debian": "apt",
+    "raspbian": "apt",
+    "rhel8": "dnf",
+    "rhel9": "dnf",
+    "rocky": "dnf",
+    "alma": "dnf",
+    "almalinux": "dnf",
+    "fedora": "dnf",
+    "rhel7": "yum",
+    "centos7": "yum",
+    "centos": "yum",
+    "amazon_linux_2": "yum",
+    "sles": "zypper",
+    "opensuse": "zypper",
+    "alpine": "apk"
+  },
+  "validation_patterns": {
+    "package_name": "^[A-Za-z0-9._+~-]+$",
+    "version": "^[A-Za-z0-9._+~:-]+$",
+    "shell_metacharacters_reject": "[;|&$`\\\\(){}\\[\\]!#*?<>]"
+  }
+}
