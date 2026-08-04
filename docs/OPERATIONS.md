@@ -766,6 +766,30 @@ journalctl -u hmg-soar-api.service --no-pager | grep -i remediation | tail -20
 
 ---
 
+## Checklist pré-desinstalação
+
+Antes de executar `uninstall.sh`:
+
+1. Confirmar que nenhuma análise está em execução:
+   ```bash
+   systemctl status hmg-soar-report.service
+   ```
+
+2. Exportar dados de auditoria se necessário (preservados automaticamente no modo padrão)
+
+3. Anotar a localização do backup que será criado em `/opt/backup-eyemole-uninstall-<timestamp>/`
+
+4. Em caso de falha, o backup permite recuperação manual
+
+### Recuperação após falha na desinstalação
+
+Se o uninstaller falhar parcialmente:
+- O backup criado em `/opt/backup-eyemole-uninstall-*` contém todos os arquivos originais
+- O manifesto SHA-256 permite verificar integridade: `sha256sum -c MANIFEST.sha256`
+- A configuração Nginx é restaurada automaticamente se `nginx -t` falhar
+
+---
+
 ## Dados que não devem entrar no Git
 
 | Tipo | Exemplo | Motivo |

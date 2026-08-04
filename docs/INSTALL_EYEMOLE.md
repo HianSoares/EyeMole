@@ -596,6 +596,65 @@ sudo systemctl restart hmg-soar-api.service
 
 ---
 
+## 19. Desinstalação segura
+
+### Dry-run (sem alterações)
+
+```bash
+sudo ./uninstall.sh --dry-run
+```
+
+Mostra todas as ações planejadas sem executar nenhuma. Útil para revisão antes da remoção.
+
+### Desinstalação com preservação de dados
+
+```bash
+sudo ./uninstall.sh
+```
+
+- Remove serviços systemd, integração Nginx e código da aplicação
+- Preserva configurações, auditoria e relatórios em `/var/lib/eyemole-preserved/<timestamp>/`
+- Cria backup completo antes de qualquer alteração
+- Não remove o usuário de serviço
+
+### Desinstalação completa (purge)
+
+```bash
+sudo ./uninstall.sh --purge
+```
+
+Exige confirmação digitando exatamente: `PURGE EYEMOLE`
+
+Para scripts não-interativos: `sudo ./uninstall.sh --purge --yes`
+
+### Verificação pós-desinstalação
+
+```bash
+# Confirmar que serviços foram removidos
+systemctl status hmg-soar-api.service 2>&1 | grep -q "could not be found"
+
+# Confirmar que Nginx está saudável
+nginx -t
+
+# Confirmar que a porta não está em uso
+ss -tlnp | grep 8765
+
+# Localizar backup
+ls /opt/backup-eyemole-uninstall-*/MANIFEST.sha256
+```
+
+### Reinstalação posterior
+
+Após uma desinstalação com `--purge`, o sistema pode ser reinstalado:
+
+```bash
+sudo ./install.sh
+```
+
+Configurações padrão serão restauradas e novos dados serão gerados.
+
+---
+
 ## Segurança e modo de produção
 
 Consulte [Hardening de segurança e modo de produção](SECURITY_HARDENING.md) para detalhes sobre:
