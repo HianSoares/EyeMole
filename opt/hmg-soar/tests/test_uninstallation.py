@@ -97,6 +97,18 @@ def _run_bash(
         errors="replace",
     )
 
+    # Check for leaked real paths in output to prevent sandbox violation on host
+    import re
+    forbidden_real_paths = [
+        "/etc/nginx/.htpasswd-wazuh-soar",
+        "/opt/hmg-soar",
+        "/var/www/wazuh-soar",
+    ]
+    for p in forbidden_real_paths:
+        pattern = r"(?:\s|^|'|\")" + re.escape(p)
+        assert not re.search(pattern, result.stdout), f"Sandbox leak: real path '{p}' was found in stdout.\nstdout: {result.stdout}"
+        assert not re.search(pattern, result.stderr), f"Sandbox leak: real path '{p}' was found in stderr.\nstderr: {result.stderr}"
+
     if expect_fail and result.returncode == 0:
         raise AssertionError(
             f"Expected script to fail but it succeeded.\n"
@@ -400,13 +412,13 @@ class TestBackup:
         script = dedent(f"""\
             set -Eeuo pipefail
             export PATH="{stub_path}:$PATH"
+            export APP_DIR="{app_wsl}"
+            export BACKUP_ROOT="{backup_wsl}"
+            export NGINX_ROOT="/nonexistent"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{app_wsl}"
-            BACKUP_ROOT="{backup_wsl}"
             BACKUP_DIR="{backup_wsl}/backup-eyemole-uninstall-test"
             INVENTORY_FOUND=("{app_wsl}/analyserV1.py")
-            NGINX_ROOT="/nonexistent"
             # Simplified backup: copy + manifest without heavy find -exec
             mkdir -p "$BACKUP_DIR"
             cp -a "{app_wsl}/analyserV1.py" "$BACKUP_DIR/" 2>/dev/null || true
@@ -434,6 +446,7 @@ class TestBackup:
         bkp_dir_name = "backup-eyemole-uninstall-manifest-test"
         script = dedent(f"""\
             set -Eeuo pipefail
+            export BACKUP_ROOT="{backup_wsl}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             # Test the manifest-generation logic directly
@@ -466,10 +479,10 @@ class TestSystemd:
         systemd_wsl = _to_wsl_path(systemd_dir)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export SYSTEMD_UNIT_DIR="{systemd_wsl}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             systemctl() {{ return 0; }}
-            SYSTEMD_UNIT_DIR="{systemd_wsl}"
             remove_systemd_units
             echo "DONE"
         """)
@@ -486,6 +499,7 @@ class TestSystemd:
         systemd_wsl = _to_wsl_path(systemd_dir)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export SYSTEMD_UNIT_DIR="{systemd_wsl}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             # Override systemctl as a function to avoid fork overhead
@@ -497,7 +511,6 @@ class TestSystemd:
                 if [[ "$1" == "is-enabled" ]]; then return 0; fi
                 return 0
             }}
-            SYSTEMD_UNIT_DIR="{systemd_wsl}"
             stop_services
         """)
         _run_bash(script)
@@ -520,10 +533,10 @@ class TestSystemd:
         systemd_wsl = _to_wsl_path(systemd_dir)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export SYSTEMD_UNIT_DIR="{systemd_wsl}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             systemctl() {{ return 0; }}
-            SYSTEMD_UNIT_DIR="{systemd_wsl}"
             remove_systemd_units
         """)
         _run_bash(script)
@@ -579,13 +592,13 @@ class TestNginx:
                       nginx_exit: int = 0) -> str:
         return dedent(f"""\
             set -Eeuo pipefail
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export SNIPPET_FILE="{_to_wsl_path(snippet_file)}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             nginx() {{ return {nginx_exit}; }}
             systemctl() {{ return 0; }}
-            NGINX_ROOT="{_to_wsl_path(nginx_root)}"
-            SNIPPET_FILE="{_to_wsl_path(snippet_file)}"
-            HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
             TS="test"
             remove_nginx_integration
         """)
@@ -631,6 +644,9 @@ class TestNginx:
         stop_log_wsl = _to_wsl_path(stop_log)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export SNIPPET_FILE="{_to_wsl_path(snippet_file)}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             nginx() {{ return 0; }}
@@ -640,9 +656,6 @@ class TestNginx:
                 fi
                 return 0
             }}
-            NGINX_ROOT="{_to_wsl_path(nginx_root)}"
-            SNIPPET_FILE="{_to_wsl_path(snippet_file)}"
-            HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
             TS="test"
             remove_nginx_integration
         """)
@@ -703,12 +716,12 @@ class TestPolkitLegacy:
     def _polkit_script(self, paths: dict) -> str:
         return dedent(f"""\
             set -Eeuo pipefail
+            export POLKIT_RULE_FILE="{_to_wsl_path(paths['polkit_rule'])}"
+            export SUDOERS_FILE="{_to_wsl_path(paths['sudoers'])}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths['wrapper_analysis'])}"
+            export WRAPPER_STATUS="{_to_wsl_path(paths['wrapper_status'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            POLKIT_RULE_FILE="{_to_wsl_path(paths['polkit_rule'])}"
-            SUDOERS_FILE="{_to_wsl_path(paths['sudoers'])}"
-            WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths['wrapper_analysis'])}"
-            WRAPPER_STATUS="{_to_wsl_path(paths['wrapper_status'])}"
             remove_polkit_and_legacy
         """)
 
@@ -765,22 +778,73 @@ class TestPreserveMode:
         (audit_dir / "report.html").write_text("<html>audit</html>")
 
         preserve_root = tmp_path / "preserved"
+
+        # Additional path sandboxing
+        htpasswd = tmp_path / "nginx" / ".htpasswd-wazuh-soar"
+        htpasswd.parent.mkdir(parents=True, exist_ok=True)
+        htpasswd.write_text("user:hash\n")
+
+        snippet_file = tmp_path / "nginx" / "snippets" / "eyemole-soar-locations.conf"
+        snippet_file.parent.mkdir(parents=True, exist_ok=True)
+        snippet_file.write_text("# snippet")
+
+        systemd_unit_dir = tmp_path / "systemd"
+        systemd_unit_dir.mkdir(parents=True, exist_ok=True)
+
+        polkit_rule_file = tmp_path / "polkit" / "49-hmg-soar.rules"
+        polkit_rule_file.parent.mkdir(parents=True, exist_ok=True)
+        polkit_rule_file.write_text("// rule")
+
+        sudoers_file = tmp_path / "sudoers" / "hmg-soar-api"
+        sudoers_file.parent.mkdir(parents=True, exist_ok=True)
+        sudoers_file.write_text("# sudoers")
+
+        wrapper_run_analysis = tmp_path / "sbin" / "hmg-soar-run-analysis"
+        wrapper_run_analysis.parent.mkdir(parents=True, exist_ok=True)
+        wrapper_run_analysis.write_text("#!/bin/bash")
+
+        wrapper_status = tmp_path / "sbin" / "hmg-soar-status"
+        wrapper_status.write_text("#!/bin/bash")
+
+        backup_root = tmp_path / "backups"
+        backup_root.mkdir(parents=True, exist_ok=True)
+
+        nginx_root = tmp_path / "nginx"
+
         return {
             "app_dir": app_dir,
             "etc_dir": etc_dir,
             "web_dir": web_dir,
             "preserve_root": preserve_root,
+            "htpasswd": htpasswd,
+            "snippet_file": snippet_file,
+            "systemd_unit_dir": systemd_unit_dir,
+            "polkit_rule_file": polkit_rule_file,
+            "sudoers_file": sudoers_file,
+            "wrapper_run_analysis": wrapper_run_analysis,
+            "wrapper_status": wrapper_status,
+            "backup_root": backup_root,
+            "nginx_root": nginx_root,
         }
 
     def _preserve_script(self, paths: dict) -> str:
         return dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            export SNIPPET_FILE="{_to_wsl_path(paths['snippet_file'])}"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(paths['systemd_unit_dir'])}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(paths['polkit_rule_file'])}"
+            export SUDOERS_FILE="{_to_wsl_path(paths['sudoers_file'])}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths['wrapper_run_analysis'])}"
+            export WRAPPER_STATUS="{_to_wsl_path(paths['wrapper_status'])}"
+            export BACKUP_ROOT="{_to_wsl_path(paths['backup_root'])}"
+            export NGINX_ROOT="{_to_wsl_path(paths['nginx_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             PURGE=0
             TS="test"
             preserve_data
@@ -848,12 +912,49 @@ class TestPurgeMode:
         backup_root = tmp_path / "backups"
         backup_root.mkdir()
 
+        # Additional path sandboxing
+        htpasswd = tmp_path / "nginx" / ".htpasswd-wazuh-soar"
+        htpasswd.parent.mkdir(parents=True, exist_ok=True)
+        htpasswd.write_text("user:hash\n")
+
+        snippet_file = tmp_path / "nginx" / "snippets" / "eyemole-soar-locations.conf"
+        snippet_file.parent.mkdir(parents=True, exist_ok=True)
+        snippet_file.write_text("# snippet")
+
+        systemd_unit_dir = tmp_path / "systemd"
+        systemd_unit_dir.mkdir(parents=True, exist_ok=True)
+
+        polkit_rule_file = tmp_path / "polkit" / "49-hmg-soar.rules"
+        polkit_rule_file.parent.mkdir(parents=True, exist_ok=True)
+        polkit_rule_file.write_text("// rule")
+
+        sudoers_file = tmp_path / "sudoers" / "hmg-soar-api"
+        sudoers_file.parent.mkdir(parents=True, exist_ok=True)
+        sudoers_file.write_text("# sudoers")
+
+        wrapper_run_analysis = tmp_path / "sbin" / "hmg-soar-run-analysis"
+        wrapper_run_analysis.parent.mkdir(parents=True, exist_ok=True)
+        wrapper_run_analysis.write_text("#!/bin/bash")
+
+        wrapper_status = tmp_path / "sbin" / "hmg-soar-status"
+        wrapper_status.write_text("#!/bin/bash")
+
+        nginx_root = tmp_path / "nginx"
+
         return {
             "app_dir": app_dir,
             "web_dir": web_dir,
             "etc_dir": etc_dir,
             "preserve_root": preserve_root,
             "backup_root": backup_root,
+            "htpasswd": htpasswd,
+            "snippet_file": snippet_file,
+            "systemd_unit_dir": systemd_unit_dir,
+            "polkit_rule_file": polkit_rule_file,
+            "sudoers_file": sudoers_file,
+            "wrapper_run_analysis": wrapper_run_analysis,
+            "wrapper_status": wrapper_status,
+            "nginx_root": nginx_root,
         }
 
     def test_purge_requires_confirmation(self, tmp_path):
@@ -899,12 +1000,21 @@ class TestPurgeMode:
         paths = self._setup_purge_env(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            export SNIPPET_FILE="{_to_wsl_path(paths['snippet_file'])}"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(paths['systemd_unit_dir'])}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(paths['polkit_rule_file'])}"
+            export SUDOERS_FILE="{_to_wsl_path(paths['sudoers_file'])}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths['wrapper_run_analysis'])}"
+            export WRAPPER_STATUS="{_to_wsl_path(paths['wrapper_status'])}"
+            export BACKUP_ROOT="{_to_wsl_path(paths['backup_root'])}"
+            export NGINX_ROOT="{_to_wsl_path(paths['nginx_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             PURGE=1
             purge_data
             echo "PURGED"
@@ -914,6 +1024,7 @@ class TestPurgeMode:
         assert not paths["app_dir"].exists()
         assert not paths["web_dir"].exists()
         assert not paths["etc_dir"].exists()
+        assert not paths["htpasswd"].exists()
 
     def test_purge_keeps_backup(self, tmp_path):
         """Purge does NOT remove the backup directory."""
@@ -924,13 +1035,21 @@ class TestPurgeMode:
 
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            export SNIPPET_FILE="{_to_wsl_path(paths['snippet_file'])}"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(paths['systemd_unit_dir'])}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(paths['polkit_rule_file'])}"
+            export SUDOERS_FILE="{_to_wsl_path(paths['sudoers_file'])}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths['wrapper_run_analysis'])}"
+            export WRAPPER_STATUS="{_to_wsl_path(paths['wrapper_status'])}"
+            export BACKUP_ROOT="{_to_wsl_path(paths['backup_root'])}"
+            export NGINX_ROOT="{_to_wsl_path(paths['nginx_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
-            BACKUP_ROOT="{_to_wsl_path(paths['backup_root'])}"
             BACKUP_DIR="{_to_wsl_path(backup_dir)}"
             PURGE=1
             purge_data
@@ -951,15 +1070,29 @@ class TestRemoveUser:
         """User is NOT removed when REMOVE_USER=0."""
         log_file = tmp_path / "userdel.log"
         log_wsl = _to_wsl_path(log_file)
+        tmp_wsl = _to_wsl_path(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
+            REMOVE_USER=0
+            APP_USER="hmg-soar"
             userdel() {{ echo "$@" >> "{log_wsl}"; return 0; }}
             id() {{ return 0; }}
             pgrep() {{ return 1; }}
-            REMOVE_USER=0
-            APP_USER="hmg-soar"
             remove_app_user
             echo "DONE"
         """)
@@ -969,15 +1102,29 @@ class TestRemoveUser:
 
     def test_remove_user_refuses_www_data(self, tmp_path):
         """Refuses to remove protected user www-data."""
+        tmp_wsl = _to_wsl_path(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
+            REMOVE_USER=1
+            APP_USER="www-data"
             id() {{ return 0; }}
             userdel() {{ return 0; }}
             pgrep() {{ return 1; }}
-            REMOVE_USER=1
-            APP_USER="www-data"
             remove_app_user
             echo "RC=$?"
         """)
@@ -987,20 +1134,29 @@ class TestRemoveUser:
 
     def test_remove_user_refuses_processes(self, tmp_path):
         """Refuses to remove user if they have running processes."""
+        tmp_wsl = _to_wsl_path(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
+            REMOVE_USER=1
+            APP_USER="hmg-soar"
             id() {{ return 0; }}
             userdel() {{ return 0; }}
             pgrep() {{ echo "1234"; echo "5678"; return 0; }}
-            REMOVE_USER=1
-            APP_USER="hmg-soar"
-            APP_DIR="/opt/hmg-soar"
-            WEB_DIR="/var/www/wazuh-soar"
-            ETC_DIR="/etc/hmg-soar"
-            PRESERVE_ROOT="/var/lib/eyemole-preserved"
-            BACKUP_ROOT="/opt"
             remove_app_user
             echo "RC=$?"
         """)
@@ -1027,24 +1183,24 @@ class TestIdempotency:
 
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(tmp_path / 'nodir1')}"
+            export WEB_DIR="{_to_wsl_path(tmp_path / 'nodir2')}"
+            export ETC_DIR="{_to_wsl_path(tmp_path / 'nodir3')}"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(systemd_dir)}"
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export HTPASSWD_FILE="{_to_wsl_path(tmp_path / 'nf1')}"
+            export SNIPPET_FILE="{_to_wsl_path(tmp_path / 'nf2')}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(tmp_path / 'nf3')}"
+            export SUDOERS_FILE="{_to_wsl_path(tmp_path / 'nf4')}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(tmp_path / 'nf5')}"
+            export WRAPPER_STATUS="{_to_wsl_path(tmp_path / 'nf6')}"
+            export PRESERVE_ROOT="{_to_wsl_path(tmp_path / 'preserve')}"
+            export BACKUP_ROOT="{_to_wsl_path(tmp_path / 'backups')}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             systemctl() {{ return 0; }}
             nginx() {{ return 0; }}
             id() {{ return 1; }}
-            APP_DIR="{_to_wsl_path(tmp_path / 'nodir1')}"
-            WEB_DIR="{_to_wsl_path(tmp_path / 'nodir2')}"
-            ETC_DIR="{_to_wsl_path(tmp_path / 'nodir3')}"
-            SYSTEMD_UNIT_DIR="{_to_wsl_path(systemd_dir)}"
-            NGINX_ROOT="{_to_wsl_path(nginx_root)}"
-            HTPASSWD_FILE="{_to_wsl_path(tmp_path / 'nf1')}"
-            SNIPPET_FILE="{_to_wsl_path(tmp_path / 'nf2')}"
-            POLKIT_RULE_FILE="{_to_wsl_path(tmp_path / 'nf3')}"
-            SUDOERS_FILE="{_to_wsl_path(tmp_path / 'nf4')}"
-            WRAPPER_RUN_ANALYSIS="{_to_wsl_path(tmp_path / 'nf5')}"
-            WRAPPER_STATUS="{_to_wsl_path(tmp_path / 'nf6')}"
-            PRESERVE_ROOT="{_to_wsl_path(tmp_path / 'preserve')}"
-            BACKUP_ROOT="{_to_wsl_path(tmp_path / 'backups')}"
             DRY_RUN=0
             preflight_validate
             inventory
@@ -1098,24 +1254,24 @@ class TestNoRealPaths:
 
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(app_dir)}"
+            export WEB_DIR="{tmp_wsl}/nodir_web"
+            export ETC_DIR="{tmp_wsl}/nodir_etc"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(systemd_dir)}"
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
+            export SNIPPET_FILE="{_to_wsl_path(snippet)}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(polkit)}"
+            export SUDOERS_FILE="{_to_wsl_path(sudoers)}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(wrapper1)}"
+            export WRAPPER_STATUS="{_to_wsl_path(wrapper2)}"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export BACKUP_ROOT="{tmp_wsl}/backups"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
             systemctl() {{ return 0; }}
             nginx() {{ return 0; }}
             id() {{ return 1; }}
-            APP_DIR="{_to_wsl_path(app_dir)}"
-            WEB_DIR="{tmp_wsl}/nodir_web"
-            ETC_DIR="{tmp_wsl}/nodir_etc"
-            SYSTEMD_UNIT_DIR="{_to_wsl_path(systemd_dir)}"
-            NGINX_ROOT="{_to_wsl_path(nginx_root)}"
-            HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
-            SNIPPET_FILE="{_to_wsl_path(snippet)}"
-            POLKIT_RULE_FILE="{_to_wsl_path(polkit)}"
-            SUDOERS_FILE="{_to_wsl_path(sudoers)}"
-            WRAPPER_RUN_ANALYSIS="{_to_wsl_path(wrapper1)}"
-            WRAPPER_STATUS="{_to_wsl_path(wrapper2)}"
-            PRESERVE_ROOT="{tmp_wsl}/preserve"
-            BACKUP_ROOT="{tmp_wsl}/backups"
 
             # Override rm to log any access to real system paths
             real_rm="$(which rm)"
@@ -1142,6 +1298,145 @@ class TestNoRealPaths:
             assert content.strip() == "", (
                 f"Script accessed real system paths:\n{content}"
             )
+
+    def test_helpers_configure_htpasswd(self):
+        """Regression check: verify that all helper methods/scripts in this file
+        that call preserve_data or purge_data define/export HTPASSWD_FILE.
+        """
+        test_file = Path(__file__).resolve()
+        content = test_file.read_text(encoding="utf-8")
+
+        import ast
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                # Check for string literals inside the function body
+                has_preserve_or_purge = False
+                has_htpasswd_file = False
+                for subnode in ast.walk(node):
+                    if isinstance(subnode, ast.Constant) and isinstance(subnode.value, str):
+                        val = subnode.value
+                        if "preserve_data" in val or "purge_data" in val:
+                            has_preserve_or_purge = True
+                        if "HTPASSWD_FILE" in val:
+                            has_htpasswd_file = True
+                # Exclude the checking functions themselves
+                if node.name in ("test_helpers_configure_htpasswd", "test_fails_if_htpasswd_not_overridden", "test_passes_if_htpasswd_is_overridden"):
+                    continue
+
+                if has_preserve_or_purge:
+                    assert has_htpasswd_file, (
+                        f"Test method/helper '{node.name}' uses 'preserve_data' or 'purge_data' "
+                        f"but does not define or configure HTPASSWD_FILE."
+                    )
+
+    def test_fails_if_htpasswd_not_overridden(self, tmp_path):
+        """Verify that leaving HTPASSWD_FILE at its default value fails sandbox constraints."""
+        tmp_wsl = _to_wsl_path(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            # Override all path variables except HTPASSWD_FILE
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
+
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            # Die if HTPASSWD_FILE is outside sandbox
+            if [[ "$HTPASSWD_FILE" != "{tmp_wsl}"* ]]; then
+                echo "SANDBOX_FAIL: HTPASSWD_FILE is not under sandbox!" >&2
+                exit 1
+            fi
+        """)
+        # Must fail because HTPASSWD_FILE is default /etc/nginx/...
+        _run_bash(script, expect_fail=True)
+
+    def test_passes_if_htpasswd_is_overridden(self, tmp_path):
+        """Verify that when overridden to a sandbox path, sandbox validation check passes."""
+        tmp_wsl = _to_wsl_path(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
+
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            for var in APP_DIR WEB_DIR ETC_DIR HTPASSWD_FILE SNIPPET_FILE SYSTEMD_UNIT_DIR POLKIT_RULE_FILE SUDOERS_FILE WRAPPER_RUN_ANALYSIS WRAPPER_STATUS PRESERVE_ROOT BACKUP_ROOT NGINX_ROOT; do
+                val="${{!var}}"
+                if [[ "$val" != "{tmp_wsl}"* ]]; then
+                    echo "SANDBOX_FAIL: $var ($val) is not under sandbox!" >&2
+                    exit 1
+                fi
+            done
+            echo "SANDBOX_OK"
+        """)
+        result = _run_bash(script)
+        assert "SANDBOX_OK" in result.stdout
+
+    def test_real_htpasswd_not_influenced(self, tmp_path):
+        """Verify that a real htpasswd file on the host filesystem is not touched/modified."""
+        real_htpasswd = Path("/etc/nginx/.htpasswd-wazuh-soar")
+        before_exists = False
+        before_content = None
+        try:
+            if real_htpasswd.exists():
+                before_exists = True
+                before_content = real_htpasswd.read_bytes()
+        except Exception:
+            pass
+
+        tmp_wsl = _to_wsl_path(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export APP_DIR="{tmp_wsl}/opt"
+            export WEB_DIR="{tmp_wsl}/web"
+            export ETC_DIR="{tmp_wsl}/etc"
+            export PRESERVE_ROOT="{tmp_wsl}/preserve"
+            export BACKUP_ROOT="{tmp_wsl}/backup"
+            export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"
+            export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"
+            export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"
+            export POLKIT_RULE_FILE="{tmp_wsl}/polkit"
+            export SUDOERS_FILE="{tmp_wsl}/sudoers"
+            export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"
+            export WRAPPER_STATUS="{tmp_wsl}/sbin/status"
+            export NGINX_ROOT="{tmp_wsl}/nginx"
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            echo "ISOLATED"
+        """)
+        result = _run_bash(script)
+        assert "ISOLATED" in result.stdout
+
+        try:
+            if before_exists:
+                assert real_htpasswd.exists(), "Real htpasswd was deleted!"
+                if before_content is not None:
+                    assert real_htpasswd.read_bytes() == before_content, "Real htpasswd was modified!"
+        except PermissionError:
+            pass
 
 
 
@@ -1207,13 +1502,13 @@ class TestSelectivePreservation:
     def _preserve_script(self, paths: dict) -> str:
         return dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             PURGE=0
             TS="test"
             preserve_data
@@ -1331,13 +1626,13 @@ class TestSelectivePreservation:
         paths = self._setup_full_env(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             PURGE=1
             purge_data
         """)
@@ -1350,13 +1645,13 @@ class TestSelectivePreservation:
         paths = self._setup_full_env(tmp_path)
         script = dedent(f"""\
             set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            export WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            export ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            export HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            export PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             source "{UNINSTALL_SH_WSL}"
             {_REALPATH_OVERRIDE}
-            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
-            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
-            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
-            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
-            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
             PURGE=1
             purge_data
         """)
