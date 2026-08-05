@@ -777,7 +777,8 @@ remove_app_user() {
 
     # Safety: check for running processes owned by the user
     local proc_count
-    proc_count="$(pgrep -u "$APP_USER" 2>/dev/null | wc -l || echo 0)"
+    proc_count="$(pgrep -u "$APP_USER" 2>/dev/null | wc -l | tr -d '[:space:]')"
+    proc_count="${proc_count:-0}"
     if [[ "$proc_count" -gt 0 ]]; then
         warn "User '${APP_USER}' still has ${proc_count} running process(es)."
         warn "Cannot safely remove user. Stop all processes first."
@@ -785,7 +786,7 @@ remove_app_user() {
     fi
 
     # Safety: check if user owns files outside of managed paths
-    local stray_files
+    local stray_files stray_count
     stray_files="$(find / -user "$APP_USER" \
         -not -path "${APP_DIR}/*" \
         -not -path "${WEB_DIR}/*" \
@@ -794,12 +795,19 @@ remove_app_user() {
         -not -path "${BACKUP_ROOT}/backup-eyemole-*" \
         -not -path "/proc/*" \
         -not -path "/sys/*" \
-        2>/dev/null | head -5 || true)"
+        2>/dev/null | head -20 || true)"
 
-    if [[ -n "$stray_files" ]]; then
-        warn "User '${APP_USER}' owns files outside managed paths:"
-        echo "$stray_files" | while read -r f; do warn "  $f"; done
-        warn "Proceeding with user removal, but stray files will remain."
+    stray_count="$(printf '%s' "$stray_files" | grep -c '.' || true)"
+    stray_count="${stray_count:-0}"
+
+    if [[ "$stray_count" -gt 0 ]]; then
+        warn "User '${APP_USER}' owns ${stray_count} file(s) outside managed paths:"
+        echo "$stray_files" | head -5 | while read -r f; do warn "  $f"; done
+        if [[ "$stray_count" -gt 5 ]]; then
+            warn "  ... and $((stray_count - 5)) more."
+        fi
+        warn "Refusing to remove user. Reassign or remove stray files first."
+        return 1
     fi
 
     # Remove user (without removing home if it is a managed path)
