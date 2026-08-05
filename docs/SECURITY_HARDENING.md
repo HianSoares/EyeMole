@@ -507,3 +507,36 @@ do endpoint de remediação. Esse valor é:
 
 Clientes da API devem tratar esse campo como informativo (interface pode
 exibir "somente cópia") e nunca condicionar execução local a esse valor.
+
+---
+
+## 14. Segurança do desinstalador
+
+### Proteção contra path traversal
+
+O desinstalador valida rigorosamente todos os caminhos antes de qualquer operação `rm`:
+- Rejeita caminhos vazios
+- Rejeita `/`, `/opt`, `/var`, `/etc`, `/etc/nginx`, `/usr`
+- Rejeita caminhos relativos
+- Rejeita caminhos contendo `..`
+- Resolve caminhos canônicos quando possível
+
+### Backup de credenciais
+
+O backup pré-desinstalação pode conter `credentials.env`. O diretório de backup é criado com:
+- Permissões: `0700`
+- Ownership: `root:root`
+- Manifesto SHA-256 para verificação de integridade
+
+### Componentes compartilhados nunca removidos
+
+O desinstalador NUNCA remove:
+- Pacote Nginx ou sua configuração base
+- Python ou módulos do sistema
+- Grupo `www-data`
+- Wazuh Manager/Indexer/Agent
+- Backups de instalações anteriores
+
+### Confirmação de purge
+
+O modo `--purge` exige confirmação explícita digitando `PURGE EYEMOLE` (ou `--yes` para automação). Isso previne deleção acidental de dados em ambientes interativos.

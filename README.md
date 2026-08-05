@@ -417,6 +417,34 @@ A API escuta somente em `127.0.0.1:8765` (loopback). O acesso externo é mediado
 
 ---
 
+## Desinstalação
+
+O EyeMole inclui um desinstalador oficial, seguro e idempotente:
+
+```bash
+# Visualizar ações sem executar
+sudo ./uninstall.sh --dry-run
+
+# Desinstalar preservando dados (configs, auditoria, relatórios)
+sudo ./uninstall.sh
+
+# Desinstalar removendo todos os dados (exige confirmação)
+sudo ./uninstall.sh --purge
+
+# Desinstalar e remover o usuário de serviço
+sudo ./uninstall.sh --purge --yes --remove-user
+```
+
+Comportamento:
+- **Modo padrão:** remove código, serviços e integração Nginx; preserva seletivamente dados de estado (configs, auditoria, relatórios, credentials, htpasswd) em `/var/lib/eyemole-preserved/`
+- **Modo purge:** remove tudo após backup e confirmação explícita ("PURGE EYEMOLE")
+- **Não remove:** Nginx, Python, Wazuh, www-data, pacotes do sistema, backups anteriores
+- **Não preserva:** código Python, módulos de remediação, HTML publicado, assets estáticos
+- **Backup:** criado automaticamente antes de qualquer alteração em `/opt/backup-eyemole-uninstall-<timestamp>/`
+- **Rollback Nginx:** se `nginx -t` falhar após edição, a configuração é restaurada automaticamente
+
+---
+
 ## Estrutura do projeto
 
 ```text
