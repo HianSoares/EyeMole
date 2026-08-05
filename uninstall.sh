@@ -744,7 +744,11 @@ final_validations() {
         log "Final validations passed."
     else
         warn "Final validations found ${issues} issue(s). See warnings above."
+        FATAL=1
+        FATAL_STEP="final_validations"
     fi
+
+    return "$issues"
 }
 
 # =============================================================================
@@ -859,7 +863,18 @@ final_report() {
     echo "    cd ${BACKUP_DIR} && sha256sum -c MANIFEST.sha256"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-    echo "  Uninstall complete."
+    if [[ "$FATAL" -ne 0 ]]; then
+        echo "  FAILED — step: ${FATAL_STEP:-unknown}"
+        if [[ -n "${FATAL_STEP:-}" && "$FATAL_STEP" == "nginx" ]]; then
+            echo "  Rollback: performed (site config, snippet, htpasswd restored)"
+        elif [[ -n "${FATAL_STEP:-}" && "$FATAL_STEP" == "user_removal" ]]; then
+            echo "  Rollback: not applicable (user was not removed)"
+        else
+            echo "  Rollback: incomplete or not applicable"
+        fi
+    else
+        echo "  Uninstall complete."
+    fi
     echo "═══════════════════════════════════════════════════════════════"
 }
 
@@ -933,13 +948,19 @@ main() {
     remove_app_directories
 
     # 14. Final validations
-    final_validations
+    final_validations || true
 
     # 15. Optional user removal
-    remove_app_user
+    if [[ "$REMOVE_USER" -eq 1 ]]; then
+        if ! remove_app_user; then
+            FATAL=1
+            FATAL_STEP="user_removal"
+        fi
+    fi
 
     # 16. Final report
     final_report
+    exit "$FATAL"
 }
 
 # =============================================================================
