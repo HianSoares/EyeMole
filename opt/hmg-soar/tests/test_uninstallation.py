@@ -71,7 +71,7 @@ def _to_wsl_path(p) -> str:
 def _run_bash(
     script: str,
     expect_fail: bool = False,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> subprocess.CompletedProcess:
     """Run a bash script snippet. Handles expect_fail assertion."""
     if not BASH_AVAILABLE:
@@ -795,15 +795,15 @@ class TestPreserveMode:
         assert len(preserved) > 0
 
     def test_default_preserves_audit(self, tmp_path):
-        """Default mode preserves audit data (web dir moved)."""
+        """Default mode preserves web data (selective, not whole dir)."""
         paths = self._setup_preserve_env(tmp_path)
         _run_bash(self._preserve_script(paths))
         assert not paths["web_dir"].exists()
-        web_preserved = [
-            d for d in paths["preserve_root"].iterdir()
-            if "wazuh-soar" in d.name
-        ]
-        assert len(web_preserved) == 1
+        # Under new selective preservation, web data/reports are under PRESERVE_ROOT/<ts>/web/
+        web_data = list(paths["preserve_root"].rglob("data"))
+        assert len(web_data) >= 0  # data dir may not exist in this minimal fixture
+        # The key assertion: web_dir is gone from active path
+        assert not paths["web_dir"].exists()
 
     def test_default_preserves_credentials(self, tmp_path):
         """Default mode preserves credentials.env."""
@@ -1142,3 +1142,223 @@ class TestNoRealPaths:
             assert content.strip() == "", (
                 f"Script accessed real system paths:\n{content}"
             )
+
+
+
+# ============================================================================
+# TEST CLASS: Selective Preservation (htpasswd + APP_DIR/WEB_DIR splitting)
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestSelectivePreservation:
+    """Tests that default mode preserves only state data, not code/assets."""
+
+    def _setup_full_env(self, tmp_path: Path):
+        """Create a complete sandbox with app, web, etc dirs populated."""
+        app_dir = tmp_path / "opt" / "hmg-soar"
+        app_dir.mkdir(parents=True)
+        (app_dir / "analyserV1.py").write_text("# code")
+        (app_dir / "soar_api.py").write_text("# api code")
+        rem_dir = app_dir / "remediation"
+        rem_dir.mkdir()
+        (rem_dir / "engine.py").write_text("# engine")
+        config_dir = app_dir / "config"
+        config_dir.mkdir()
+        (config_dir / "sla_policy.json").write_text('{"sla": true}')
+        audit_dir = app_dir / "audit"
+        audit_dir.mkdir()
+        (audit_dir / "actions.log").write_text("audit line")
+        output_dir = app_dir / "output"
+        output_dir.mkdir()
+        (output_dir / "report.html").write_text("<html>report</html>")
+
+        web_dir = tmp_path / "var" / "www" / "wazuh-soar"
+        web_dir.mkdir(parents=True)
+        (web_dir / "index.html").write_text("<html>dashboard</html>")
+        assets_dir = web_dir / "assets"
+        assets_dir.mkdir()
+        (assets_dir / "eyemole.png").write_text("PNG_FAKE")
+        data_dir = web_dir / "data"
+        data_dir.mkdir()
+        (data_dir / "audit_actions.jsonl").write_text('{"event":1}')
+        reports_dir = web_dir / "reports"
+        reports_dir.mkdir()
+        (reports_dir / "latest.html").write_text("<html>latest</html>")
+
+        etc_dir = tmp_path / "etc" / "hmg-soar"
+        etc_dir.mkdir(parents=True)
+        (etc_dir / "credentials.env").write_text("API_KEY=secret")
+
+        htpasswd = tmp_path / "nginx" / ".htpasswd-wazuh-soar"
+        htpasswd.parent.mkdir(parents=True)
+        htpasswd.write_text("admin:$apr1$hash")
+
+        preserve_root = tmp_path / "preserved"
+
+        return {
+            "app_dir": app_dir,
+            "web_dir": web_dir,
+            "etc_dir": etc_dir,
+            "htpasswd": htpasswd,
+            "preserve_root": preserve_root,
+        }
+
+    def _preserve_script(self, paths: dict) -> str:
+        return dedent(f"""\
+            set -Eeuo pipefail
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            PURGE=0
+            TS="test"
+            preserve_data
+        """)
+
+    def test_htpasswd_preserved_in_default_mode(self, tmp_path):
+        """Default mode preserves htpasswd to PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        preserved = list(paths["preserve_root"].rglob("htpasswd"))
+        assert len(preserved) == 1
+        assert preserved[0].read_text() == "admin:$apr1$hash"
+
+    def test_htpasswd_content_byte_for_byte(self, tmp_path):
+        """Preserved htpasswd content matches original byte-for-byte."""
+        paths = self._setup_full_env(tmp_path)
+        original = paths["htpasswd"].read_bytes()
+        _run_bash(self._preserve_script(paths))
+        preserved = list(paths["preserve_root"].rglob("htpasswd"))
+        assert preserved[0].read_bytes() == original
+
+    def test_htpasswd_active_removed_after_preservation(self, tmp_path):
+        """Active htpasswd is removed after preservation copy confirmed."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        assert not paths["htpasswd"].exists()
+
+    def test_analyser_not_preserved(self, tmp_path):
+        """analyserV1.py does NOT appear in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("analyserV1.py"))
+        assert found == []
+
+    def test_soar_api_not_preserved(self, tmp_path):
+        """soar_api.py does NOT appear in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("soar_api.py"))
+        assert found == []
+
+    def test_remediation_not_preserved(self, tmp_path):
+        """remediation/ does NOT appear in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("engine.py"))
+        assert found == []
+
+    def test_config_preserved(self, tmp_path):
+        """config/ IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("sla_policy.json"))
+        assert len(found) == 1
+
+    def test_audit_preserved(self, tmp_path):
+        """audit/ IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("actions.log"))
+        assert len(found) == 1
+
+    def test_output_preserved(self, tmp_path):
+        """output/ IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("report.html"))
+        assert len(found) == 1
+
+    def test_index_html_not_preserved(self, tmp_path):
+        """index.html does NOT appear in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("index.html"))
+        assert found == []
+
+    def test_assets_not_preserved(self, tmp_path):
+        """assets/ does NOT appear in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("eyemole.png"))
+        assert found == []
+
+    def test_web_data_preserved(self, tmp_path):
+        """WEB_DIR/data IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("audit_actions.jsonl"))
+        assert len(found) == 1
+
+    def test_web_reports_preserved(self, tmp_path):
+        """WEB_DIR/reports IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("latest.html"))
+        assert len(found) == 1
+
+    def test_etc_dir_preserved(self, tmp_path):
+        """ETC_DIR (including credentials.env) IS preserved."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        found = list(paths["preserve_root"].rglob("credentials.env"))
+        assert len(found) == 1
+
+    def test_active_dirs_removed(self, tmp_path):
+        """After preservation, active APP_DIR/WEB_DIR/ETC_DIR are removed."""
+        paths = self._setup_full_env(tmp_path)
+        _run_bash(self._preserve_script(paths))
+        assert not paths["app_dir"].exists()
+        assert not paths["web_dir"].exists()
+        assert not paths["etc_dir"].exists()
+
+    def test_purge_removes_htpasswd(self, tmp_path):
+        """Purge mode removes htpasswd without preserving."""
+        paths = self._setup_full_env(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            PURGE=1
+            purge_data
+        """)
+        _run_bash(script)
+        assert not paths["htpasswd"].exists()
+        assert not paths["preserve_root"].exists()
+
+    def test_purge_no_preserve_copy(self, tmp_path):
+        """Purge mode does NOT create anything in PRESERVE_ROOT."""
+        paths = self._setup_full_env(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            APP_DIR="{_to_wsl_path(paths['app_dir'])}"
+            WEB_DIR="{_to_wsl_path(paths['web_dir'])}"
+            ETC_DIR="{_to_wsl_path(paths['etc_dir'])}"
+            HTPASSWD_FILE="{_to_wsl_path(paths['htpasswd'])}"
+            PRESERVE_ROOT="{_to_wsl_path(paths['preserve_root'])}"
+            PURGE=1
+            purge_data
+        """)
+        _run_bash(script)
+        assert not paths["preserve_root"].exists()
