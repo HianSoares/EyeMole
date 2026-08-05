@@ -47,6 +47,9 @@ DRY_RUN=0
 PURGE=0
 YES=0
 REMOVE_USER=0
+NGINX_FAILED=0
+FATAL=0
+FATAL_STEP=""
 TS="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/backup-eyemole-uninstall-${TS}"
 declare -a ACTIONS_TAKEN=()
@@ -394,58 +397,107 @@ stop_services() {
 }
 
 # =============================================================================
-# Remove Nginx integration (with rollback on nginx -t failure)
+# Remove Nginx integration (atomic transaction with full rollback)
 # =============================================================================
 remove_nginx_integration() {
     log "Removing Nginx integration..."
 
     local nginx_site_conf="${NGINX_ROOT}/sites-enabled/wazuh-dashboard-proxy"
     local nginx_changed=0
+    local rollback_dir="${BACKUP_DIR}/nginx-rollback"
 
-    # Remove include line from site config
+    # ── Phase 1: backup all 3 artifacts BEFORE any change ──
+    mkdir -p "$rollback_dir"
+
+    if [[ -f "$nginx_site_conf" ]]; then
+        cp -a "$nginx_site_conf" "${rollback_dir}/wazuh-dashboard-proxy"
+    fi
+    if [[ -f "$SNIPPET_FILE" ]]; then
+        cp -a "$SNIPPET_FILE" "${rollback_dir}/snippet.conf"
+    fi
+    if [[ -f "$HTPASSWD_FILE" ]]; then
+        cp -a "$HTPASSWD_FILE" "${rollback_dir}/htpasswd"
+    fi
+
+    # ── Phase 2: remove ONLY the include line from site config ──
     if [[ -f "$nginx_site_conf" ]] && grep -q "eyemole-soar-locations" "$nginx_site_conf"; then
         log "  Removing include line from ${nginx_site_conf}..."
-        local backup_conf="${nginx_site_conf}.bak-uninstall-${TS}"
-        cp -a "$nginx_site_conf" "$backup_conf"
-
         sed -i '/eyemole-soar-locations/d' "$nginx_site_conf"
         nginx_changed=1
         ACTIONS_TAKEN+=("Removed include line from ${nginx_site_conf}")
     fi
 
-    # Remove snippet file
+    # ── Phase 3: validate nginx config; rollback on failure ──
+    if [[ "$nginx_changed" -eq 1 ]]; then
+        log "  Testing nginx configuration..."
+        if ! nginx -t 2>/dev/null; then
+            warn "nginx -t FAILED after removing include line. Rolling back..."
+            _nginx_rollback "$rollback_dir" "$nginx_site_conf"
+            return 0
+        fi
+
+        log "  nginx -t passed. Reloading..."
+        if ! systemctl reload nginx 2>/dev/null; then
+            warn "nginx reload FAILED. Rolling back..."
+            _nginx_rollback "$rollback_dir" "$nginx_site_conf"
+            return 0
+        fi
+
+        log "  nginx reload succeeded."
+        ACTIONS_TAKEN+=("Reloaded nginx")
+    fi
+
+    # ── Phase 4: remove snippet and htpasswd ONLY after nginx is healthy ──
     if [[ -f "$SNIPPET_FILE" ]]; then
         rm -f "$SNIPPET_FILE"
         log "  Removed snippet: ${SNIPPET_FILE}"
         ACTIONS_TAKEN+=("Removed: ${SNIPPET_FILE}")
     fi
 
-    # Htpasswd: remove only in purge mode; default mode preserves it
+    # Htpasswd: remove only in purge mode; default mode preserves via preserve_data
     if [[ -f "$HTPASSWD_FILE" && "$PURGE" -eq 1 ]]; then
         rm -f "$HTPASSWD_FILE"
         log "  Removed htpasswd: ${HTPASSWD_FILE}"
         ACTIONS_TAKEN+=("Removed: ${HTPASSWD_FILE}")
     fi
 
-    # Validate nginx configuration; rollback on failure
-    if [[ "$nginx_changed" -eq 1 ]]; then
-        log "  Testing nginx configuration..."
-        if ! nginx -t 2>/dev/null; then
-            warn "nginx -t FAILED after removing include line. Rolling back..."
-            if [[ -f "$backup_conf" ]]; then
-                cp -a "$backup_conf" "$nginx_site_conf"
-                warn "Rollback complete. Nginx config restored from ${backup_conf}"
-                ACTIONS_TAKEN+=("ROLLBACK: Restored ${nginx_site_conf}")
-            fi
+    log "Nginx integration removal complete."
+}
+
+# Helper: full rollback of all 3 nginx artifacts
+_nginx_rollback() {
+    local rollback_dir="$1"
+    local nginx_site_conf="$2"
+
+    if [[ -f "${rollback_dir}/wazuh-dashboard-proxy" ]]; then
+        cp -a "${rollback_dir}/wazuh-dashboard-proxy" "$nginx_site_conf"
+        log "  Restored: ${nginx_site_conf}"
+        ACTIONS_TAKEN+=("ROLLBACK: Restored ${nginx_site_conf}")
+    fi
+    if [[ -f "${rollback_dir}/snippet.conf" ]]; then
+        cp -a "${rollback_dir}/snippet.conf" "$SNIPPET_FILE"
+        log "  Restored: ${SNIPPET_FILE}"
+        ACTIONS_TAKEN+=("ROLLBACK: Restored ${SNIPPET_FILE}")
+    fi
+    if [[ -f "${rollback_dir}/htpasswd" ]]; then
+        cp -a "${rollback_dir}/htpasswd" "$HTPASSWD_FILE"
+        log "  Restored: ${HTPASSWD_FILE}"
+        ACTIONS_TAKEN+=("ROLLBACK: Restored ${HTPASSWD_FILE}")
+    fi
+
+    # Re-validate after rollback
+    if command -v nginx &>/dev/null; then
+        if nginx -t 2>/dev/null; then
+            log "  nginx -t passed after rollback."
         else
-            log "  nginx -t passed."
-            # Reload nginx to apply changes
-            systemctl reload nginx 2>/dev/null || true
-            ACTIONS_TAKEN+=("Reloaded nginx")
+            warn "nginx -t STILL FAILING after rollback. Manual intervention required."
         fi
     fi
 
-    log "Nginx integration removal complete."
+    NGINX_FAILED=1
+    FATAL=1
+    FATAL_STEP="nginx"
+    warn "Nginx transaction aborted. No further removals will proceed."
 }
 
 # =============================================================================
@@ -858,8 +910,14 @@ main() {
     # 8. Stop/disable services
     stop_services
 
-    # 9. Remove Nginx integration (with rollback)
+    # 9. Remove Nginx integration (atomic transaction with rollback)
     remove_nginx_integration
+
+    # Abort if Nginx transaction failed — do not proceed with further removals
+    if [[ "$NGINX_FAILED" -eq 1 ]]; then
+        final_report
+        exit 1
+    fi
 
     # 10. Remove systemd units + daemon-reload
     remove_systemd_units
