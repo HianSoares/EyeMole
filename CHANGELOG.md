@@ -21,6 +21,7 @@
 ### Adicionado
 
 - feat(uninstaller): add safe EyeMole removal workflow with dry-run, preserve, purge modes
+- fix(uninstaller): selective preservation of state data only (not code or assets)
 
 ---
 

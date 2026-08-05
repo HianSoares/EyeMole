@@ -436,9 +436,10 @@ sudo ./uninstall.sh --purge --yes --remove-user
 ```
 
 Comportamento:
-- **Modo padrão:** remove código, serviços e integração Nginx; preserva dados em `/var/lib/eyemole-preserved/`
+- **Modo padrão:** remove código, serviços e integração Nginx; preserva seletivamente dados de estado (configs, auditoria, relatórios, credentials, htpasswd) em `/var/lib/eyemole-preserved/`
 - **Modo purge:** remove tudo após backup e confirmação explícita ("PURGE EYEMOLE")
 - **Não remove:** Nginx, Python, Wazuh, www-data, pacotes do sistema, backups anteriores
+- **Não preserva:** código Python, módulos de remediação, HTML publicado, assets estáticos
 - **Backup:** criado automaticamente antes de qualquer alteração em `/opt/backup-eyemole-uninstall-<timestamp>/`
 - **Rollback Nginx:** se `nginx -t` falhar após edição, a configuração é restaurada automaticamente
 

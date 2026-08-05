@@ -261,8 +261,18 @@ show_dry_run() {
             *)
                 if [[ "$PURGE" -eq 1 ]]; then
                     echo "  [PURGE]    $item"
-                elif [[ "$item" == "$APP_DIR"* ]] || [[ "$item" == "$WEB_DIR"* ]] || [[ "$item" == "$ETC_DIR"* ]]; then
-                    echo "  [PRESERVE] $item → ${PRESERVE_ROOT}/"
+                elif [[ "$item" == "$HTPASSWD_FILE" ]]; then
+                    echo "  [PRESERVE] ${HTPASSWD_FILE} (copy to ${PRESERVE_ROOT}/)"
+                elif [[ "$item" == "$APP_DIR" ]]; then
+                    echo "  [PRESERVE] ${APP_DIR}/config, audit, output"
+                    echo "  [REMOVE]   ${APP_DIR} (code, modules)"
+                elif [[ "$item" == "$WEB_DIR" ]]; then
+                    echo "  [PRESERVE] ${WEB_DIR}/data, reports"
+                    echo "  [REMOVE]   ${WEB_DIR} (index.html, assets)"
+                elif [[ "$item" == "$ETC_DIR" ]]; then
+                    echo "  [PRESERVE] ${ETC_DIR} (credentials, state)"
+                elif [[ "$item" == "${SYSTEMD_UNIT_DIR}/"* ]]; then
+                    echo "  [REMOVE]   $item"
                 else
                     echo "  [REMOVE]   $item"
                 fi
@@ -410,8 +420,8 @@ remove_nginx_integration() {
         ACTIONS_TAKEN+=("Removed: ${SNIPPET_FILE}")
     fi
 
-    # Remove htpasswd file
-    if [[ -f "$HTPASSWD_FILE" ]]; then
+    # Htpasswd: remove only in purge mode; default mode preserves it
+    if [[ -f "$HTPASSWD_FILE" && "$PURGE" -eq 1 ]]; then
         rm -f "$HTPASSWD_FILE"
         log "  Removed htpasswd: ${HTPASSWD_FILE}"
         ACTIONS_TAKEN+=("Removed: ${HTPASSWD_FILE}")
@@ -509,22 +519,91 @@ preserve_data() {
         return 0
     fi
 
-    log "Preserving data to ${PRESERVE_ROOT}..."
-    mkdir -p "$PRESERVE_ROOT"
+    log "Preserving state data selectively to ${PRESERVE_ROOT}..."
+    local preserve_ts="${PRESERVE_ROOT}/${TS}"
+    mkdir -p "$preserve_ts"
 
-    local -a data_dirs=("$APP_DIR" "$WEB_DIR" "$ETC_DIR")
-    for dir in "${data_dirs[@]}"; do
-        if [[ -d "$dir" ]]; then
-            local basename
-            basename="$(basename "$dir")"
-            local dest="${PRESERVE_ROOT}/${basename}-${TS}"
-            log "  Moving ${dir} → ${dest}"
-            mv "$dir" "$dest"
-            ACTIONS_TAKEN+=("Preserved: ${dir} → ${dest}")
+    # --- APP_DIR: preserve only config, audit, output ---
+    local -a app_preserve_dirs=(config audit output)
+    for subdir in "${app_preserve_dirs[@]}"; do
+        local src="${APP_DIR}/${subdir}"
+        if [[ -d "$src" ]]; then
+            local dest="${preserve_ts}/app/${subdir}"
+            mkdir -p "$(dirname "$dest")"
+            cp -a "$src" "$dest"
+            if [[ -d "$dest" ]]; then
+                log "  Preserved: ${src} → ${dest}"
+                ACTIONS_TAKEN+=("Preserved: ${src} → ${dest}")
+            else
+                die "Failed to preserve ${src}"
+            fi
         fi
     done
 
-    log "Data preservation complete."
+    # --- WEB_DIR: preserve only data, reports ---
+    local -a web_preserve_dirs=(data reports)
+    for subdir in "${web_preserve_dirs[@]}"; do
+        local src="${WEB_DIR}/${subdir}"
+        if [[ -d "$src" ]]; then
+            local dest="${preserve_ts}/web/${subdir}"
+            mkdir -p "$(dirname "$dest")"
+            cp -a "$src" "$dest"
+            if [[ -d "$dest" ]]; then
+                log "  Preserved: ${src} → ${dest}"
+                ACTIONS_TAKEN+=("Preserved: ${src} → ${dest}")
+            else
+                die "Failed to preserve ${src}"
+            fi
+        fi
+    done
+
+    # --- ETC_DIR: preserve entirely ---
+    if [[ -d "$ETC_DIR" ]]; then
+        local dest="${preserve_ts}/etc-hmg-soar"
+        cp -a "$ETC_DIR" "$dest"
+        if [[ -d "$dest" ]]; then
+            log "  Preserved: ${ETC_DIR} → ${dest}"
+            ACTIONS_TAKEN+=("Preserved: ${ETC_DIR} → ${dest}")
+        else
+            die "Failed to preserve ${ETC_DIR}"
+        fi
+    fi
+
+    # --- HTPASSWD_FILE: preserve ---
+    if [[ -f "$HTPASSWD_FILE" ]]; then
+        local dest="${preserve_ts}/nginx"
+        mkdir -p "$dest"
+        cp -a "$HTPASSWD_FILE" "${dest}/htpasswd"
+        if [[ -f "${dest}/htpasswd" ]]; then
+            log "  Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd"
+            ACTIONS_TAKEN+=("Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd")
+        else
+            die "Failed to preserve ${HTPASSWD_FILE}"
+        fi
+    fi
+
+    # --- Remove active directories after preservation ---
+    log "Removing active directories..."
+    for dir in "$APP_DIR" "$WEB_DIR" "$ETC_DIR"; do
+        if [[ -d "$dir" ]]; then
+            assert_safe_managed_path "$dir" "active dir removal"
+            rm -rf "$dir"
+            log "  Removed active: ${dir}"
+            ACTIONS_TAKEN+=("Removed active: ${dir}")
+        fi
+    done
+
+    # Remove htpasswd from active path
+    if [[ -f "$HTPASSWD_FILE" ]]; then
+        rm -f "$HTPASSWD_FILE"
+        log "  Removed active: ${HTPASSWD_FILE}"
+        ACTIONS_TAKEN+=("Removed active: ${HTPASSWD_FILE}")
+    fi
+
+    # Set secure permissions on preserve root
+    chmod 0700 "$preserve_ts"
+
+    log "Selective preservation complete: ${preserve_ts}"
 }
 
 # =============================================================================
@@ -547,6 +626,13 @@ purge_data() {
         fi
     done
 
+    # Remove htpasswd in purge mode
+    if [[ -f "$HTPASSWD_FILE" ]]; then
+        rm -f "$HTPASSWD_FILE"
+        log "  Purged: ${HTPASSWD_FILE}"
+        ACTIONS_TAKEN+=("Purged: ${HTPASSWD_FILE}")
+    fi
+
     # Also remove any preserved data from previous runs
     if [[ -d "$PRESERVE_ROOT" ]]; then
         assert_safe_managed_path "$PRESERVE_ROOT" "PRESERVE_ROOT"
@@ -564,17 +650,16 @@ purge_data() {
 remove_app_directories() {
     log "Cleaning up remaining application directories..."
 
+    # In preserve mode, dirs are already removed by preserve_data.
+    # In purge mode, dirs are already removed by purge_data.
+    # This handles any edge-case leftovers.
     local -a dirs=("$APP_DIR" "$WEB_DIR" "$ETC_DIR")
     for dir in "${dirs[@]}"; do
         if [[ -d "$dir" ]]; then
-            # In preserve mode this shouldn't exist (already moved),
-            # but handle edge cases with empty dirs
-            if [[ "$(ls -A "$dir" 2>/dev/null)" == "" ]]; then
-                rmdir "$dir" 2>/dev/null || true
-                log "  Removed empty dir: ${dir}"
-            else
-                warn "Directory ${dir} still has content — skipping removal."
-            fi
+            assert_safe_managed_path "$dir" "cleanup"
+            rm -rf "$dir"
+            log "  Removed remaining: ${dir}"
+            ACTIONS_TAKEN+=("Removed remaining: ${dir}")
         fi
     done
 }
