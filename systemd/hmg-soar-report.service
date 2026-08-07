@@ -2,6 +2,7 @@
 Description=HMG Wazuh SOAR Brain - Geração de Relatório de Vulnerabilidades
 After=network-online.target
 Wants=network-online.target
+ConditionPathExists=/etc/hmg-soar/credentials.env
 
 [Service]
 Type=oneshot
