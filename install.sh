@@ -4,6 +4,7 @@ IFS=$'\n\t'
 
 APP_USER="${APP_USER:-hmg-soar}"
 WEB_GROUP="${WEB_GROUP:-www-data}"
+NGINX_USER="${NGINX_USER:-www-data}"
 APP_DIR="${APP_DIR:-/opt/hmg-soar}"
 WEB_DIR="${WEB_DIR:-/var/www/wazuh-soar}"
 ETC_DIR="${ETC_DIR:-/etc/hmg-soar}"
@@ -707,9 +708,199 @@ nginx -t
 systemctl reload nginx
 }
 
+publish_offline_dashboard_placeholder() {
+  local index_file="${WEB_DIR}/index.html"
+
+  if [[ -f "${index_file}" && ! -L "${index_file}" && -s "${index_file}" ]]; then
+    log "Dashboard index.html já existe em ${index_file}. Preservando o dashboard atual."
+    return 0
+  fi
+
+  log "Publicando placeholder offline para o dashboard em ${index_file}..."
+
+  local tmp_file=""
+  if ! tmp_file="$(mktemp "${WEB_DIR}/.index.html.tmp.XXXXXX" 2>/dev/null)"; then
+    die "Falha ao criar arquivo temporário seguro em ${WEB_DIR}."
+  fi
+
+  _cleanup_tmp() {
+    if [[ -n "${tmp_file:-}" && ( -e "${tmp_file:-}" || -L "${tmp_file:-}" ) ]]; then
+      if ! rm -f "${tmp_file}"; then
+        warn "Falha ao remover o arquivo temporário residual: ${tmp_file}"
+      fi
+    fi
+  }
+
+  if ! cat > "${tmp_file}" <<'EOF'
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EyeMole SOAR - Bootstrap Offline</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-color: #58a6ff;
+            --warning-color: #d29922;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 40px;
+            max-width: 550px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+        .logo {
+            max-width: 120px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #ffffff;
+            font-size: 24px;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        p {
+            color: var(--text-secondary);
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .status-badge {
+            display: inline-block;
+            background-color: rgba(210, 153, 34, 0.15);
+            color: var(--warning-color);
+            border: 1px solid rgba(210, 153, 34, 0.4);
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 24px;
+        }
+        .instruction-box {
+            background-color: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 16px;
+            text-align: left;
+            margin-top: 20px;
+        }
+        .instruction-box code {
+            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+            color: var(--accent-color);
+            background-color: rgba(110, 118, 129, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="assets/eyemole.png" alt="EyeMole SOAR" class="logo" onerror="this.style.display='none'">
+        <h1>EyeMole SOAR instalado</h1>
+        <div class="status-badge">Modo Bootstrap / Offline</div>
+        <p>
+            O sistema foi instalado com sucesso. O dashboard ainda não possui dados porque as credenciais de integração com o Wazuh / Indexer não foram configuradas.
+        </p>
+        <div class="instruction-box">
+            <p style="margin: 0; color: var(--text-primary); font-weight: 600; margin-bottom: 8px;">Para habilitar o dashboard real:</p>
+            <p style="margin: 0;">Configure o arquivo <code>/etc/hmg-soar/credentials.env</code> com as credenciais de integração. O próximo serviço agendado publicará os dados automaticamente.</p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+  then
+    _cleanup_tmp
+    die "Falha ao escrever o conteúdo no arquivo temporário ${tmp_file}."
+  fi
+
+  if [[ ! -f "${tmp_file}" || -L "${tmp_file}" || ! -s "${tmp_file}" ]]; then
+    _cleanup_tmp
+    die "Arquivo temporário inválido ou vazio criado em ${tmp_file}."
+  fi
+
+  if ! chmod 0644 "${tmp_file}"; then
+    _cleanup_tmp
+    die "Falha ao definir permissão 0644 no arquivo temporário ${tmp_file}."
+  fi
+
+  if ! chown root:"${WEB_GROUP}" "${tmp_file}" 2>/dev/null; then
+    if ! chown root:root "${tmp_file}" 2>/dev/null; then
+      _cleanup_tmp
+      die "Falha ao definir proprietário no arquivo temporário ${tmp_file}."
+    else
+      warn "chown com grupo ${WEB_GROUP} falhou em ${tmp_file}; ajustado para root:root."
+    fi
+  fi
+
+  if ! mv -fT "${tmp_file}" "${index_file}"; then
+    _cleanup_tmp
+    die "Falha ao mover o arquivo temporário ${tmp_file} para ${index_file}."
+  fi
+
+  log "Placeholder offline publicado com sucesso em ${index_file}."
+}
+
+validate_web_publication() {
+  log "Validando publicação web em ${WEB_DIR}..."
+
+  local index_file="${WEB_DIR}/index.html"
+
+  if [[ -L "${index_file}" ]]; then
+    die "Validação da publicação web falhou: ${index_file} é um link simbólico."
+  fi
+
+  if [[ ! -f "${index_file}" ]]; then
+    die "Validação da publicação web falhou: arquivo ${index_file} não existe ou não é um arquivo regular."
+  fi
+
+  if [[ ! -s "${index_file}" ]]; then
+    die "Validação da publicação web falhou: arquivo ${index_file} está vazio (0 bytes)."
+  fi
+
+  if ! command -v runuser >/dev/null 2>&1; then
+    die "Comando 'runuser' ausente. Não é possível validar as permissões de leitura do usuário Nginx '${NGINX_USER}'."
+  fi
+
+  if ! id "${NGINX_USER}" >/dev/null 2>&1; then
+    die "Usuário Nginx '${NGINX_USER}' não encontrado no sistema."
+  fi
+
+  if ! runuser -u "${NGINX_USER}" -- test -r "${index_file}" 2>/dev/null; then
+    die "Validação da publicação web falhou: o usuário Nginx '${NGINX_USER}' não possui permissão de leitura em ${index_file}."
+  fi
+
+  log "Publicação web em ${index_file} validada com sucesso."
+}
+
 run_report_once_if_possible() {
   if [[ ! -f "${SYSTEMD_UNIT_DIR}/${SERVICE_FILE}" ]]; then
-    warn "Service systemd não instalado. Pulando execução."
+    warn "Service systemd não instalado. Pulando execução do serviço de relatório."
+    if [[ ! -f "${ETC_DIR}/credentials.env" ]]; then
+      publish_offline_dashboard_placeholder
+    fi
     return 0
   fi
 
@@ -740,31 +931,43 @@ run_report_once_if_possible() {
     fi
     log "Últimas linhas do serviço:"
     journalctl -u "${SERVICE_FILE}" -n 40 --no-pager || true
+  else
+    publish_offline_dashboard_placeholder
   fi
 }
 
 final_message() {
-echo
-echo "============================================================"
-echo "EyeMole SOAR instalado."
-echo "App dir : ${APP_DIR}"
-echo "Web dir : ${WEB_DIR}"
-echo "URL     : https://<servidor>/soar/"
-if [[ "${ENABLE_WEB_RUN}" == "1" ]]; then
-echo "Modo    : WEB-RUN (opt-in) - execução manual via web HABILITADA (PolicyKit restrito, sem sudoers)"
-echo "          Regra: ${POLKIT_RULE_FILE} | Marcador: ${WEB_RUN_FLAG}"
-else
-echo "Modo    : SEGURO (padrão) - sem sudoers; execução manual via web DESABILITADA"
-echo "          Relatório gerado automaticamente pelo timer hmg-soar-report.timer."
-echo "          Execução manual (admin): sudo systemctl start hmg-soar-report.service"
-fi
-echo
-echo "Próximo passo:"
-echo "sudo ./create-web-user.sh <usuario>"
-echo
-echo "Backup desta instalação:"
-echo "${BACKUP_DIR}"
-echo "============================================================"
+  echo
+  echo "============================================================"
+  echo "EyeMole SOAR instalado."
+  echo "App dir : ${APP_DIR}"
+  echo "Web dir : ${WEB_DIR}"
+  echo "URL     : https://<servidor>/soar/"
+  if [[ "${ENABLE_WEB_RUN}" == "1" ]]; then
+    echo "Modo    : WEB-RUN (opt-in) - execução manual via web HABILITADA (PolicyKit restrito, sem sudoers)"
+    echo "          Regra: ${POLKIT_RULE_FILE} | Marcador: ${WEB_RUN_FLAG}"
+  else
+    echo "Modo    : SEGURO (padrão) - sem sudoers; execução manual via web DESABILITADA"
+    echo "          Relatório gerado automaticamente pelo timer hmg-soar-report.timer."
+    echo "          Execução manual (admin): sudo systemctl start hmg-soar-report.service"
+  fi
+
+  if [[ ! -f "${ETC_DIR}/credentials.env" ]]; then
+    echo
+    echo "Status  : BOOTSTRAP / OFFLINE (credenciais de integração ausentes)"
+    echo "          O dashboard inicial exibe a página de bootstrap."
+    echo "          Para publicar os dados reais do Wazuh/Indexer, crie e configure:"
+    echo "          ${ETC_DIR}/credentials.env"
+    echo "          Após a configuração, o serviço/timer hmg-soar-report publicará os dados."
+  fi
+
+  echo
+  echo "Próximo passo:"
+  echo "sudo ./create-web-user.sh <usuario>"
+  echo
+  echo "Backup desta instalação:"
+  echo "${BACKUP_DIR}"
+  echo "============================================================"
 }
 
 main() {
@@ -799,6 +1002,7 @@ main() {
   inject_nginx_include
   reload_nginx
   run_report_once_if_possible
+  validate_web_publication
   ensure_api_audit_dirs
   final_message
 }
