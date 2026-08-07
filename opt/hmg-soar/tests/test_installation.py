@@ -1679,3 +1679,197 @@ class TestOfflineDashboardAndWebValidation:
         assert "Falha ao definir permissão 0644" in result.stderr
         assert "Falha ao remover o arquivo temporário residual" in result.stderr
         assert "MOCK_RM_FAILURE" in result.stderr
+
+
+class TestCredentialsEnvTemplateAndReadiness:
+    """Test suite for automatic credentials.env template creation, readiness parsing, and systemd conditions."""
+
+    def test_47_credentials_env_auto_creation_when_missing(self, sandbox):
+        """When credentials.env is missing, secure_credentials_env creates it automatically from template with 0640 permissions."""
+        etc_dir = sandbox["tmp_path"] / "etc"
+        etc_dir.mkdir()
+        cred_file = etc_dir / "credentials.env"
+
+        etc_wsl = _to_wsl_path(etc_dir)
+        repo_wsl = _to_wsl_path(REPO_ROOT)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            REPO_ROOT="{repo_wsl}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            secure_credentials_env
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert cred_file.exists()
+        assert cred_file.is_file()
+        assert not cred_file.is_symlink()
+        content = cred_file.read_text(encoding="utf-8")
+        assert "OPENSEARCH_PASS=" in content
+        assert "WAZUH_API_PASS=" in content
+        assert "# OPENSEARCH_HOST=127.0.0.1" in content
+        assert oct(cred_file.stat().st_mode & 0o777) == "0o640"
+
+    def test_48_credentials_env_existing_regular_file_preserved_byte_for_byte(self, sandbox):
+        """When credentials.env already exists as a regular file, secure_credentials_env preserves it byte-for-byte."""
+        etc_dir = sandbox["tmp_path"] / "etc"
+        etc_dir.mkdir()
+        cred_file = etc_dir / "credentials.env"
+        existing_content = "OPENSEARCH_PASS=mysecret1\nWAZUH_API_PASS=mysecret2\nCUSTOM_VAR=val\n"
+        cred_file.write_text(existing_content, encoding="utf-8")
+
+        etc_wsl = _to_wsl_path(etc_dir)
+        repo_wsl = _to_wsl_path(REPO_ROOT)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            REPO_ROOT="{repo_wsl}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            secure_credentials_env
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert cred_file.read_text(encoding="utf-8") == existing_content
+
+    def test_49_credentials_env_symlink_fails_closed(self, sandbox):
+        """When credentials.env is a symlink, secure_credentials_env fails closed without modifying target."""
+        etc_dir = sandbox["tmp_path"] / "etc"
+        etc_dir.mkdir()
+        target_file = etc_dir / "target_secrets.txt"
+        target_content_before = "ORIGINAL_TARGET_CONTENT"
+        target_file.write_text(target_content_before, encoding="utf-8")
+
+        symlink_cred = etc_dir / "credentials.env"
+        symlink_cred.symlink_to(target_file)
+
+        etc_wsl = _to_wsl_path(etc_dir)
+        repo_wsl = _to_wsl_path(REPO_ROOT)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            REPO_ROOT="{repo_wsl}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            secure_credentials_env
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+        assert "link simbólico" in result.stderr
+        assert target_file.read_text(encoding="utf-8") == target_content_before
+
+    def test_50_is_credentials_ready_logic(self, sandbox):
+        """is_credentials_ready correctly distinguishes missing, empty, partial, and complete credentials without logging secrets."""
+        etc_dir = sandbox["tmp_path"] / "etc"
+        etc_dir.mkdir()
+        cred_file = etc_dir / "credentials.env"
+        etc_wsl = _to_wsl_path(etc_dir)
+
+        # Scenario 1: File missing -> NOT READY (rc=1)
+        script_missing = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            source "{_to_wsl_path(INSTALL_SH)}"
+            is_credentials_ready && echo "READY" || echo "NOT_READY"
+        """)
+        res_missing = _run_bash(script_missing)
+        assert "NOT_READY" in res_missing.stdout
+
+        # Scenario 2: File with empty passwords -> NOT READY
+        cred_file.write_text("OPENSEARCH_PASS=\nWAZUH_API_PASS=\n", encoding="utf-8")
+        script_empty = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            source "{_to_wsl_path(INSTALL_SH)}"
+            is_credentials_ready && echo "READY" || echo "NOT_READY"
+        """)
+        res_empty = _run_bash(script_empty)
+        assert "NOT_READY" in res_empty.stdout
+
+        # Scenario 3: Only OPENSEARCH_PASS -> NOT READY
+        cred_file.write_text("OPENSEARCH_PASS=supersecret1\nWAZUH_API_PASS=\n", encoding="utf-8")
+        res_opensearch_only = _run_bash(script_empty)
+        assert "NOT_READY" in res_opensearch_only.stdout
+
+        # Scenario 4: Only WAZUH_API_PASS -> NOT READY
+        cred_file.write_text("OPENSEARCH_PASS=\nWAZUH_API_PASS=supersecret2\n", encoding="utf-8")
+        res_wazuh_only = _run_bash(script_empty)
+        assert "NOT_READY" in res_wazuh_only.stdout
+
+        # Scenario 5: Both passwords set -> READY
+        cred_file.write_text("OPENSEARCH_PASS=\"supersecret1\"\nWAZUH_API_PASS='supersecret2'\n", encoding="utf-8")
+        script_full = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            source "{_to_wsl_path(INSTALL_SH)}"
+            is_credentials_ready && echo "READY" || echo "NOT_READY"
+        """)
+        res_full = _run_bash(script_full)
+        assert "READY" in res_full.stdout
+        assert "supersecret1" not in res_full.stdout
+        assert "supersecret2" not in res_full.stdout
+        assert "supersecret1" not in res_full.stderr
+        assert "supersecret2" not in res_full.stderr
+
+    def test_51_systemd_unit_has_exec_condition_and_mandatory_env_file(self):
+        """systemd service unit enforces ConditionPathExists, mandatory EnvironmentFile, and ExecConditions."""
+        service_path = REPO_ROOT / "systemd" / "hmg-soar-report.service"
+        assert service_path.exists()
+        content = service_path.read_text(encoding="utf-8")
+
+        assert "ConditionPathExists=/etc/hmg-soar/credentials.env" in content
+        assert "EnvironmentFile=/etc/hmg-soar/credentials.env" in content
+        assert "EnvironmentFile=-/etc/hmg-soar/credentials.env" not in content
+        assert 'ExecCondition=/usr/bin/test -n "${OPENSEARCH_PASS}"' in content
+        assert 'ExecCondition=/usr/bin/test -n "${WAZUH_API_PASS}"' in content
+
+    def test_52_final_message_offline_mode_shows_nano_command(self, sandbox):
+        """When credentials are NOT READY, final_message displays the sudo nano command without exposing secrets."""
+        etc_dir = sandbox["tmp_path"] / "etc"
+        etc_dir.mkdir()
+        etc_wsl = _to_wsl_path(etc_dir)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            ETC_DIR="{etc_wsl}"
+            APP_DIR="/opt/hmg-soar"
+            WEB_DIR="/var/www/wazuh-soar"
+            ENABLE_WEB_RUN=0
+            BACKUP_DIR="/opt/backup"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            final_message
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert "BOOTSTRAP / OFFLINE" in result.stdout
+        assert f"sudo nano {etc_wsl}/credentials.env" in result.stdout
+
+    def test_53_template_example_file_integrity(self):
+        """credentials.env.example template contains required variable keys without hardcoded secrets."""
+        example_path = REPO_ROOT / "credentials.env.example"
+        assert example_path.exists()
+        content = example_path.read_text(encoding="utf-8")
+
+        assert "OPENSEARCH_PASS=" in content
+        assert "WAZUH_API_PASS=" in content
+        assert "# OPENSEARCH_HOST=127.0.0.1" in content
+        assert "# WAZUH_API_HOST=127.0.0.1" in content
+        assert "# HMG_USE_HTTPS=true" in content
+        # Ensure no non-empty un-commented secrets
+        for line in content.splitlines():
+            line_str = line.strip()
+            if line_str and not line_str.startswith("#"):
+                key, val = line_str.split("=", 1)
+                assert val == "", f"Template variable {key} must have empty value in example template"
