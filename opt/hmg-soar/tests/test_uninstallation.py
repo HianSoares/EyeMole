@@ -23,6 +23,7 @@ Uses tmp_path fixtures and mocked system commands.
 
 from __future__ import annotations
 
+import inspect
 import os
 import platform
 import shutil
@@ -121,6 +122,20 @@ def _run_bash(
         )
 
     return result
+
+
+def _run_preserve_bash(
+    script: str,
+    expect_fail: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run a bash script that exercises preserve_data/purge_data.
+
+    These scripts perform multiple `cp -a` operations across a nested
+    directory tree and, on Windows/Git Bash, incur extra subprocess-fork
+    overhead. They get a longer timeout than the default `_run_bash`,
+    applied explicitly here rather than via implicit content sniffing.
+    """
+    return _run_bash(script, expect_fail=expect_fail, timeout=180)
 
 
 # ============================================================================
@@ -562,14 +577,20 @@ class TestNginx:
         snippets = nginx_root / "snippets"
         snippets.mkdir()
 
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text(
+            "location /soar { proxy_pass http://localhost:5000; }\n"
+        )
+
         site_conf = sites / "wazuh-dashboard-proxy"
+        snippet_wsl = _to_wsl_path(snippet_file)
         lines = [
             "server {",
             "    listen 443 ssl;",
             "    server_name wazuh.example.com;",
         ]
         if include_line:
-            lines.append("    include snippets/eyemole-soar-locations.conf;")
+            lines.append(f"    include {snippet_wsl};")
         lines += [
             "    location / {",
             "        proxy_pass https://localhost:5601;",
@@ -578,11 +599,6 @@ class TestNginx:
         ]
         site_conf.write_text("\n".join(lines) + "\n")
 
-        snippet_file = snippets / "eyemole-soar-locations.conf"
-        snippet_file.write_text(
-            "location /soar { proxy_pass http://localhost:5000; }\n"
-        )
-
         htpasswd = nginx_root / ".htpasswd-wazuh-soar"
         htpasswd.write_text("user:hash\n")
 
@@ -590,6 +606,8 @@ class TestNginx:
 
     def _nginx_script(self, tmp_path, nginx_root, snippet_file, htpasswd,
                       nginx_exit: int = 0) -> str:
+        backup_dir = tmp_path / "backups" / "backup-eyemole-uninstall-test"
+        backup_dir.mkdir(parents=True, exist_ok=True)
         return dedent(f"""\
             set -Eeuo pipefail
             export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
@@ -600,7 +618,8 @@ class TestNginx:
             nginx() {{ return {nginx_exit}; }}
             systemctl() {{ return 0; }}
             TS="test"
-            remove_nginx_integration
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            remove_nginx_integration || true
         """)
 
     def test_include_line_removed(self, tmp_path):
@@ -614,18 +633,19 @@ class TestNginx:
     def test_similar_line_not_removed(self, tmp_path):
         """A line that looks similar but isn't exact is preserved."""
         nginx_root, site_conf, snippet_file, htpasswd = self._setup_nginx(tmp_path)
-        # Replace the actual include with a different one
+        # Remove the real include and add a similar but different one
+        snippet_wsl = _to_wsl_path(snippet_file)
         original = site_conf.read_text()
         original = original.replace(
-            "    include snippets/eyemole-soar-locations.conf;\n", ""
+            f"    include {snippet_wsl};\n", ""
         )
-        original += "    include snippets/other-soar-locations.conf;\n"
+        original += "    include /other/path/eyemole-soar-locations.conf;\n"
         site_conf.write_text(original)
 
         script = self._nginx_script(tmp_path, nginx_root, snippet_file, htpasswd)
         _run_bash(script)
         content = site_conf.read_text()
-        assert "other-soar-locations" in content
+        assert "other/path/eyemole-soar-locations" in content
 
     def test_server_block_preserved(self, tmp_path):
         """The server block structure is preserved after include removal."""
@@ -642,6 +662,8 @@ class TestNginx:
         nginx_root, site_conf, snippet_file, htpasswd = self._setup_nginx(tmp_path)
         stop_log = tmp_path / "stop.log"
         stop_log_wsl = _to_wsl_path(stop_log)
+        backup_dir = tmp_path / "backups" / "backup-eyemole-uninstall-test"
+        backup_dir.mkdir(parents=True, exist_ok=True)
         script = dedent(f"""\
             set -Eeuo pipefail
             export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
@@ -657,13 +679,14 @@ class TestNginx:
                 return 0
             }}
             TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
             remove_nginx_integration
         """)
         _run_bash(script)
         assert not stop_log.exists(), "Nginx was stopped but should only be reloaded"
 
     def test_nginx_t_failure_triggers_rollback(self, tmp_path):
-        """If nginx -t fails after edit, the config is rolled back."""
+        """If nginx -t fails after edit, the config is rolled back and snippet/htpasswd survive."""
         nginx_root, site_conf, snippet_file, htpasswd = self._setup_nginx(tmp_path)
         script = self._nginx_script(
             tmp_path, nginx_root, snippet_file, htpasswd, nginx_exit=1
@@ -671,6 +694,8 @@ class TestNginx:
         _run_bash(script)
         content = site_conf.read_text()
         assert "eyemole-soar-locations" in content
+        assert snippet_file.exists(), "Snippet was removed despite nginx -t failure"
+        assert htpasswd.exists(), "Htpasswd was removed despite nginx -t failure"
 
     def test_snippet_removed(self, tmp_path):
         """The snippet file is removed during nginx cleanup."""
@@ -853,7 +878,7 @@ class TestPreserveMode:
     def test_default_preserves_config(self, tmp_path):
         """Default mode moves config to preserve root."""
         paths = self._setup_preserve_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         assert not paths["etc_dir"].exists()
         preserved = list(paths["preserve_root"].iterdir())
         assert len(preserved) > 0
@@ -861,7 +886,7 @@ class TestPreserveMode:
     def test_default_preserves_audit(self, tmp_path):
         """Default mode preserves web data (selective, not whole dir)."""
         paths = self._setup_preserve_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         assert not paths["web_dir"].exists()
         # Under new selective preservation, web data/reports are under PRESERVE_ROOT/<ts>/web/
         web_data = list(paths["preserve_root"].rglob("data"))
@@ -872,14 +897,14 @@ class TestPreserveMode:
     def test_default_preserves_credentials(self, tmp_path):
         """Default mode preserves credentials.env."""
         paths = self._setup_preserve_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         all_creds = list(paths["preserve_root"].rglob("credentials.env"))
         assert len(all_creds) == 1
 
     def test_default_removes_code(self, tmp_path):
         """Default mode moves app dir out of original location."""
         paths = self._setup_preserve_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         assert not paths["app_dir"].exists()
 
 
@@ -1300,35 +1325,87 @@ class TestNoRealPaths:
             )
 
     def test_helpers_configure_htpasswd(self):
-        """Regression check: verify that all helper methods/scripts in this file
-        that call preserve_data or purge_data define/export HTPASSWD_FILE.
+        """Regression check: verify that every test/helper in this file that
+        actually INVOKES the real `preserve_data` or `purge_data` bash
+        functions also configures HTPASSWD_FILE for the sandbox — either
+        directly (an explicit `export HTPASSWD_FILE=...` in the embedded
+        script) or indirectly through a shared helper method that is itself
+        verified elsewhere to always export it (`_env_exports`,
+        `_preserve_script` — see test_env_exports_defines_htpasswd and
+        test_preserve_script_defines_htpasswd).
+
+        This is a structural check based on actual bash function CALLS
+        (a line consisting solely of `preserve_data` or `purge_data`), not
+        merely a mention of those words in a comment, docstring, or
+        assertion message. No function is excluded by name: any function
+        that doesn't literally invoke preserve_data/purge_data as a bash
+        command is naturally skipped by the invocation regex, without
+        needing a hardcoded exclusion list.
         """
         test_file = Path(__file__).resolve()
         content = test_file.read_text(encoding="utf-8")
 
-        import ast
-        tree = ast.parse(content)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                # Check for string literals inside the function body
-                has_preserve_or_purge = False
-                has_htpasswd_file = False
-                for subnode in ast.walk(node):
-                    if isinstance(subnode, ast.Constant) and isinstance(subnode.value, str):
-                        val = subnode.value
-                        if "preserve_data" in val or "purge_data" in val:
-                            has_preserve_or_purge = True
-                        if "HTPASSWD_FILE" in val:
-                            has_htpasswd_file = True
-                # Exclude the checking functions themselves
-                if node.name in ("test_helpers_configure_htpasswd", "test_fails_if_htpasswd_not_overridden", "test_passes_if_htpasswd_is_overridden"):
-                    continue
+        # Helper methods verified (by dedicated tests below) to always
+        # export HTPASSWD_FILE in the bash snippet they build.
+        KNOWN_HTPASSWD_PROVIDERS = ("_env_exports", "_preserve_script")
 
-                if has_preserve_or_purge:
-                    assert has_htpasswd_file, (
-                        f"Test method/helper '{node.name}' uses 'preserve_data' or 'purge_data' "
-                        f"but does not define or configure HTPASSWD_FILE."
-                    )
+        import ast
+        import re
+        tree = ast.parse(content)
+
+        # Matches a real bash invocation: the function name alone on its own
+        # line (optionally indented). This will NOT match occurrences inside
+        # comments/docstrings/messages such as "...preserve_data or purge_data...".
+        invocation_re = re.compile(r"(?m)^[ \t]*(preserve_data|purge_data)[ \t]*$")
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+
+            func_src = ast.get_source_segment(content, node) or ""
+
+            if not invocation_re.search(func_src):
+                continue  # This function never actually calls preserve_data/purge_data.
+
+            configures_htpasswd = (
+                "HTPASSWD_FILE" in func_src
+                or any(f"{helper}(" in func_src for helper in KNOWN_HTPASSWD_PROVIDERS)
+            )
+
+            assert configures_htpasswd, (
+                f"Test method/helper '{node.name}' invokes the real preserve_data/"
+                f"purge_data bash function but does not configure HTPASSWD_FILE "
+                f"(directly, or via one of {KNOWN_HTPASSWD_PROVIDERS})."
+            )
+
+    def test_env_exports_defines_htpasswd(self, tmp_path):
+        """TestNginxTransaction._env_exports always exports HTPASSWD_FILE.
+
+        Direct regression test (not just an AST string search) so that if
+        _env_exports is ever edited to drop this export, this test fails
+        immediately rather than relying on the broader structural scanner.
+        """
+        env_exports_src = inspect.getsource(TestNginxTransaction._env_exports)
+        assert "HTPASSWD_FILE" in env_exports_src, (
+            "_env_exports() must export HTPASSWD_FILE for every sandbox script "
+            "that sources uninstall.sh and may call preserve_data/purge_data."
+        )
+
+    def test_preserve_script_defines_htpasswd(self, tmp_path):
+        """Preserve-mode helper `_preserve_script` methods always export
+        HTPASSWD_FILE, across every test class that defines one.
+        """
+        found_any = False
+        for cls in (TestPreserveMode, TestSelectivePreservation):
+            method = getattr(cls, "_preserve_script", None)
+            if method is None:
+                continue
+            found_any = True
+            src = inspect.getsource(method)
+            assert "HTPASSWD_FILE" in src, (
+                f"{cls.__name__}._preserve_script must export HTPASSWD_FILE."
+            )
+        assert found_any, "No _preserve_script helper found to validate."
 
     def test_fails_if_htpasswd_not_overridden(self, tmp_path):
         """Verify that leaving HTPASSWD_FILE at its default value fails sandbox constraints."""
@@ -1517,7 +1594,7 @@ class TestSelectivePreservation:
     def test_htpasswd_preserved_in_default_mode(self, tmp_path):
         """Default mode preserves htpasswd to PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         preserved = list(paths["preserve_root"].rglob("htpasswd"))
         assert len(preserved) == 1
         assert preserved[0].read_text() == "admin:$apr1$hash"
@@ -1526,97 +1603,97 @@ class TestSelectivePreservation:
         """Preserved htpasswd content matches original byte-for-byte."""
         paths = self._setup_full_env(tmp_path)
         original = paths["htpasswd"].read_bytes()
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         preserved = list(paths["preserve_root"].rglob("htpasswd"))
         assert preserved[0].read_bytes() == original
 
     def test_htpasswd_active_removed_after_preservation(self, tmp_path):
         """Active htpasswd is removed after preservation copy confirmed."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         assert not paths["htpasswd"].exists()
 
     def test_analyser_not_preserved(self, tmp_path):
         """analyserV1.py does NOT appear in PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("analyserV1.py"))
         assert found == []
 
     def test_soar_api_not_preserved(self, tmp_path):
         """soar_api.py does NOT appear in PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("soar_api.py"))
         assert found == []
 
     def test_remediation_not_preserved(self, tmp_path):
         """remediation/ does NOT appear in PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("engine.py"))
         assert found == []
 
     def test_config_preserved(self, tmp_path):
         """config/ IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("sla_policy.json"))
         assert len(found) == 1
 
     def test_audit_preserved(self, tmp_path):
         """audit/ IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("actions.log"))
         assert len(found) == 1
 
     def test_output_preserved(self, tmp_path):
         """output/ IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("report.html"))
         assert len(found) == 1
 
     def test_index_html_not_preserved(self, tmp_path):
         """index.html does NOT appear in PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("index.html"))
         assert found == []
 
     def test_assets_not_preserved(self, tmp_path):
         """assets/ does NOT appear in PRESERVE_ROOT."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("eyemole.png"))
         assert found == []
 
     def test_web_data_preserved(self, tmp_path):
         """WEB_DIR/data IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("audit_actions.jsonl"))
         assert len(found) == 1
 
     def test_web_reports_preserved(self, tmp_path):
         """WEB_DIR/reports IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("latest.html"))
         assert len(found) == 1
 
     def test_etc_dir_preserved(self, tmp_path):
         """ETC_DIR (including credentials.env) IS preserved."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         found = list(paths["preserve_root"].rglob("credentials.env"))
         assert len(found) == 1
 
     def test_active_dirs_removed(self, tmp_path):
         """After preservation, active APP_DIR/WEB_DIR/ETC_DIR are removed."""
         paths = self._setup_full_env(tmp_path)
-        _run_bash(self._preserve_script(paths))
+        _run_preserve_bash(self._preserve_script(paths))
         assert not paths["app_dir"].exists()
         assert not paths["web_dir"].exists()
         assert not paths["etc_dir"].exists()
@@ -1636,7 +1713,7 @@ class TestSelectivePreservation:
             PURGE=1
             purge_data
         """)
-        _run_bash(script)
+        _run_preserve_bash(script)
         assert not paths["htpasswd"].exists()
         assert not paths["preserve_root"].exists()
 
@@ -1655,5 +1732,1416 @@ class TestSelectivePreservation:
             PURGE=1
             purge_data
         """)
-        _run_bash(script)
+        _run_preserve_bash(script)
         assert not paths["preserve_root"].exists()
+
+
+# ============================================================================
+# TEST CLASS: Nginx Transaction (atomic rollback regression tests)
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestNginxTransaction:
+    """Regression tests for the atomic Nginx transaction with full rollback."""
+
+    def _setup_nginx_env(self, tmp_path: Path):
+        """Create a full sandbox for nginx transaction tests."""
+        nginx_root = tmp_path / "nginx"
+        nginx_root.mkdir(parents=True)
+        sites = nginx_root / "sites-enabled"
+        sites.mkdir()
+        snippets = nginx_root / "snippets"
+        snippets.mkdir()
+
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text(
+            "location /soar { proxy_pass http://localhost:5000; }\n"
+        )
+
+        site_conf = sites / "wazuh-dashboard-proxy"
+        # Use the Git Bash (WSL-style) path in the include, matching what
+        # SNIPPET_FILE resolves to inside the bash test environment.
+        snippet_wsl_str = _to_wsl_path(snippet_file)
+        site_conf.write_text(
+            "server {\n"
+            "    listen 443 ssl;\n"
+            "    server_name wazuh.example.com;\n"
+            f"    include {snippet_wsl_str};\n"
+            "    location / {\n"
+            "        proxy_pass https://localhost:5601;\n"
+            "    }\n"
+            "}\n"
+        )
+
+        htpasswd = nginx_root / ".htpasswd-wazuh-soar"
+        htpasswd.write_text("admin:$apr1$xyzabc\n")
+
+        backup_root = tmp_path / "backups"
+        backup_root.mkdir()
+
+        app_dir = tmp_path / "opt" / "hmg-soar"
+        app_dir.mkdir(parents=True)
+        (app_dir / "analyserV1.py").write_text("# code")
+
+        web_dir = tmp_path / "var" / "www" / "wazuh-soar"
+        web_dir.mkdir(parents=True)
+        (web_dir / "index.html").write_text("<html></html>")
+
+        etc_dir = tmp_path / "etc" / "hmg-soar"
+        etc_dir.mkdir(parents=True)
+        (etc_dir / "credentials.env").write_text("SECRET=val")
+
+        preserve_root = tmp_path / "preserved"
+
+        systemd_dir = tmp_path / "systemd"
+        systemd_dir.mkdir()
+
+        polkit = tmp_path / "polkit" / "49-hmg-soar.rules"
+        polkit.parent.mkdir(parents=True)
+        polkit.write_text("// rule")
+
+        sudoers = tmp_path / "sudoers" / "hmg-soar-api"
+        sudoers.parent.mkdir(parents=True)
+        sudoers.write_text("# sudoers")
+
+        sbin = tmp_path / "sbin"
+        sbin.mkdir()
+        (sbin / "hmg-soar-run-analysis").write_text("#!/bin/bash")
+        (sbin / "hmg-soar-status").write_text("#!/bin/bash")
+
+        return {
+            "nginx_root": nginx_root,
+            "site_conf": site_conf,
+            "snippet_file": snippet_file,
+            "htpasswd": htpasswd,
+            "backup_root": backup_root,
+            "app_dir": app_dir,
+            "web_dir": web_dir,
+            "etc_dir": etc_dir,
+            "preserve_root": preserve_root,
+            "systemd_dir": systemd_dir,
+            "polkit": polkit,
+            "sudoers": sudoers,
+            "sbin": sbin,
+        }
+
+    def _env_exports(self, paths: dict) -> str:
+        """Build env export lines for all overridable paths."""
+        return "\n".join([
+            f'export NGINX_ROOT="{_to_wsl_path(paths["nginx_root"])}"',
+            f'export SNIPPET_FILE="{_to_wsl_path(paths["snippet_file"])}"',
+            f'export HTPASSWD_FILE="{_to_wsl_path(paths["htpasswd"])}"',
+            f'export BACKUP_ROOT="{_to_wsl_path(paths["backup_root"])}"',
+            f'export APP_DIR="{_to_wsl_path(paths["app_dir"])}"',
+            f'export WEB_DIR="{_to_wsl_path(paths["web_dir"])}"',
+            f'export ETC_DIR="{_to_wsl_path(paths["etc_dir"])}"',
+            f'export PRESERVE_ROOT="{_to_wsl_path(paths["preserve_root"])}"',
+            f'export SYSTEMD_UNIT_DIR="{_to_wsl_path(paths["systemd_dir"])}"',
+            f'export POLKIT_RULE_FILE="{_to_wsl_path(paths["polkit"])}"',
+            f'export SUDOERS_FILE="{_to_wsl_path(paths["sudoers"])}"',
+            f'export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(paths["sbin"] / "hmg-soar-run-analysis")}"',
+            f'export WRAPPER_STATUS="{_to_wsl_path(paths["sbin"] / "hmg-soar-status")}"',
+        ])
+
+    def test_no_temp_files_left_in_nginx_tree(self, tmp_path):
+        """After a successful remove_nginx_integration, no temporary,
+        backup, or editor-swap artifacts remain anywhere under NGINX_ROOT
+        (sites-enabled/, conf.d/, snippets/) — not just *.bak*.
+
+        Also verifies the final file set matches exactly what is expected:
+        the site config (edited in place, no suffix) and the htpasswd file
+        (the snippet is removed by remove_nginx_integration itself).
+        """
+        paths = self._setup_nginx_env(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            remove_nginx_integration
+        """)
+        _run_bash(script)
+
+        forbidden_patterns = ["*.bak*", "*.tmp", ".tmp*", "*~", "*.swp"]
+        search_dirs = [
+            paths["nginx_root"] / "sites-enabled",
+            paths["nginx_root"],  # covers conf.d/ and snippets/ recursively below
+        ]
+
+        leftovers: list[Path] = []
+        for base in search_dirs:
+            if not base.exists():
+                continue
+            for pattern in forbidden_patterns:
+                leftovers.extend(base.rglob(pattern))
+
+        # De-duplicate (nginx_root and sites-enabled overlap)
+        leftovers = sorted(set(leftovers))
+        assert leftovers == [], f"Found unexpected temp/backup files: {leftovers}"
+
+        # Positive check: compare the exact final file set under sites-enabled/.
+        sites_dir = paths["nginx_root"] / "sites-enabled"
+        final_files = sorted(p.name for p in sites_dir.iterdir() if p.is_file())
+        assert final_files == ["wazuh-dashboard-proxy"], (
+            f"Unexpected file set in sites-enabled/: {final_files}"
+        )
+
+    def test_nginx_t_failure_restores_all_three(self, tmp_path):
+        """nginx -t failure restores site config, snippet, and htpasswd byte-for-byte."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            nginx() {{ return 1; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            remove_nginx_integration || true
+            echo "NGINX_FAILED=$NGINX_FAILED"
+        """)
+        _run_bash(script)
+
+        assert paths["site_conf"].read_bytes() == original_site, \
+            "Site config not restored byte-for-byte"
+        assert paths["snippet_file"].read_bytes() == original_snippet, \
+            "Snippet not restored byte-for-byte"
+        assert paths["htpasswd"].read_bytes() == original_htpasswd, \
+            "Htpasswd not restored byte-for-byte"
+
+    def test_nginx_t_failure_prevents_purge(self, tmp_path):
+        """nginx -t failure aborts the REAL run_uninstall() before purge —
+        APP_DIR, WEB_DIR, ETC_DIR must survive, stop_services and purge_data
+        must never run, the report must show FAILED, and 'Uninstall complete'
+        must not appear.
+
+        This exercises the actual orchestrator (`run_uninstall`), not a
+        hand-rolled copy of the transaction logic.
+        """
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            # External commands simulated — nginx -t fails, everything else succeeds.
+            nginx() {{ if [[ "$1" == "-t" ]]; then return 1; fi; return 0; }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            # Spies to PROVE stop_services and purge_data are never invoked.
+            stop_services() {{ echo "STOP_SERVICES_WAS_CALLED"; }}
+            purge_data() {{ echo "PURGE_DATA_WAS_CALLED"; }}
+
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+            echo "EXIT_CODE=$?"
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+
+        assert "STOP_SERVICES_WAS_CALLED" not in result.stdout, \
+            "stop_services() was invoked despite the nginx transaction failing"
+        assert "PURGE_DATA_WAS_CALLED" not in result.stdout, \
+            "purge_data() was invoked despite the nginx transaction failing"
+        assert paths["app_dir"].exists(), "APP_DIR was purged despite nginx failure"
+        assert paths["web_dir"].exists(), "WEB_DIR was purged despite nginx failure"
+        assert paths["etc_dir"].exists(), "ETC_DIR was purged despite nginx failure"
+        assert paths["site_conf"].read_bytes() == original_site, \
+            "Site config not restored byte-for-byte"
+        assert paths["snippet_file"].read_bytes() == original_snippet, \
+            "Snippet not restored byte-for-byte"
+        assert paths["htpasswd"].read_bytes() == original_htpasswd, \
+            "Htpasswd not restored byte-for-byte"
+        assert "FAILED" in result.stdout, "Report did not show FAILED"
+        assert "Uninstall complete" not in result.stdout, \
+            "'Uninstall complete' must not appear when the transaction failed"
+
+    def test_reload_failure_restores_and_aborts(self, tmp_path):
+        """systemctl reload nginx failure, exercised through the REAL
+        run_uninstall() orchestrator, restores all 3 nginx artifacts
+        byte-for-byte, never calls purge_data, returns non-zero, shows
+        FAILED in the report, and never prints 'Uninstall complete'.
+        """
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            # nginx -t passes; systemctl reload nginx fails.
+            nginx() {{ return 0; }}
+            systemctl() {{
+                if [[ "$1" == "reload" ]]; then return 1; fi
+                return 0
+            }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+            stop_services() {{ echo "STOP_SERVICES_WAS_CALLED"; }}
+            purge_data() {{ echo "PURGE_DATA_WAS_CALLED"; }}
+
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+            echo "EXIT_CODE=$?"
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+
+        assert "STOP_SERVICES_WAS_CALLED" not in result.stdout, \
+            "stop_services() was invoked despite the nginx reload failing"
+        assert "PURGE_DATA_WAS_CALLED" not in result.stdout, \
+            "purge_data() was invoked despite the nginx reload failing"
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+        assert "FAILED" in result.stdout, "Report did not show FAILED"
+        assert "Uninstall complete" not in result.stdout, \
+            "'Uninstall complete' must not appear when the transaction failed"
+
+    def test_final_validation_failure_exit_code(self, tmp_path):
+        """Final validation failure, exercised through the REAL
+        run_uninstall() entrypoint, produces a non-zero exit code and
+        'FAILED' in the report, with no 'Uninstall complete' message.
+        """
+        paths = self._setup_nginx_env(tmp_path)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            # nginx -t passes for remove_nginx_integration (1st call) but
+            # fails for final_validations (2nd+ call).
+            _nginx_call_count=0
+            nginx() {{
+                _nginx_call_count=$((_nginx_call_count + 1))
+                if [[ "$1" == "-t" && "$_nginx_call_count" -gt 1 ]]; then
+                    return 1
+                fi
+                return 0
+            }}
+            systemctl() {{
+                if [[ "$1" == "list-unit-files" ]]; then return 1; fi
+                return 0
+            }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+            echo "EXIT_CODE=$?"
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+        assert "FAILED" in result.stdout
+        assert "Uninstall complete" not in result.stdout
+
+    def test_no_complete_message_on_failure(self, tmp_path):
+        """'Uninstall complete' never appears when run_uninstall() fails,
+        driven end-to-end through the real entrypoint rather than manually
+        calling remove_nginx_integration + final_report in isolation.
+        """
+        paths = self._setup_nginx_env(tmp_path)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            nginx() {{ if [[ "$1" == "-t" ]]; then return 1; fi; return 0; }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+            echo "EXIT_CODE=$?"
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+        assert "Uninstall complete" not in result.stdout
+        assert "FAILED" in result.stdout
+
+
+    def test_literal_include_matching_handles_similar_comments_and_regex_paths(self, tmp_path):
+        """Only the exact literal SNIPPET_FILE include is removed."""
+        paths = self._setup_nginx_env(tmp_path)
+        special_snippet = paths["nginx_root"] / "snippets" / "eye[mo]+le.(soar)locations.conf"
+        special_snippet.write_text("location /special { return 204; }\n")
+        paths["snippet_file"] = special_snippet
+        snippet_wsl = _to_wsl_path(special_snippet)
+        site_text = (
+            "server {{\n"
+            "    # include {snippet};\n"
+            "    include {similar_x};\n"
+            "    include {similar_extra};\n"
+            "    include {partial};\n"
+            "    set $arquivo \"{snippet}\";\n"
+            "\t include \t {snippet} \t ;   \n"
+            "}}\n"
+        ).format(
+            snippet=snippet_wsl,
+            similar_x=snippet_wsl.replace(".conf", "Xconf"),
+            similar_extra=snippet_wsl.replace(".conf", "-extra.conf"),
+            partial=snippet_wsl.replace("eye[mo]+le", "prefix-eye[mo]+le"),
+        )
+        paths["site_conf"].write_text(site_text)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            remove_nginx_integration
+        """)
+        _run_bash(script)
+
+        content = paths["site_conf"].read_text()
+        assert f"include {snippet_wsl};" not in [line.strip() for line in content.splitlines()]
+        assert f"# include {snippet_wsl};" in content
+        assert snippet_wsl.replace(".conf", "Xconf") in content
+        assert snippet_wsl.replace(".conf", "-extra.conf") in content
+        assert snippet_wsl.replace("eye[mo]+le", "prefix-eye[mo]+le") in content
+        assert f'set $arquivo "{snippet_wsl}";' in content
+        assert not special_snippet.exists()
+
+    def test_rollback_dir_creation_failure_aborts_before_changes(self, tmp_path):
+        """mkdir failure for rollback_dir marks failure and leaves artifacts untouched."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            mkdir() {{ if [[ "$*" == *nginx-rollback* ]]; then return 1; fi; command mkdir "$@"; }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            remove_nginx_integration
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Failed to create Nginx rollback directory" in result.stderr
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+
+    @pytest.mark.parametrize(
+        "target,message",
+        [
+            ("site", "Failed to backup Nginx server block"),
+            ("snippet", "Failed to backup Nginx snippet"),
+            ("htpasswd", "Failed to backup Nginx htpasswd"),
+        ],
+    )
+    def test_backup_failures_abort_before_any_active_change(self, tmp_path, target, message):
+        """Any backup failure aborts before the server block, snippet, or htpasswd changes."""
+        paths = self._setup_nginx_env(tmp_path)
+        originals = {
+            "site": paths["site_conf"].read_bytes(),
+            "snippet": paths["snippet_file"].read_bytes(),
+            "htpasswd": paths["htpasswd"].read_bytes(),
+        }
+        fail_path = {
+            "site": _to_wsl_path(paths["site_conf"]),
+            "snippet": _to_wsl_path(paths["snippet_file"]),
+            "htpasswd": _to_wsl_path(paths["htpasswd"]),
+        }[target]
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            cp() {{
+                if [[ "$1" == "-a" && "$2" == "{fail_path}" ]]; then return 1; fi
+                command cp "$@"
+            }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            remove_nginx_integration
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert message in result.stderr
+        assert paths["site_conf"].read_bytes() == originals["site"]
+        assert paths["snippet_file"].read_bytes() == originals["snippet"]
+        assert paths["htpasswd"].read_bytes() == originals["htpasswd"]
+
+    def test_server_block_edit_failure_marks_failed_without_active_change(self, tmp_path):
+        """awk failure while generating the edited server block cleans up temporary .new file and aborts cleanly."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        backup_dir = paths["backup_root"] / "backup-eyemole-uninstall-test"
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            awk() {{ return 1; }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            remove_nginx_integration
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Failed to edit Nginx server block" in result.stderr
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].exists()
+        assert paths["htpasswd"].exists()
+
+        # Confirm temporary .new file was cleaned up and no temporaries remain
+        tmp_edit_file = backup_dir / "nginx-rollback" / "wazuh-dashboard-proxy.new"
+        assert not tmp_edit_file.exists(), f"Temporary edit file '{tmp_edit_file}' was not cleaned up after awk failure"
+        leftovers = list(backup_dir.rglob("*.new")) + list(backup_dir.rglob("*.tmp")) + list(paths["nginx_root"].rglob("*.new")) + list(paths["nginx_root"].rglob("*.tmp"))
+        assert leftovers == [], f"Unexpected temporary files left over: {leftovers}"
+
+    def test_server_block_write_failure_rolls_back(self, tmp_path):
+        """cat write failure at server block update triggers rollback and failure state, cleaning up .new file."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+        backup_dir = paths["backup_root"] / "backup-eyemole-uninstall-test"
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            cat() {{
+                for arg in "$@"; do
+                    if [[ "$arg" == */nginx-rollback/wazuh-dashboard-proxy.new ]]; then
+                        return 1
+                    fi
+                done
+                command cat "$@"
+            }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            remove_nginx_integration
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Failed to write updated content to Nginx server block" in result.stderr
+        assert "Nginx transaction aborted" in result.stderr
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+
+        tmp_edit_file = backup_dir / "nginx-rollback" / "wazuh-dashboard-proxy.new"
+        assert not tmp_edit_file.exists(), f"Temporary edit file '{tmp_edit_file}' was not cleaned up after write failure"
+        leftovers = list(backup_dir.rglob("*.new")) + list(backup_dir.rglob("*.tmp"))
+        assert leftovers == [], f"Unexpected temporary files left over: {leftovers}"
+
+    def test_tmp_new_removal_failure_triggers_rollback(self, tmp_path):
+        """rm failure for temporary .new file after cat write triggers rollback and failure state."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+        backup_dir = paths["backup_root"] / "backup-eyemole-uninstall-test"
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            rm() {{
+                for arg in "$@"; do
+                    if [[ "$arg" == */nginx-rollback/wazuh-dashboard-proxy.new ]]; then
+                        return 1
+                    fi
+                done
+                command rm "$@"
+            }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            remove_nginx_integration
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Failed to remove temporary edit file after successful write" in result.stderr
+        assert "Nginx transaction aborted" in result.stderr
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+
+    def test_rollback_fails_when_nginx_cmd_missing(self, tmp_path):
+        """When nginx command is missing during rollback re-validation, rollback is marked as failed."""
+        paths = self._setup_nginx_env(tmp_path)
+        backup_dir = paths["backup_root"] / "backup-eyemole-uninstall-test"
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            _calls=0
+            nginx() {{
+                _calls=$((_calls + 1))
+                if [[ "$_calls" -eq 1 ]]; then return 1; fi
+                return 0
+            }}
+            command() {{
+                if [[ "$1" == "-v" && "$2" == "nginx" ]]; then
+                    return 1
+                fi
+                command "$@"
+            }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            rc=0
+            remove_nginx_integration || rc=$?
+            printf 'RC=%s\\n' "$rc"
+            printf 'ROLLBACK_STATUS=%s\\n' "$NGINX_ROLLBACK_STATUS"
+        """)
+        result = _run_bash(script)
+        assert "RC=1" in result.stdout
+        assert "ROLLBACK_STATUS=failed" in result.stdout
+
+    def test_preserve_mode_htpasswd_validation_and_flow(self, tmp_path):
+        """In PURGE=0 (preserve mode), htpasswd is preserved antecipadamente, active htpasswd is removed in Nginx transaction,
+        and nginx -t validates the true final state where include, snippet, and htpasswd are all absent before stop_services."""
+        paths = self._setup_nginx_env(tmp_path)
+        htpasswd_original_bytes = paths["htpasswd"].read_bytes()
+        app_sentinel = paths["app_dir"] / "app.txt"
+        app_sentinel_bytes = b"APP SENTINEL"
+        app_sentinel.write_bytes(app_sentinel_bytes)
+
+        unit_file = paths["systemd_dir"] / "hmg-soar-api.service"
+        unit_bytes = b"[Service]\nExecStart=/usr/bin/test\n"
+        unit_file.write_bytes(unit_bytes)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            _nginx_t_calls=0
+            nginx() {{
+                if [[ "$1" == "-t" ]]; then
+                    _nginx_t_calls=$((_nginx_t_calls + 1))
+                    if [[ "$_nginx_t_calls" -eq 1 ]]; then
+                        if grep -q "eyemole-soar-locations.conf" "{_to_wsl_path(paths['site_conf'])}"; then
+                            echo "PRESERVE_VALIDATE_FAIL: include line still present" >&2
+                            return 1
+                        fi
+                        if [[ -f "{_to_wsl_path(paths['snippet_file'])}" ]]; then
+                            echo "PRESERVE_VALIDATE_FAIL: snippet file still present" >&2
+                            return 1
+                        fi
+                        if [[ -f "{_to_wsl_path(paths['htpasswd'])}" ]]; then
+                            echo "PRESERVE_VALIDATE_FAIL: active htpasswd still present" >&2
+                            return 1
+                        fi
+                    fi
+                fi
+                return 0
+            }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            _stop_services_called=0
+            stop_services() {{
+                if [[ "$_nginx_t_calls" -lt 1 ]]; then
+                    echo "ORDER_FAIL: stop_services called before nginx -t" >&2
+                    return 1
+                fi
+                _stop_services_called=1
+                echo "STOP_SERVICES_OK"
+            }}
+
+            DRY_RUN=0
+            PURGE=0
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert "STOP_SERVICES_OK" in result.stdout
+
+        preserved_htpasswd = paths["preserve_root"] / "test" / "nginx" / "htpasswd"
+        assert preserved_htpasswd.exists(), "Antecipated preserved htpasswd missing"
+        assert preserved_htpasswd.read_bytes() == htpasswd_original_bytes
+
+    def test_antecipated_htpasswd_preservation_failure(self, tmp_path):
+        """When antecipated htpasswd preservation fails in PURGE=0, uninstall aborts without touching Nginx, services, or units."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        htpasswd_original_bytes = paths["htpasswd"].read_bytes()
+
+        unit_file = paths["systemd_dir"] / "hmg-soar-api.service"
+        unit_bytes = b"[Service]\nExecStart=/usr/bin/test\n"
+        unit_file.write_bytes(unit_bytes)
+
+        fail_dest = _to_wsl_path(paths["preserve_root"] / "test" / "nginx" / "htpasswd")
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            cp() {{
+                for arg in "$@"; do
+                    if [[ "$arg" == "{fail_dest}" ]]; then
+                        return 1
+                    fi
+                done
+                command cp "$@"
+            }}
+            nginx() {{ echo "NGINX_SHOULD_NOT_BE_CALLED" >&2; return 1; }}
+            stop_services() {{ echo "STOP_SERVICES_SHOULD_NOT_BE_CALLED" >&2; }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            DRY_RUN=0
+            PURGE=0
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+        assert "STOP_SERVICES_SHOULD_NOT_BE_CALLED" not in result.stdout
+        assert "NGINX_SHOULD_NOT_BE_CALLED" not in result.stderr
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["htpasswd"].read_bytes() == htpasswd_original_bytes
+        assert unit_file.exists() and unit_file.read_bytes() == unit_bytes
+        assert paths["app_dir"].exists()
+        assert paths["web_dir"].exists()
+        assert paths["etc_dir"].exists()
+        assert "FAILED" in result.stdout
+
+    @pytest.mark.parametrize(
+        "target,message",
+        [
+            ("snippet", "Failed to remove Nginx snippet"),
+            ("htpasswd", "Failed to remove Nginx htpasswd"),
+        ],
+    )
+    def test_artifact_remove_failures_roll_back_and_abort_run(self, tmp_path, target, message):
+        """rm failure for snippet or htpasswd restores all artifacts and stops run_uninstall."""
+        paths = self._setup_nginx_env(tmp_path)
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+        fail_path = _to_wsl_path(paths["snippet_file"] if target == "snippet" else paths["htpasswd"])
+
+        unit_file = paths["systemd_dir"] / "hmg-soar-api.service"
+        unit_bytes = b"[Service]\nExecStart=/usr/bin/test\n"
+        unit_file.write_bytes(unit_bytes)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            rm() {{ if [[ "$1" == "-f" && "$2" == "{fail_path}" ]]; then return 1; fi; command rm "$@"; }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+            stop_services() {{ echo "STOP_SERVICES_WAS_CALLED"; }}
+            remove_app_user() {{ echo "REMOVE_USER_WAS_CALLED"; }}
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=1
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            run_uninstall
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+        assert message in result.stderr
+        assert "STOP_SERVICES_WAS_CALLED" not in result.stdout
+        assert "REMOVE_USER_WAS_CALLED" not in result.stdout
+        assert "FAILED" in result.stdout
+        assert "Uninstall complete" not in result.stdout
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+        assert paths["app_dir"].exists()
+        assert paths["web_dir"].exists()
+        assert paths["etc_dir"].exists()
+        assert unit_file.exists() and unit_file.read_bytes() == unit_bytes
+
+    def test_final_state_invalid_after_artifact_removal_rolls_back_and_stops_orchestrator(self, tmp_path):
+        """nginx -t failure on final state restores all artifacts and blocks later steps."""
+        paths = self._setup_nginx_env(tmp_path)
+        (paths["systemd_dir"] / "hmg-soar-api.service").write_text("[Service]\n")
+        original_site = paths["site_conf"].read_bytes()
+        original_snippet = paths["snippet_file"].read_bytes()
+        original_htpasswd = paths["htpasswd"].read_bytes()
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            _nginx_calls=0
+            nginx() {{
+                _nginx_calls=$((_nginx_calls + 1))
+                echo "NGINX_CALL_${{_nginx_calls}}"
+                if [[ "$_nginx_calls" -eq 1 ]]; then return 1; fi
+                return 0
+            }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+            stop_services() {{ echo "STOP_SERVICES_WAS_CALLED"; }}
+            remove_app_user() {{ echo "REMOVE_USER_WAS_CALLED"; }}
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=1
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            run_uninstall
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+        assert result.stdout.count("NGINX_CALL_") >= 2
+        assert "STOP_SERVICES_WAS_CALLED" not in result.stdout
+        assert "REMOVE_USER_WAS_CALLED" not in result.stdout
+        assert paths["site_conf"].read_bytes() == original_site
+        assert paths["snippet_file"].read_bytes() == original_snippet
+        assert paths["htpasswd"].read_bytes() == original_htpasswd
+        assert paths["app_dir"].exists()
+        assert paths["web_dir"].exists()
+        assert paths["etc_dir"].exists()
+        assert (paths["systemd_dir"] / "hmg-soar-api.service").exists()
+        assert "FAILED" in result.stdout
+        assert "Uninstall complete" not in result.stdout
+
+    def test_success_validates_final_state_before_stop_services(self, tmp_path):
+        """Successful run validates final nginx state, reloads, then stops services."""
+        paths = self._setup_nginx_env(tmp_path)
+        order_log = tmp_path / "order.log"
+        order_wsl = _to_wsl_path(order_log)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._env_exports(paths)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            nginx() {{
+                if [[ "$1" == "-t" ]]; then
+                    [[ ! -e "$SNIPPET_FILE" ]] || return 1
+                    [[ ! -e "$HTPASSWD_FILE" ]] || return 1
+                    echo "nginx-test" >> "{order_wsl}"
+                fi
+                return 0
+            }}
+            systemctl() {{
+                if [[ "$1" == "reload" ]]; then echo "reload" >> "{order_wsl}"; return 0; fi
+                if [[ "$1" == "is-active" || "$1" == "is-enabled" ]]; then return 0; fi
+                if [[ "$1" == "stop" ]]; then echo "stop" >> "{order_wsl}"; return 0; fi
+                return 0
+            }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=0
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(paths['backup_root'])}/backup-eyemole-uninstall-test"
+            run_uninstall
+        """)
+        result = _run_bash(script, timeout=120)
+        assert result.returncode == 0
+        assert not paths["snippet_file"].exists()
+        assert not paths["htpasswd"].exists()
+        order = order_log.read_text().splitlines()
+        assert order[0:2] == ["nginx-test", "reload"]
+        assert "stop" in order[2:]
+        assert "FAILED" not in result.stdout
+        assert "Uninstall complete" in result.stdout
+
+
+# ============================================================================
+# TEST CLASS: User Removal Safety (multiline guard regression tests)
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestUserRemovalSafety:
+    """Regression tests for safe user removal with multiline guards."""
+
+    def _base_env(self, tmp_path: Path) -> str:
+        """Return env exports for user removal tests."""
+        tmp_wsl = _to_wsl_path(tmp_path)
+        return "\n".join([
+            f'export APP_DIR="{tmp_wsl}/opt"',
+            f'export WEB_DIR="{tmp_wsl}/web"',
+            f'export ETC_DIR="{tmp_wsl}/etc"',
+            f'export HTPASSWD_FILE="{tmp_wsl}/nginx/htpasswd"',
+            f'export PRESERVE_ROOT="{tmp_wsl}/preserve"',
+            f'export SNIPPET_FILE="{tmp_wsl}/nginx/snippet"',
+            f'export SYSTEMD_UNIT_DIR="{tmp_wsl}/systemd"',
+            f'export POLKIT_RULE_FILE="{tmp_wsl}/polkit"',
+            f'export SUDOERS_FILE="{tmp_wsl}/sudoers"',
+            f'export WRAPPER_RUN_ANALYSIS="{tmp_wsl}/sbin/run"',
+            f'export WRAPPER_STATUS="{tmp_wsl}/sbin/status"',
+            f'export BACKUP_ROOT="{tmp_wsl}/backup"',
+            f'export NGINX_ROOT="{tmp_wsl}/nginx"',
+        ])
+
+    def test_zero_external_files_no_arithmetic_error(self, tmp_path):
+        """Zero external files does NOT cause arithmetic error — user is removed."""
+        log_file = tmp_path / "userdel.log"
+        log_wsl = _to_wsl_path(log_file)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._base_env(tmp_path)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            REMOVE_USER=1
+            APP_USER="hmg-soar"
+            _user_deleted=0
+            id() {{
+                if [[ "$_user_deleted" -eq 1 ]]; then return 1; fi
+                return 0
+            }}
+            pgrep() {{ return 1; }}
+            find() {{ true; }}
+            userdel() {{ echo "$@" >> "{log_wsl}"; _user_deleted=1; return 0; }}
+            getent() {{ return 1; }}
+            remove_app_user
+            echo "DONE"
+        """)
+        result = _run_bash(script)
+        assert "DONE" in result.stdout
+        assert "syntax error" not in result.stderr
+        assert log_file.exists(), "userdel was not called"
+
+    def test_one_external_file_prevents_removal(self, tmp_path):
+        """One external file prevents user removal and returns non-zero."""
+        log_file = tmp_path / "userdel.log"
+        log_wsl = _to_wsl_path(log_file)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._base_env(tmp_path)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            REMOVE_USER=1
+            APP_USER="hmg-soar"
+            id() {{ return 0; }}
+            pgrep() {{ return 1; }}
+            find() {{ echo "/home/hmg-soar/.bashrc"; }}
+            userdel() {{ echo "$@" >> "{log_wsl}"; return 0; }}
+            getent() {{ return 1; }}
+            remove_app_user
+            echo "DONE"
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert not log_file.exists(), "userdel should NOT have been called"
+        assert "Refusing" in result.stderr or "stray" in result.stderr.lower() \
+            or "outside managed" in result.stderr.lower()
+
+    def test_many_external_files_no_multiline_error(self, tmp_path):
+        """Multiple external files do NOT cause multiline [[ ]] syntax error."""
+        log_file = tmp_path / "userdel.log"
+        log_wsl = _to_wsl_path(log_file)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            {self._base_env(tmp_path)}
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            REMOVE_USER=1
+            APP_USER="hmg-soar"
+            id() {{ return 0; }}
+            pgrep() {{ return 1; }}
+            find() {{
+                echo "/home/hmg-soar/.bashrc"
+                echo "/home/hmg-soar/.profile"
+                echo "/tmp/hmg-soar-temp1"
+                echo "/tmp/hmg-soar-temp2"
+                echo "/tmp/hmg-soar-temp3"
+            }}
+            userdel() {{ echo "$@" >> "{log_wsl}"; return 0; }}
+            getent() {{ return 1; }}
+            remove_app_user
+            echo "DONE"
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "syntax error" not in result.stderr, \
+            f"Multiline [[ ]] syntax error detected: {result.stderr}"
+        assert not log_file.exists(), "userdel should NOT have been called"
+
+
+# ============================================================================
+# TEST CLASS: Sandbox Validation & Invariant Sentinels
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestSandboxAndInvariants:
+    """Tests for sandbox safety, error handling, cmp exit code logic, symlinks,
+    rollback failures, and script integrity sentinels."""
+
+    def test_sentinel_uninstall_script_integrity(self):
+        """Sentinel test: Verifies uninstall.sh exists, contains all required
+        transactional functions, cmp RC handling, symlink/metadata protection,
+        and explicit rollback state tracking.
+        """
+        assert UNINSTALL_SH.exists(), "uninstall.sh not found"
+        content = UNINSTALL_SH.read_text(encoding="utf-8")
+        required_symbols = [
+            "run_uninstall",
+            "preserve_htpasswd_for_uninstall",
+            "remove_nginx_integration",
+            "_nginx_rollback",
+            "assert_safe_managed_path",
+            "cmp_rc",
+            "FATAL_STEP",
+            "NGINX_FAILED",
+            "NGINX_ROLLBACK_STATUS",
+        ]
+        for sym in required_symbols:
+            assert sym in content, f"Sentinel check failed: required symbol '{sym}' missing in uninstall.sh"
+
+    def test_cmp_rc_2_triggers_transaction_failure(self, tmp_path):
+        """When cmp returns RC >= 2 (error), remove_nginx_integration fails and aborts.
+        Confirms all three artifacts remain byte-for-byte identical, no temporary files remain
+        in BACKUP_DIR/nginx-rollback or nginx_root, return code != 0, NGINX_FAILED/FATAL marked,
+        and no removal actions logged.
+        """
+        nginx_root = tmp_path / "nginx"
+        sites = nginx_root / "sites-enabled"
+        sites.mkdir(parents=True)
+        snippets = nginx_root / "snippets"
+        snippets.mkdir()
+
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text("location /soar { proxy_pass http://localhost:5000; }\n")
+
+        site_conf = sites / "wazuh-dashboard-proxy"
+        snippet_wsl = _to_wsl_path(snippet_file)
+        site_conf.write_text(f"server {{ include {snippet_wsl}; }}\n")
+
+        htpasswd = nginx_root / ".htpasswd-wazuh-soar"
+        htpasswd.write_text("user:hash\n")
+
+        backup_dir = tmp_path / "backups" / "backup-test"
+        backup_dir.mkdir(parents=True)
+
+        site_bytes_before = site_conf.read_bytes()
+        snippet_bytes_before = snippet_file.read_bytes()
+        htpasswd_bytes_before = htpasswd.read_bytes()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export SNIPPET_FILE="{snippet_wsl}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+            # Mock cmp to simulate error code 2
+            cmp() {{ return 2; }}
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            rc=0
+            remove_nginx_integration || rc=$?
+            printf 'RC=%s\\n' "$rc"
+            printf 'FATAL=%s\\n' "$FATAL"
+            printf 'FATAL_STEP=%s\\n' "$FATAL_STEP"
+            printf 'NGINX_FAILED=%s\\n' "$NGINX_FAILED"
+            printf 'ROLLBACK_STATUS=%s\\n' "$NGINX_ROLLBACK_STATUS"
+            exit "$rc"
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+        assert "cmp failed (RC=2)" in result.stderr
+        assert "RC=1" in result.stdout
+        assert "FATAL=1" in result.stdout
+        assert "FATAL_STEP=nginx_transaction" in result.stdout
+        assert "NGINX_FAILED=1" in result.stdout
+        assert "ROLLBACK_STATUS=not_needed" in result.stdout
+        assert "No active changes made before failure; rollback skipped." in result.stdout
+
+        # Byte-for-byte integrity checks
+        assert site_conf.read_bytes() == site_bytes_before
+        assert snippet_file.read_bytes() == snippet_bytes_before
+        assert htpasswd.read_bytes() == htpasswd_bytes_before
+
+        # Check no temporary files remain in BACKUP_DIR/nginx-rollback or nginx_root
+        tmp_edit_file = backup_dir / "nginx-rollback" / "wazuh-dashboard-proxy.new"
+        assert not tmp_edit_file.exists(), f"Temporary edit file '{tmp_edit_file}' was not cleaned up after cmp failure"
+        leftovers = list(backup_dir.rglob("*.new")) + list(backup_dir.rglob("*.tmp")) + list(nginx_root.rglob("*.new")) + list(nginx_root.rglob("*.tmp"))
+        assert leftovers == [], f"Unexpected temporary files left over: {leftovers}"
+
+        # No removal action registered
+        assert "Removed:" not in result.stdout
+        assert "Removed include line" not in result.stdout
+
+    def test_symlink_site_conf_protection_and_restoration(self, tmp_path):
+        """When nginx site config is a symlink, target is updated in-place without breaking the link.
+        Asserts is_symlink before/after, readlink before/after, target path, target st_mode, backup is regular file, and content."""
+        nginx_root = tmp_path / "nginx"
+        sites_available = nginx_root / "sites-available"
+        sites_available.mkdir(parents=True)
+        sites_enabled = nginx_root / "sites-enabled"
+        sites_enabled.mkdir(parents=True)
+        snippets = nginx_root / "snippets"
+        snippets.mkdir()
+
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text("location /soar { proxy_pass http://localhost:5000; }\n")
+        snippet_wsl = _to_wsl_path(snippet_file)
+
+        original_target_bytes = f"server {{\n    listen 443;\n    include {snippet_wsl};\n}}\n".encode("utf-8")
+        real_target = sites_available / "wazuh-dashboard-proxy"
+        real_target.write_bytes(original_target_bytes)
+
+        symlink_conf = sites_enabled / "wazuh-dashboard-proxy"
+        symlink_conf.symlink_to(real_target)
+
+        htpasswd = nginx_root / ".htpasswd-wazuh-soar"
+        htpasswd.write_text("user:hash\n")
+
+        backup_dir = tmp_path / "backups" / "backup-symlink-test"
+        backup_dir.mkdir(parents=True)
+
+        target_mode_before = real_target.stat().st_mode
+        readlink_before = os.readlink(symlink_conf)
+        assert symlink_conf.is_symlink()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export SNIPPET_FILE="{snippet_wsl}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
+            source "{UNINSTALL_SH_WSL}"
+            nginx() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            remove_nginx_integration
+        """)
+        _run_bash(script)
+
+        # Confirm backup created in rollback_dir is a regular file containing target bytes, NOT a symlink
+        backup_file = backup_dir / "nginx-rollback" / "wazuh-dashboard-proxy"
+        assert backup_file.exists(), "Backup file was not created in rollback_dir"
+        assert not backup_file.is_symlink(), "Backup file in rollback_dir must be a regular file, not a symlink"
+        assert backup_file.is_file(), "Backup file in rollback_dir is not a regular file"
+        assert backup_file.read_bytes() == original_target_bytes, "Backup file content does not match original target bytes"
+
+        assert symlink_conf.is_symlink(), "Site config symlink was destroyed"
+        assert os.readlink(symlink_conf) == readlink_before
+        assert symlink_conf.resolve() == real_target.resolve()
+        assert real_target.stat().st_mode == target_mode_before
+
+        target_content = real_target.read_text()
+        assert snippet_wsl not in target_content, "Include line was not removed from symlink target"
+        assert "listen 443" in target_content
+
+    def test_symlink_site_conf_rollback_preserves_symlink_and_restores_content(self, tmp_path):
+        """When rollback occurs on a symlink setup, the symlink and readlink remain identical,
+        and the target content is restored byte-for-byte. Uses call counter so 1st nginx -t fails
+        and 2nd nginx -t succeeds. Verifies NGINX_ROLLBACK_STATUS=succeeded and return code != 0 directly."""
+        nginx_root = tmp_path / "nginx"
+        sites_available = nginx_root / "sites-available"
+        sites_available.mkdir(parents=True)
+        sites_enabled = nginx_root / "sites-enabled"
+        sites_enabled.mkdir(parents=True)
+        snippets = nginx_root / "snippets"
+        snippets.mkdir()
+
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text("location /soar { proxy_pass http://localhost:5000; }\n")
+        snippet_wsl = _to_wsl_path(snippet_file)
+
+        real_target = sites_available / "wazuh-dashboard-proxy"
+        original_target_bytes = f"server {{\n    listen 443;\n    include {snippet_wsl};\n}}\n".encode("utf-8")
+        real_target.write_bytes(original_target_bytes)
+
+        symlink_conf = sites_enabled / "wazuh-dashboard-proxy"
+        symlink_conf.symlink_to(real_target)
+
+        htpasswd = nginx_root / ".htpasswd-wazuh-soar"
+        htpasswd.write_text("user:hash\n")
+
+        backup_dir = tmp_path / "backups" / "backup-symlink-rollback"
+        backup_dir.mkdir(parents=True)
+
+        target_mode_before = real_target.stat().st_mode
+        readlink_before = os.readlink(symlink_conf)
+        snippet_bytes_before = snippet_file.read_bytes()
+        htpasswd_bytes_before = htpasswd.read_bytes()
+        assert symlink_conf.is_symlink()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export SNIPPET_FILE="{snippet_wsl}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
+            source "{UNINSTALL_SH_WSL}"
+            _nginx_t_calls=0
+            nginx() {{
+                if [[ "$1" == "-t" ]]; then
+                    _nginx_t_calls=$((_nginx_t_calls + 1))
+                    if [[ "$_nginx_t_calls" -eq 1 ]]; then
+                        return 1
+                    fi
+                fi
+                return 0
+            }}
+            systemctl() {{ return 0; }}
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_dir)}"
+            rc=0
+            remove_nginx_integration || rc=$?
+            printf 'RC=%s\\n' "$rc"
+            printf 'ROLLBACK_STATUS=%s\\n' "$NGINX_ROLLBACK_STATUS"
+            printf 'NGINX_T_CALLS=%s\\n' "$_nginx_t_calls"
+        """)
+        result = _run_bash(script)
+
+        # Confirm return code and status printed directly
+        assert "RC=1" in result.stdout
+        assert "ROLLBACK_STATUS=succeeded" in result.stdout
+        assert "NGINX_T_CALLS=2" in result.stdout
+
+        # Confirm backup created in rollback_dir is a regular file containing target bytes, NOT a symlink
+        backup_file = backup_dir / "nginx-rollback" / "wazuh-dashboard-proxy"
+        assert backup_file.exists(), "Backup file was not created in rollback_dir"
+        assert not backup_file.is_symlink(), "Backup file in rollback_dir must be a regular file, not a symlink"
+        assert backup_file.is_file(), "Backup file in rollback_dir is not a regular file"
+        assert backup_file.read_bytes() == original_target_bytes, "Backup file content does not match original target bytes"
+
+        # Assert active symlink protection and restoration
+        assert symlink_conf.is_symlink(), "Site config symlink was destroyed during rollback"
+        assert os.readlink(symlink_conf) == readlink_before
+        assert symlink_conf.resolve() == real_target.resolve()
+        assert real_target.stat().st_mode == target_mode_before
+        assert real_target.read_bytes() == original_target_bytes
+        assert snippet_file.read_bytes() == snippet_bytes_before
+        assert htpasswd.read_bytes() == htpasswd_bytes_before
+
+    def test_rollback_failure_in_real_flow(self, tmp_path):
+        """End-to-end test using run_uninstall:
+        - a mutation happens;
+        - a failure triggers rollback;
+        - restoration cat during rollback fails;
+        - rollback is marked as FAILED/incomplete;
+        - stop_services NOT called;
+        - remove_systemd_units NOT called;
+        - purge_data NOT called;
+        - remove_app_user NOT called;
+        - report contains FAILED;
+        - 'Uninstall complete' is absent;
+        - return code != 0.
+        Confirms byte-for-byte integrity of sentinel files in APP_DIR, WEB_DIR, ETC_DIR, SYSTEMD_UNIT_DIR.
+        """
+        app_dir = tmp_path / "opt" / "hmg-soar"
+        app_dir.mkdir(parents=True)
+        app_sentinel = app_dir / "app_sentinel.txt"
+        app_sentinel_bytes = b"APP SENTINEL CONTENT 123"
+        app_sentinel.write_bytes(app_sentinel_bytes)
+
+        web_dir = tmp_path / "var" / "www" / "wazuh-soar"
+        web_dir.mkdir(parents=True)
+        web_sentinel = web_dir / "web_sentinel.txt"
+        web_sentinel_bytes = b"WEB SENTINEL CONTENT 456"
+        web_sentinel.write_bytes(web_sentinel_bytes)
+
+        etc_dir = tmp_path / "etc" / "hmg-soar"
+        etc_dir.mkdir(parents=True)
+        etc_sentinel = etc_dir / "etc_sentinel.env"
+        etc_sentinel_bytes = b"ETC SENTINEL CONTENT 789"
+        etc_sentinel.write_bytes(etc_sentinel_bytes)
+
+        systemd_dir = tmp_path / "systemd"
+        systemd_dir.mkdir(parents=True)
+        unit_sentinel = systemd_dir / "hmg-soar-api.service"
+        unit_sentinel_bytes = b"[Service]\nExecStart=/usr/bin/test\n"
+        unit_sentinel.write_bytes(unit_sentinel_bytes)
+
+        nginx_root = tmp_path / "nginx"
+        sites = nginx_root / "sites-enabled"
+        sites.mkdir(parents=True)
+        snippets = nginx_root / "snippets"
+        snippets.mkdir()
+
+        snippet_file = snippets / "eyemole-soar-locations.conf"
+        snippet_file.write_text("location /soar { proxy_pass http://localhost:5000; }\n")
+        snippet_wsl = _to_wsl_path(snippet_file)
+
+        site_conf = sites / "wazuh-dashboard-proxy"
+        site_conf.write_text(f"server {{\n    include {snippet_wsl};\n}}\n")
+
+        htpasswd = nginx_root / ".htpasswd-wazuh-soar"
+        htpasswd.write_text("user:hash\n")
+
+        preserve_root = tmp_path / "preserved"
+        backup_root = tmp_path / "backups"
+        backup_root.mkdir()
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            export APP_DIR="{_to_wsl_path(app_dir)}"
+            export WEB_DIR="{_to_wsl_path(web_dir)}"
+            export ETC_DIR="{_to_wsl_path(etc_dir)}"
+            export SYSTEMD_UNIT_DIR="{_to_wsl_path(systemd_dir)}"
+            export NGINX_ROOT="{_to_wsl_path(nginx_root)}"
+            export HTPASSWD_FILE="{_to_wsl_path(htpasswd)}"
+            export SNIPPET_FILE="{snippet_wsl}"
+            export POLKIT_RULE_FILE="{_to_wsl_path(tmp_path / 'polkit')}"
+            export SUDOERS_FILE="{_to_wsl_path(tmp_path / 'sudoers')}"
+            export WRAPPER_RUN_ANALYSIS="{_to_wsl_path(tmp_path / 'run')}"
+            export WRAPPER_STATUS="{_to_wsl_path(tmp_path / 'status')}"
+            export PRESERVE_ROOT="{_to_wsl_path(preserve_root)}"
+            export BACKUP_ROOT="{_to_wsl_path(backup_root)}"
+
+            source "{UNINSTALL_SH_WSL}"
+            {_REALPATH_OVERRIDE}
+
+            # Nginx test fails (triggering rollback).
+            # Cat is overridden to fail ONLY when restoring wazuh-dashboard-proxy during rollback
+            nginx() {{ if [[ "$1" == "-t" ]]; then return 1; fi; return 0; }}
+            cat() {{
+                for arg in "$@"; do
+                    if [[ "$arg" == */nginx-rollback/wazuh-dashboard-proxy ]]; then
+                        return 1
+                    fi
+                done
+                command cat "$@"
+            }}
+            systemctl() {{ return 0; }}
+            id() {{ return 1; }}
+            pgrep() {{ return 1; }}
+            df() {{ echo "Filesystem 1K-blocks Used Available Use% Mounted on"; echo "/dev/sda1 1000000 500000 500000 50% /"; }}
+            find() {{ echo "stub"; }}
+            sha256sum() {{ for f in "$@"; do echo "fakehash  $f"; done; }}
+            check_root() {{ return 0; }}
+
+            # Spies to prove subsequent steps are NEVER called on rollback failure
+            stop_services() {{ echo "SPY_STOP_SERVICES_CALLED"; }}
+            remove_systemd_units() {{ echo "SPY_REMOVE_UNITS_CALLED"; }}
+            purge_data() {{ echo "SPY_PURGE_DATA_CALLED"; }}
+            remove_app_user() {{ echo "SPY_REMOVE_USER_CALLED"; }}
+
+            DRY_RUN=0
+            PURGE=1
+            YES=1
+            REMOVE_USER=1
+            TS="test"
+            BACKUP_DIR="{_to_wsl_path(backup_root)}/backup-eyemole-uninstall-test"
+
+            run_uninstall
+        """)
+        result = _run_bash(script, expect_fail=True, timeout=120)
+
+        assert result.returncode != 0
+        assert "SPY_STOP_SERVICES_CALLED" not in result.stdout
+        assert "SPY_REMOVE_UNITS_CALLED" not in result.stdout
+        assert "SPY_PURGE_DATA_CALLED" not in result.stdout
+        assert "SPY_REMOVE_USER_CALLED" not in result.stdout
+
+        assert "FAILED" in result.stdout
+        assert "Rollback: failed or incomplete" in result.stdout
+        assert "Uninstall complete" not in result.stdout
+
+        # Byte-for-byte integrity check of all sentinel files
+        assert app_sentinel.exists() and app_sentinel.read_bytes() == app_sentinel_bytes
+        assert web_sentinel.exists() and web_sentinel.read_bytes() == web_sentinel_bytes
+        assert etc_sentinel.exists() and etc_sentinel.read_bytes() == etc_sentinel_bytes
+        assert unit_sentinel.exists() and unit_sentinel.read_bytes() == unit_sentinel_bytes
