@@ -1155,7 +1155,7 @@ class TestOfflineDashboardAndWebValidation:
         assert "token" not in content.lower()
 
     def test_33_credentials_install_runs_service_and_preserves_real_dashboard(self, sandbox):
-        """Installation with credentials.env runs report service and preserves generated real dashboard without placeholder overwrite."""
+        """Installation with complete credentials.env runs report service and preserves generated real dashboard without placeholder overwrite."""
         app_dir = sandbox["app_dir"]
         (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP_EXECUTED')\n")
 
@@ -1164,7 +1164,7 @@ class TestOfflineDashboardAndWebValidation:
 
         etc_dir = sandbox["tmp_path"] / "etc_with_creds"
         etc_dir.mkdir()
-        (etc_dir / "credentials.env").write_text("WAZUH_PASS=secret\n")
+        (etc_dir / "credentials.env").write_text("OPENSEARCH_PASS=test-indexer-secret\nWAZUH_API_PASS=test-wazuh-secret\n")
 
         systemd_dir = sandbox["tmp_path"] / "systemd_sandbox"
         systemd_dir.mkdir()
@@ -1224,8 +1224,14 @@ class TestOfflineDashboardAndWebValidation:
         assert "REAL DASHBOARD CONTENT" in content
         assert "Bootstrap / Offline" not in content
 
+        # Ensure secrets were not leaked in output
+        assert "test-indexer-secret" not in result.stdout
+        assert "test-wazuh-secret" not in result.stdout
+        assert "test-indexer-secret" not in result.stderr
+        assert "test-wazuh-secret" not in result.stderr
+
     def test_34_real_report_generation_without_index_html_fails(self, sandbox):
-        """If real report service runs but fails to produce index.html, installation fails and does not report success."""
+        """If real report service runs with READY credentials but fails to produce index.html, installation fails and does not report success."""
         app_dir = sandbox["app_dir"]
         (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP')\n")
 
@@ -1234,7 +1240,7 @@ class TestOfflineDashboardAndWebValidation:
 
         etc_dir = sandbox["tmp_path"] / "etc_creds"
         etc_dir.mkdir()
-        (etc_dir / "credentials.env").write_text("WAZUH_PASS=secret\n")
+        (etc_dir / "credentials.env").write_text("OPENSEARCH_PASS=test-indexer-secret\nWAZUH_API_PASS=test-wazuh-secret\n")
 
         systemd_dir = sandbox["tmp_path"] / "systemd_sandbox"
         systemd_dir.mkdir()
@@ -1269,6 +1275,13 @@ class TestOfflineDashboardAndWebValidation:
         result = _run_bash(script, expect_fail=True)
         assert "Validação da publicação web falhou" in result.stderr
         assert "EyeMole SOAR instalado." not in result.stdout
+        assert "BOOTSTRAP / OFFLINE" not in result.stdout
+
+        # Ensure secrets were not leaked in output
+        assert "test-indexer-secret" not in result.stdout
+        assert "test-wazuh-secret" not in result.stdout
+        assert "test-indexer-secret" not in result.stderr
+        assert "test-wazuh-secret" not in result.stderr
 
     def test_35_placeholder_creation_failure_causes_die(self, sandbox):
         """If creation of offline placeholder index.html fails, installation dies."""
