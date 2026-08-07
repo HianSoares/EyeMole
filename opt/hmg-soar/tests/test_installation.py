@@ -1062,3 +1062,620 @@ class TestSystemdUnitDirIsolation:
         """)
         result = _run_bash(script)
         assert "UNIT_FOUND" in result.stdout
+
+
+# ============================================================================
+# TEST 31-36: Offline Dashboard & Web Publication Validation
+# ============================================================================
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not available")
+class TestOfflineDashboardAndWebValidation:
+    def test_31_systemd_service_unit_has_condition_path_exists(self):
+        """hmg-soar-report.service contains ConditionPathExists for credentials.env and retains mandatory EnvironmentFile."""
+        unit_path = REPO_ROOT / "systemd" / "hmg-soar-report.service"
+        assert unit_path.exists()
+        content = unit_path.read_text(encoding="utf-8")
+        assert "ConditionPathExists=/etc/hmg-soar/credentials.env" in content
+        assert "EnvironmentFile=/etc/hmg-soar/credentials.env" in content
+        assert "EnvironmentFile=-" not in content
+
+    def test_32_offline_install_publishes_placeholder_and_succeeds(self, sandbox):
+        """Installation without credentials.env creates placeholder index.html, runs context_bootstrap, doesn't run service, and shows offline status."""
+        app_dir = sandbox["app_dir"]
+        (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP_EXECUTED')\n")
+
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        etc_dir = sandbox["tmp_path"] / "etc_no_creds"
+        etc_dir.mkdir()
+
+        systemd_dir = sandbox["tmp_path"] / "systemd_sandbox"
+        systemd_dir.mkdir()
+        (systemd_dir / "hmg-soar-report.service").write_text("[Service]\n")
+
+        app_wsl = _to_wsl_path(app_dir)
+        web_wsl = _to_wsl_path(web_dir)
+        etc_wsl = _to_wsl_path(etc_dir)
+        systemd_wsl = _to_wsl_path(systemd_dir)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            APP_DIR="{app_wsl}"
+            WEB_DIR="{web_wsl}"
+            ETC_DIR="{etc_wsl}"
+            SYSTEMD_UNIT_DIR="{systemd_wsl}"
+            SERVICE_FILE="hmg-soar-report.service"
+            APP_USER="$(id -un)"
+            WEB_GROUP="$(id -gn)"
+            ENABLE_WEB_RUN=0
+            POLKIT_RULE_FILE="{_to_wsl_path(sandbox['tmp_path'] / 'polkit.rules')}"
+            WEB_RUN_FLAG="{app_wsl}/web_run.enabled"
+            BACKUP_DIR="{_to_wsl_path(sandbox['tmp_path'] / 'backup')}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            chown() {{ return 0; }}
+            systemctl_restarted=0
+            systemctl() {{
+                if [[ "$1" == "restart" && "$2" == "hmg-soar-report.service" ]]; then
+                    systemctl_restarted=1
+                    echo "SYSTEMCTL_RESTART_CALLED" >&2
+                fi
+                return 0
+            }}
+            runuser() {{
+                shift 3
+                "$@"
+            }}
+
+            run_report_once_if_possible
+            validate_web_publication
+            final_message
+            echo "SYSTEMCTL_RESTARTED=${{systemctl_restarted}}"
+        """)
+        result = _run_bash(script)
+
+        assert "BOOTSTRAP_EXECUTED" in result.stdout
+        assert "SYSTEMCTL_RESTART_CALLED" not in result.stderr
+        assert "SYSTEMCTL_RESTARTED=0" in result.stdout
+        assert "BOOTSTRAP / OFFLINE" in result.stdout
+        assert "EyeMole SOAR instalado." in result.stdout
+
+        index_html = web_dir / "index.html"
+        assert index_html.exists()
+        assert index_html.is_file()
+        assert index_html.stat().st_size > 0
+        content = index_html.read_text(encoding="utf-8")
+        assert "EyeMole SOAR instalado" in content
+        assert "Modo Bootstrap / Offline" in content
+        assert "password" not in content.lower()
+        assert "secret" not in content.lower()
+        assert "token" not in content.lower()
+
+    def test_33_credentials_install_runs_service_and_preserves_real_dashboard(self, sandbox):
+        """Installation with credentials.env runs report service and preserves generated real dashboard without placeholder overwrite."""
+        app_dir = sandbox["app_dir"]
+        (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP_EXECUTED')\n")
+
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        etc_dir = sandbox["tmp_path"] / "etc_with_creds"
+        etc_dir.mkdir()
+        (etc_dir / "credentials.env").write_text("WAZUH_PASS=secret\n")
+
+        systemd_dir = sandbox["tmp_path"] / "systemd_sandbox"
+        systemd_dir.mkdir()
+        (systemd_dir / "hmg-soar-report.service").write_text("[Service]\n")
+
+        app_wsl = _to_wsl_path(app_dir)
+        web_wsl = _to_wsl_path(web_dir)
+        etc_wsl = _to_wsl_path(etc_dir)
+        systemd_wsl = _to_wsl_path(systemd_dir)
+
+        index_html = web_dir / "index.html"
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            APP_DIR="{app_wsl}"
+            WEB_DIR="{web_wsl}"
+            ETC_DIR="{etc_wsl}"
+            SYSTEMD_UNIT_DIR="{systemd_wsl}"
+            SERVICE_FILE="hmg-soar-report.service"
+            APP_USER="$(id -un)"
+            WEB_GROUP="$(id -gn)"
+            ENABLE_WEB_RUN=0
+            POLKIT_RULE_FILE="{_to_wsl_path(sandbox['tmp_path'] / 'polkit.rules')}"
+            WEB_RUN_FLAG="{app_wsl}/web_run.enabled"
+            BACKUP_DIR="{_to_wsl_path(sandbox['tmp_path'] / 'backup')}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            chown() {{ return 0; }}
+            restart_count=0
+            systemctl() {{
+                if [[ "$1" == "restart" && "$2" == "hmg-soar-report.service" ]]; then
+                    restart_count=$((restart_count + 1))
+                    echo "<html><body>REAL DASHBOARD CONTENT</body></html>" > "{_to_wsl_path(index_html)}"
+                fi
+                return 0
+            }}
+            journalctl() {{ return 0; }}
+            runuser() {{
+                shift 3
+                "$@"
+            }}
+
+            run_report_once_if_possible
+            validate_web_publication
+            final_message
+            echo "RESTART_COUNT=${{restart_count}}"
+        """)
+        result = _run_bash(script)
+
+        assert "RESTART_COUNT=2" in result.stdout
+        assert "BOOTSTRAP / OFFLINE" not in result.stdout
+        assert "EyeMole SOAR instalado." in result.stdout
+
+        assert index_html.exists()
+        content = index_html.read_text(encoding="utf-8")
+        assert "REAL DASHBOARD CONTENT" in content
+        assert "Bootstrap / Offline" not in content
+
+    def test_34_real_report_generation_without_index_html_fails(self, sandbox):
+        """If real report service runs but fails to produce index.html, installation fails and does not report success."""
+        app_dir = sandbox["app_dir"]
+        (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP')\n")
+
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        etc_dir = sandbox["tmp_path"] / "etc_creds"
+        etc_dir.mkdir()
+        (etc_dir / "credentials.env").write_text("WAZUH_PASS=secret\n")
+
+        systemd_dir = sandbox["tmp_path"] / "systemd_sandbox"
+        systemd_dir.mkdir()
+        (systemd_dir / "hmg-soar-report.service").write_text("[Service]\n")
+
+        app_wsl = _to_wsl_path(app_dir)
+        web_wsl = _to_wsl_path(web_dir)
+        etc_wsl = _to_wsl_path(etc_dir)
+        systemd_wsl = _to_wsl_path(systemd_dir)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            APP_DIR="{app_wsl}"
+            WEB_DIR="{web_wsl}"
+            ETC_DIR="{etc_wsl}"
+            SYSTEMD_UNIT_DIR="{systemd_wsl}"
+            SERVICE_FILE="hmg-soar-report.service"
+            APP_USER="$(id -un)"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            chown() {{ return 0; }}
+            systemctl() {{ return 0; }}
+            journalctl() {{ return 0; }}
+            runuser() {{ shift 3; "$@"; }}
+
+            run_report_once_if_possible
+            validate_web_publication
+            final_message
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Validação da publicação web falhou" in result.stderr
+        assert "EyeMole SOAR instalado." not in result.stdout
+
+    def test_35_placeholder_creation_failure_causes_die(self, sandbox):
+        """If creation of offline placeholder index.html fails, installation dies."""
+        app_dir = sandbox["app_dir"]
+        (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP')\n")
+
+        web_dir = sandbox["tmp_path"] / "non_existent_web_dir" / "readonly"
+
+        etc_dir = sandbox["tmp_path"] / "etc_no_creds"
+        etc_dir.mkdir()
+
+        app_wsl = _to_wsl_path(app_dir)
+        web_wsl = _to_wsl_path(web_dir)
+        etc_wsl = _to_wsl_path(etc_dir)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            APP_DIR="{app_wsl}"
+            WEB_DIR="{web_wsl}"
+            ETC_DIR="{etc_wsl}"
+            SYSTEMD_UNIT_DIR="/nonexistent"
+            SERVICE_FILE="hmg-soar-report.service"
+            APP_USER="$(id -un)"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+            runuser() {{ shift 3; "$@"; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Falha ao criar arquivo temporário seguro" in result.stderr
+
+    def test_36_reinstall_upgrade_preserves_existing_index_html(self, sandbox):
+        """Reinstall or upgrade does not overwrite an existing valid index.html when credentials.env is absent."""
+        app_dir = sandbox["app_dir"]
+        (app_dir / "context_bootstrap.py").write_text("print('BOOTSTRAP')\n")
+
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        existing_index = web_dir / "index.html"
+        existing_bytes = b"<html><body>EXISTING DASHBOARD FROM PREVIOUS INSTALL</body></html>"
+        existing_index.write_bytes(existing_bytes)
+
+        etc_dir = sandbox["tmp_path"] / "etc_no_creds"
+        etc_dir.mkdir()
+
+        app_wsl = _to_wsl_path(app_dir)
+        web_wsl = _to_wsl_path(web_dir)
+        etc_wsl = _to_wsl_path(etc_dir)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            APP_DIR="{app_wsl}"
+            WEB_DIR="{web_wsl}"
+            ETC_DIR="{etc_wsl}"
+            SYSTEMD_UNIT_DIR="/nonexistent"
+            SERVICE_FILE="hmg-soar-report.service"
+            APP_USER="$(id -un)"
+            WEB_GROUP="$(id -gn)"
+            ENABLE_WEB_RUN=0
+            POLKIT_RULE_FILE="{_to_wsl_path(sandbox['tmp_path'] / 'polkit.rules')}"
+            WEB_RUN_FLAG="{app_wsl}/web_run.enabled"
+            BACKUP_DIR="{_to_wsl_path(sandbox['tmp_path'] / 'backup')}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+            runuser() {{ shift 3; "$@"; }}
+
+            run_report_once_if_possible
+            validate_web_publication
+            final_message
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert existing_index.read_bytes() == existing_bytes
+
+    def test_37_symlink_index_html_rejected_by_validation_and_placeholder(self, sandbox):
+        """A symlink as index.html is rejected by validate_web_publication and is replaced by publish_offline_dashboard_placeholder without modifying original target."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        target_file = web_dir / "target.html"
+        target_bytes_before = b"<html>ORIGINAL TARGET CONTENT</body></html>"
+        target_file.write_bytes(target_bytes_before)
+        symlink_index = web_dir / "index.html"
+        symlink_index.symlink_to(target_file)
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            validate_web_publication
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "link simbólico" in result.stderr
+
+        # Confirm publish_offline_dashboard_placeholder replaces symlink without touching target
+        script_pub = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result_pub = _run_bash(script_pub)
+        assert result_pub.returncode == 0
+        assert not symlink_index.is_symlink(), "index.html must no longer be a symlink"
+        assert symlink_index.is_file(), "index.html must be a regular file"
+        assert target_file.exists(), "Original target file must still exist"
+        assert target_file.read_bytes() == target_bytes_before, "Original target file content was modified"
+
+    def test_38_nginx_user_read_permission_failure_causes_die(self, sandbox):
+        """If root can read index.html but Nginx user runuser check fails, validate_web_publication dies."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        index_html = web_dir / "index.html"
+        index_html.write_text("<html>valid</html>")
+
+        mock_bin = sandbox["tmp_path"] / "mock_bin_test38"
+        mock_bin.mkdir()
+        marker_file = sandbox["tmp_path"] / "runuser_called_38.txt"
+
+        id_fake = mock_bin / "id"
+        id_fake.write_text("#!/usr/bin/env bash\nexit 0\n")
+        id_fake.chmod(0o755)
+
+        runuser_fake = mock_bin / "runuser"
+        runuser_fake.write_text(f"#!/usr/bin/env bash\ntouch '{_to_wsl_path(marker_file)}'\nexit 1\n")
+        runuser_fake.chmod(0o755)
+
+        web_wsl = _to_wsl_path(web_dir)
+        bin_wsl = _to_wsl_path(mock_bin)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            PATH="{bin_wsl}:${{PATH}}"
+            WEB_DIR="{web_wsl}"
+            NGINX_USER="www-data"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            validate_web_publication
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+        assert "não possui permissão de leitura" in result.stderr
+        assert "Publicação web em" not in result.stdout
+        assert marker_file.exists(), "Fake runuser binary was not executed via PATH"
+
+    def test_39_heredoc_write_failure_cleans_up_tmp_and_dies(self, sandbox):
+        """Cat write failure for placeholder heredoc cleans up temporary file and dies."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            chown() {{ return 0; }}
+            cat() {{ return 1; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Falha ao escrever o conteúdo no arquivo temporário" in result.stderr
+        assert not (web_dir / "index.html").exists()
+
+        leftovers = list(web_dir.glob("*.tmp*")) + list(web_dir.glob(".*.tmp*"))
+        assert leftovers == [], f"Temporary files left over after write failure: {leftovers}"
+
+    @pytest.mark.parametrize("step", ["chmod", "chown", "mv"])
+    def test_40_step_failures_clean_up_tmp_and_die(self, sandbox, step):
+        """Failure during chmod, chown, or mv cleans up temporary file and dies."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        marker_dir = sandbox["tmp_path"] / f"markers_{step}"
+        marker_dir.mkdir()
+
+        web_wsl = _to_wsl_path(web_dir)
+        marker_wsl = _to_wsl_path(marker_dir)
+
+        if step == "chmod":
+            mock_overrides = dedent(f"""\
+                chmod() {{ touch "{marker_wsl}/chmod_called"; return 1; }}
+                chown() {{ touch "{marker_wsl}/chown_called"; return 0; }}
+                mv() {{ touch "{marker_wsl}/mv_called"; command mv "$@"; }}
+            """)
+        elif step == "chown":
+            mock_overrides = dedent(f"""\
+                chmod() {{ touch "{marker_wsl}/chmod_called"; return 0; }}
+                chown() {{ touch "{marker_wsl}/chown_called"; return 1; }}
+                mv() {{ touch "{marker_wsl}/mv_called"; command mv "$@"; }}
+            """)
+        else:  # step == "mv"
+            mock_overrides = dedent(f"""\
+                chmod() {{ touch "{marker_wsl}/chmod_called"; return 0; }}
+                chown() {{ touch "{marker_wsl}/chown_called"; return 0; }}
+                mv() {{ touch "{marker_wsl}/mv_called"; return 1; }}
+            """)
+
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            {mock_overrides}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+
+        chmod_marker = marker_dir / "chmod_called"
+        chown_marker = marker_dir / "chown_called"
+        mv_marker = marker_dir / "mv_called"
+
+        if step == "chmod":
+            assert chmod_marker.exists(), "chmod should have been called"
+            assert not chown_marker.exists(), "chown should NOT have been called"
+            assert not mv_marker.exists(), "mv should NOT have been called"
+            assert "Falha ao definir permissão 0644" in result.stderr
+        elif step == "chown":
+            assert chmod_marker.exists(), "chmod should have been called"
+            assert chown_marker.exists(), "chown should have been called"
+            assert not mv_marker.exists(), "mv should NOT have been called"
+            assert "Falha ao definir proprietário" in result.stderr
+        else:  # step == "mv"
+            assert chmod_marker.exists(), "chmod should have been called"
+            assert chown_marker.exists(), "chown should have been called"
+            assert mv_marker.exists(), "mv should have been called"
+            assert "Falha ao mover" in result.stderr
+
+        leftovers = list(web_dir.glob("*.tmp*")) + list(web_dir.glob(".*.tmp*"))
+        assert leftovers == [], f"Temporary files left over after {step} failure: {leftovers}"
+
+    def test_41_no_temporary_files_left_over_after_successful_publication(self, sandbox):
+        """After successful publish_offline_dashboard_placeholder, no temporary .index.html.tmp.* files remain in WEB_DIR."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        leftovers = list(web_dir.glob("*.tmp*")) + list(web_dir.glob(".*.tmp*"))
+        assert leftovers == [], f"Temporary files left over after success: {leftovers}"
+
+    def test_42_runuser_missing_causes_die(self, sandbox):
+        """If runuser command is missing, validate_web_publication fails closed."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        (web_dir / "index.html").write_text("<html>valid</html>")
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            NGINX_USER="www-data"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            command() {{
+                if [[ "$2" == "runuser" ]]; then
+                    return 1
+                fi
+                builtin command "$@"
+            }}
+
+            validate_web_publication
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Comando 'runuser' ausente" in result.stderr
+
+    def test_43_nginx_user_missing_causes_die(self, sandbox):
+        """If NGINX_USER does not exist in system, validate_web_publication fails closed."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        (web_dir / "index.html").write_text("<html>valid</html>")
+
+        mock_bin = sandbox["tmp_path"] / "mock_bin_test43"
+        mock_bin.mkdir()
+
+        runuser_fake = mock_bin / "runuser"
+        runuser_fake.write_text("#!/usr/bin/env bash\nexit 0\n")
+        runuser_fake.chmod(0o755)
+
+        id_fake = mock_bin / "id"
+        id_fake.write_text("#!/usr/bin/env bash\nif [[ \"$1\" == \"nonexistent_nginx_user\" ]]; then exit 1; fi; exit 0\n")
+        id_fake.chmod(0o755)
+
+        web_wsl = _to_wsl_path(web_dir)
+        bin_wsl = _to_wsl_path(mock_bin)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            PATH="{bin_wsl}:${{PATH}}"
+            WEB_DIR="{web_wsl}"
+            NGINX_USER="nonexistent_nginx_user"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            validate_web_publication
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Usuário Nginx 'nonexistent_nginx_user' não encontrado" in result.stderr
+
+    def test_44_nginx_user_can_read_passes_validation(self, sandbox):
+        """When NGINX_USER exists and runuser check succeeds, validate_web_publication passes."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        (web_dir / "index.html").write_text("<html>valid</html>")
+
+        mock_bin = sandbox["tmp_path"] / "mock_bin_test44"
+        mock_bin.mkdir()
+
+        runuser_fake = mock_bin / "runuser"
+        runuser_fake.write_text("#!/usr/bin/env bash\nexit 0\n")
+        runuser_fake.chmod(0o755)
+
+        id_fake = mock_bin / "id"
+        id_fake.write_text("#!/usr/bin/env bash\nexit 0\n")
+        id_fake.chmod(0o755)
+
+        web_wsl = _to_wsl_path(web_dir)
+        bin_wsl = _to_wsl_path(mock_bin)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            PATH="{bin_wsl}:${{PATH}}"
+            WEB_DIR="{web_wsl}"
+            NGINX_USER="www-data"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            validate_web_publication
+            echo "VALIDATED_OK"
+        """)
+        result = _run_bash(script)
+        assert result.returncode == 0
+        assert "VALIDATED_OK" in result.stdout
+
+    def test_45_target_as_directory_fails_and_cleans_up(self, sandbox):
+        """If WEB_DIR/index.html is a directory, publish_offline_dashboard_placeholder fails and cleans up temporary file."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+        index_dir = web_dir / "index.html"
+        index_dir.mkdir()
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+            chown() {{ return 0; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert "Falha ao mover" in result.stderr
+        assert index_dir.is_dir(), "index.html directory was corrupted"
+
+        leftovers = list(web_dir.glob("*.tmp*")) + list(web_dir.glob(".*.tmp*")) + list(index_dir.glob("*.tmp*")) + list(index_dir.glob(".*.tmp*"))
+        assert leftovers == [], f"Temporary files left over when target is a directory: {leftovers}"
+
+    def test_46_cleanup_failure_emits_warning_and_preserves_original_error(self, sandbox):
+        """If temporary file cleanup rm fails during error handling, warning is emitted and original failure is preserved."""
+        web_dir = sandbox["tmp_path"] / "web"
+        web_dir.mkdir()
+
+        web_wsl = _to_wsl_path(web_dir)
+        script = dedent(f"""\
+            set -Eeuo pipefail
+            WEB_DIR="{web_wsl}"
+            WEB_GROUP="$(id -gn)"
+
+            source "{_to_wsl_path(INSTALL_SH)}"
+
+            chmod() {{ echo "ORIGINAL_CHMOD_FAILURE" >&2; return 1; }}
+            chown() {{ return 0; }}
+            rm() {{ echo "MOCK_RM_FAILURE" >&2; return 1; }}
+
+            publish_offline_dashboard_placeholder
+        """)
+        result = _run_bash(script, expect_fail=True)
+        assert result.returncode != 0
+        assert "ORIGINAL_CHMOD_FAILURE" in result.stderr
+        assert "Falha ao definir permissão 0644" in result.stderr
+        assert "Falha ao remover o arquivo temporário residual" in result.stderr
+        assert "MOCK_RM_FAILURE" in result.stderr
