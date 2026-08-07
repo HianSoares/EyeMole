@@ -47,6 +47,10 @@ DRY_RUN=0
 PURGE=0
 YES=0
 REMOVE_USER=0
+NGINX_FAILED=0
+NGINX_ROLLBACK_STATUS="not_needed"
+FATAL=0
+FATAL_STEP=""
 TS="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/backup-eyemole-uninstall-${TS}"
 declare -a ACTIONS_TAKEN=()
@@ -394,58 +398,328 @@ stop_services() {
 }
 
 # =============================================================================
-# Remove Nginx integration (with rollback on nginx -t failure)
+# Remove Nginx integration (atomic transaction with full rollback)
 # =============================================================================
 remove_nginx_integration() {
     log "Removing Nginx integration..."
 
     local nginx_site_conf="${NGINX_ROOT}/sites-enabled/wazuh-dashboard-proxy"
     local nginx_changed=0
+    local changes_started=0
+    local rollback_dir="${BACKUP_DIR}/nginx-rollback"
+    local tmp_site_conf="${rollback_dir}/wazuh-dashboard-proxy.new"
+    local site_existed=0
+    local snippet_existed=0
+    local htpasswd_existed=0
+    local real_site_conf=""
 
-    # Remove include line from site config
-    if [[ -f "$nginx_site_conf" ]] && grep -q "eyemole-soar-locations" "$nginx_site_conf"; then
-        log "  Removing include line from ${nginx_site_conf}..."
-        local backup_conf="${nginx_site_conf}.bak-uninstall-${TS}"
-        cp -a "$nginx_site_conf" "$backup_conf"
+    NGINX_ROLLBACK_STATUS="not_needed"
 
-        sed -i '/eyemole-soar-locations/d' "$nginx_site_conf"
-        nginx_changed=1
-        ACTIONS_TAKEN+=("Removed include line from ${nginx_site_conf}")
+    [[ -f "$nginx_site_conf" ]] && site_existed=1
+    [[ -f "$SNIPPET_FILE" ]] && snippet_existed=1
+    [[ -f "$HTPASSWD_FILE" ]] && htpasswd_existed=1
+
+    _nginx_transaction_fail() {
+        local message="$1"
+        warn "$message"
+        FATAL=1
+        FATAL_STEP="nginx_transaction"
+        NGINX_FAILED=1
+        if [[ "$changes_started" -eq 1 ]]; then
+            warn "Rolling back Nginx transaction..."
+            if _nginx_rollback "$rollback_dir" "$nginx_site_conf" "$real_site_conf" \
+                "$site_existed" "$snippet_existed" "$htpasswd_existed"; then
+                log "Nginx transaction rollback completed."
+            else
+                warn "Nginx transaction rollback failed with errors."
+            fi
+        else
+            NGINX_ROLLBACK_STATUS="not_needed"
+            log "No active changes made before failure; rollback skipped."
+        fi
+        return 1
+    }
+
+    # Resolve real path of site config ONCE before any mutation. Fail closed immediately if realpath -e fails.
+    if [[ "$site_existed" -eq 1 ]]; then
+        if ! real_site_conf="$(realpath -e "$nginx_site_conf" 2>/dev/null)"; then
+            _nginx_transaction_fail "Failed to resolve real path for existing Nginx server block: ${nginx_site_conf}"
+            return 1
+        fi
+    else
+        real_site_conf="$nginx_site_conf"
     fi
 
-    # Remove snippet file
-    if [[ -f "$SNIPPET_FILE" ]]; then
-        rm -f "$SNIPPET_FILE"
+    # Explicit check of assert_safe_managed_path for all managed paths
+    if [[ "$site_existed" -eq 1 ]]; then
+        if ! assert_safe_managed_path "$real_site_conf" "NGINX_SITE_CONF_REAL"; then
+            _nginx_transaction_fail "Path safety validation failed for Nginx server block real path: ${real_site_conf}"
+            return 1
+        fi
+    fi
+    if [[ "$snippet_existed" -eq 1 ]]; then
+        if ! assert_safe_managed_path "$SNIPPET_FILE" "SNIPPET_FILE"; then
+            _nginx_transaction_fail "Path safety validation failed for Nginx snippet: ${SNIPPET_FILE}"
+            return 1
+        fi
+    fi
+    if [[ "$htpasswd_existed" -eq 1 ]]; then
+        if ! assert_safe_managed_path "$HTPASSWD_FILE" "HTPASSWD_FILE"; then
+            _nginx_transaction_fail "Path safety validation failed for Nginx htpasswd: ${HTPASSWD_FILE}"
+            return 1
+        fi
+    fi
+
+    # Phase 1: backup all existing artifacts BEFORE any change.
+    if ! mkdir -p "$rollback_dir"; then
+        _nginx_transaction_fail "Failed to create Nginx rollback directory: ${rollback_dir}"
+        return 1
+    fi
+
+    if [[ "$site_existed" -eq 1 ]]; then
+        if ! cp -a "$real_site_conf" "${rollback_dir}/wazuh-dashboard-proxy"; then
+            _nginx_transaction_fail "Failed to backup Nginx server block: ${real_site_conf}"
+            return 1
+        fi
+    fi
+    if [[ "$snippet_existed" -eq 1 ]]; then
+        if ! cp -a "$SNIPPET_FILE" "${rollback_dir}/snippet.conf"; then
+            _nginx_transaction_fail "Failed to backup Nginx snippet: ${SNIPPET_FILE}"
+            return 1
+        fi
+    fi
+    if [[ "$htpasswd_existed" -eq 1 ]]; then
+        if ! cp -a "$HTPASSWD_FILE" "${rollback_dir}/htpasswd"; then
+            _nginx_transaction_fail "Failed to backup Nginx htpasswd: ${HTPASSWD_FILE}"
+            return 1
+        fi
+    fi
+
+    # Phase 2: remove ONLY the exact include directive, comparing the path
+    # literally so regex metacharacters in SNIPPET_FILE have no meaning.
+    if [[ "$site_existed" -eq 1 ]]; then
+        if ! awk -v snippet="$SNIPPET_FILE" '
+            function trim(value) {
+                sub(/^[ \t\r\n]+/, "", value)
+                sub(/[ \t\r\n]+$/, "", value)
+                return value
+            }
+            {
+                line = $0
+                trimmed = trim(line)
+                if (trimmed ~ /^include[ \t]+/) {
+                    path = trimmed
+                    sub(/^include[ \t]+/, "", path)
+                    if (path ~ /;[ \t]*$/) {
+                        sub(/[ \t]*;[ \t]*$/, "", path)
+                        if (path == snippet) {
+                            next
+                        }
+                    }
+                }
+                print line
+            }
+        ' "$real_site_conf" > "$tmp_site_conf"; then
+            if [[ -e "$tmp_site_conf" ]]; then
+                if ! rm -f "$tmp_site_conf"; then
+                    warn "Failed to remove temporary file after awk edit error: ${tmp_site_conf}"
+                fi
+            fi
+            _nginx_transaction_fail "Failed to edit Nginx server block: ${nginx_site_conf}"
+            return 1
+        fi
+
+        local cmp_rc=0
+        cmp -s "$real_site_conf" "$tmp_site_conf" || cmp_rc=$?
+
+        if [[ "$cmp_rc" -ge 2 ]]; then
+            if ! rm -f "$tmp_site_conf"; then
+                warn "Failed to remove temporary file after cmp error: ${tmp_site_conf}"
+            fi
+            _nginx_transaction_fail "cmp failed (RC=${cmp_rc}) comparing Nginx server block files."
+            return 1
+        elif [[ "$cmp_rc" -eq 1 ]]; then
+            log "  Removing include line from ${nginx_site_conf}..."
+            changes_started=1
+            # Write updated content directly into existing file to preserve inode, symlink, mode, owner, group, ACL
+            if ! cat "$tmp_site_conf" > "$real_site_conf"; then
+                _nginx_transaction_fail "Failed to write updated content to Nginx server block: ${real_site_conf}"
+                return 1
+            fi
+            if ! rm -f "$tmp_site_conf"; then
+                _nginx_transaction_fail "Failed to remove temporary edit file after successful write: ${tmp_site_conf}"
+                return 1
+            fi
+            nginx_changed=1
+            ACTIONS_TAKEN+=("Removed include line from ${nginx_site_conf}")
+        elif [[ "$cmp_rc" -eq 0 ]]; then
+            if ! rm -f "$tmp_site_conf"; then
+                _nginx_transaction_fail "Failed to remove temporary Nginx edit file: ${tmp_site_conf}"
+                return 1
+            fi
+        fi
+    fi
+
+    # Phase 3: apply final artifact removals for the selected mode.
+    if [[ "$snippet_existed" -eq 1 ]]; then
+        if ! rm -f "$SNIPPET_FILE"; then
+            _nginx_transaction_fail "Failed to remove Nginx snippet: ${SNIPPET_FILE}"
+            return 1
+        fi
+        changes_started=1
         log "  Removed snippet: ${SNIPPET_FILE}"
         ACTIONS_TAKEN+=("Removed: ${SNIPPET_FILE}")
     fi
 
-    # Htpasswd: remove only in purge mode; default mode preserves it
-    if [[ -f "$HTPASSWD_FILE" && "$PURGE" -eq 1 ]]; then
-        rm -f "$HTPASSWD_FILE"
+    # Htpasswd: remove active file in both purge and preserve modes
+    # (in preserve mode, it was already safely preserved antecipadamente).
+    if [[ "$htpasswd_existed" -eq 1 ]]; then
+        if ! rm -f "$HTPASSWD_FILE"; then
+            _nginx_transaction_fail "Failed to remove Nginx htpasswd: ${HTPASSWD_FILE}"
+            return 1
+        fi
+        changes_started=1
         log "  Removed htpasswd: ${HTPASSWD_FILE}"
         ACTIONS_TAKEN+=("Removed: ${HTPASSWD_FILE}")
     fi
 
-    # Validate nginx configuration; rollback on failure
-    if [[ "$nginx_changed" -eq 1 ]]; then
-        log "  Testing nginx configuration..."
+    # Phase 4: validate and reload the final transaction state.
+    if [[ "$changes_started" -eq 1 || "$nginx_changed" -eq 1 ]]; then
+        log "  Testing final nginx configuration..."
         if ! nginx -t 2>/dev/null; then
-            warn "nginx -t FAILED after removing include line. Rolling back..."
-            if [[ -f "$backup_conf" ]]; then
-                cp -a "$backup_conf" "$nginx_site_conf"
-                warn "Rollback complete. Nginx config restored from ${backup_conf}"
+            _nginx_transaction_fail "nginx -t FAILED for final Nginx transaction state."
+            return 1
+        fi
+
+        log "  nginx -t passed. Reloading..."
+        if ! systemctl reload nginx 2>/dev/null; then
+            _nginx_transaction_fail "nginx reload FAILED after final Nginx validation."
+            return 1
+        fi
+
+        log "  nginx reload succeeded."
+        ACTIONS_TAKEN+=("Reloaded nginx")
+    fi
+
+    if [[ -f "$tmp_site_conf" ]]; then
+        if ! rm -f "$tmp_site_conf"; then
+            warn "Failed to clean up temporary edit file: ${tmp_site_conf}"
+        fi
+    fi
+    log "Nginx integration removal complete."
+}
+
+# Helper: full rollback of all 3 nginx artifacts
+_nginx_rollback() {
+    local rollback_dir="$1"
+    local nginx_site_conf="$2"
+    local real_site_conf="$3"
+    local site_existed="${4:-1}"
+    local snippet_existed="${5:-1}"
+    local htpasswd_existed="${6:-1}"
+    local rollback_failed=0
+
+    # Fail closed if target real_site_conf is empty or invalid
+    if [[ "$site_existed" -eq 1 && -z "$real_site_conf" ]]; then
+        warn "Rollback failed: real_site_conf path is empty or invalid."
+        NGINX_ROLLBACK_STATUS="failed"
+        NGINX_FAILED=1
+        FATAL=1
+        FATAL_STEP="nginx_transaction"
+        return 1
+    fi
+
+    if [[ "$site_existed" -eq 1 ]]; then
+        if [[ -f "${rollback_dir}/wazuh-dashboard-proxy" ]]; then
+            if cat "${rollback_dir}/wazuh-dashboard-proxy" > "$real_site_conf"; then
+                log "  Restored content of: ${nginx_site_conf}"
                 ACTIONS_TAKEN+=("ROLLBACK: Restored ${nginx_site_conf}")
+            else
+                warn "Rollback failed to restore content of Nginx server block: ${real_site_conf}"
+                rollback_failed=1
             fi
         else
-            log "  nginx -t passed."
-            # Reload nginx to apply changes
-            systemctl reload nginx 2>/dev/null || true
-            ACTIONS_TAKEN+=("Reloaded nginx")
+            warn "Rollback backup missing for Nginx server block: ${rollback_dir}/wazuh-dashboard-proxy"
+            rollback_failed=1
+        fi
+    elif [[ -e "$nginx_site_conf" ]]; then
+        if rm -f "$nginx_site_conf"; then
+            log "  Removed rollback-created server block: ${nginx_site_conf}"
+            ACTIONS_TAKEN+=("ROLLBACK: Removed ${nginx_site_conf}")
+        else
+            warn "Rollback failed to remove originally absent server block: ${nginx_site_conf}"
+            rollback_failed=1
         fi
     fi
 
-    log "Nginx integration removal complete."
+    if [[ "$snippet_existed" -eq 1 ]]; then
+        if cp -a "${rollback_dir}/snippet.conf" "$SNIPPET_FILE"; then
+            log "  Restored: ${SNIPPET_FILE}"
+            ACTIONS_TAKEN+=("ROLLBACK: Restored ${SNIPPET_FILE}")
+        else
+            warn "Rollback failed to restore Nginx snippet: ${SNIPPET_FILE}"
+            rollback_failed=1
+        fi
+    elif [[ -e "$SNIPPET_FILE" ]]; then
+        if rm -f "$SNIPPET_FILE"; then
+            log "  Removed rollback-created snippet: ${SNIPPET_FILE}"
+            ACTIONS_TAKEN+=("ROLLBACK: Removed ${SNIPPET_FILE}")
+        else
+            warn "Rollback failed to remove originally absent snippet: ${SNIPPET_FILE}"
+            rollback_failed=1
+        fi
+    fi
+
+    if [[ "$htpasswd_existed" -eq 1 ]]; then
+        if cp -a "${rollback_dir}/htpasswd" "$HTPASSWD_FILE"; then
+            log "  Restored: ${HTPASSWD_FILE}"
+            ACTIONS_TAKEN+=("ROLLBACK: Restored ${HTPASSWD_FILE}")
+        else
+            warn "Rollback failed to restore Nginx htpasswd: ${HTPASSWD_FILE}"
+            rollback_failed=1
+        fi
+    elif [[ -e "$HTPASSWD_FILE" ]]; then
+        if rm -f "$HTPASSWD_FILE"; then
+            log "  Removed rollback-created htpasswd: ${HTPASSWD_FILE}"
+            ACTIONS_TAKEN+=("ROLLBACK: Removed ${HTPASSWD_FILE}")
+        else
+            warn "Rollback failed to remove originally absent htpasswd: ${HTPASSWD_FILE}"
+            rollback_failed=1
+        fi
+    fi
+
+    if [[ -n "${tmp_site_conf:-}" && -f "$tmp_site_conf" ]]; then
+        if ! rm -f "$tmp_site_conf"; then
+            warn "Rollback failed to remove temporary edit file: ${tmp_site_conf}"
+            rollback_failed=1
+        fi
+    fi
+
+    # Re-validate after rollback.
+    if command -v nginx &>/dev/null; then
+        if nginx -t 2>/dev/null; then
+            log "  nginx -t passed after rollback."
+        else
+            warn "nginx -t STILL FAILING after rollback. Manual intervention required."
+            rollback_failed=1
+        fi
+    else
+        warn "nginx command not available to re-validate configuration after rollback."
+        rollback_failed=1
+    fi
+
+    if [[ "$rollback_failed" -ne 0 ]]; then
+        NGINX_ROLLBACK_STATUS="failed"
+        warn "Nginx rollback completed with errors."
+    else
+        NGINX_ROLLBACK_STATUS="succeeded"
+    fi
+
+    NGINX_FAILED=1
+    FATAL=1
+    FATAL_STEP="nginx_transaction"
+    warn "Nginx transaction aborted. No further removals will proceed."
+    return "$rollback_failed"
 }
 
 # =============================================================================
@@ -512,6 +786,47 @@ remove_polkit_and_legacy() {
 }
 
 # =============================================================================
+# Antecipated htpasswd preservation for preserve mode (PURGE=0)
+# =============================================================================
+preserve_htpasswd_for_uninstall() {
+    if [[ "$PURGE" -ne 0 ]]; then
+        return 0
+    fi
+
+    if [[ -f "$HTPASSWD_FILE" ]]; then
+        if ! assert_safe_managed_path "$HTPASSWD_FILE" "HTPASSWD_FILE"; then
+            warn "Path safety validation failed for Nginx htpasswd: ${HTPASSWD_FILE}"
+            FATAL=1
+            FATAL_STEP="htpasswd_preservation"
+            return 1
+        fi
+        local dest_dir="${PRESERVE_ROOT}/${TS}/nginx"
+        local dest_file="${dest_dir}/htpasswd"
+        if ! mkdir -p "$dest_dir"; then
+            warn "Failed to create preserve directory for htpasswd: ${dest_dir}"
+            FATAL=1
+            FATAL_STEP="htpasswd_preservation"
+            return 1
+        fi
+        if ! cp -a "$HTPASSWD_FILE" "$dest_file"; then
+            warn "Failed to copy htpasswd for preservation: ${HTPASSWD_FILE}"
+            FATAL=1
+            FATAL_STEP="htpasswd_preservation"
+            return 1
+        fi
+        if ! cmp -s "$HTPASSWD_FILE" "$dest_file"; then
+            warn "Preserved htpasswd byte comparison failed: ${HTPASSWD_FILE}"
+            FATAL=1
+            FATAL_STEP="htpasswd_preservation"
+            return 1
+        fi
+        log "  Preserved (antecipated): ${HTPASSWD_FILE} → ${dest_file}"
+        ACTIONS_TAKEN+=("Preserved: ${HTPASSWD_FILE} → ${dest_file}")
+    fi
+    return 0
+}
+
+# =============================================================================
 # Preserve data (default mode) — move to PRESERVE_ROOT
 # =============================================================================
 preserve_data() {
@@ -569,16 +884,18 @@ preserve_data() {
         fi
     fi
 
-    # --- HTPASSWD_FILE: preserve ---
+    # --- HTPASSWD_FILE: preserve if active file exists and not already preserved ---
     if [[ -f "$HTPASSWD_FILE" ]]; then
         local dest="${preserve_ts}/nginx"
-        mkdir -p "$dest"
-        cp -a "$HTPASSWD_FILE" "${dest}/htpasswd"
-        if [[ -f "${dest}/htpasswd" ]]; then
-            log "  Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd"
-            ACTIONS_TAKEN+=("Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd")
-        else
-            die "Failed to preserve ${HTPASSWD_FILE}"
+        if [[ ! -f "${dest}/htpasswd" ]]; then
+            mkdir -p "$dest"
+            cp -a "$HTPASSWD_FILE" "${dest}/htpasswd"
+            if [[ -f "${dest}/htpasswd" ]]; then
+                log "  Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd"
+                ACTIONS_TAKEN+=("Preserved: ${HTPASSWD_FILE} → ${dest}/htpasswd")
+            else
+                die "Failed to preserve ${HTPASSWD_FILE}"
+            fi
         fi
     fi
 
@@ -692,7 +1009,11 @@ final_validations() {
         log "Final validations passed."
     else
         warn "Final validations found ${issues} issue(s). See warnings above."
+        FATAL=1
+        FATAL_STEP="final_validations"
     fi
+
+    return "$issues"
 }
 
 # =============================================================================
@@ -720,8 +1041,11 @@ remove_app_user() {
     fi
 
     # Safety: check for running processes owned by the user
-    local proc_count
-    proc_count="$(pgrep -u "$APP_USER" 2>/dev/null | wc -l || echo 0)"
+    local proc_count=0
+    if pgrep -u "$APP_USER" &>/dev/null; then
+        proc_count="$(pgrep -u "$APP_USER" 2>/dev/null | wc -l | tr -d '[:space:]')"
+    fi
+    proc_count="${proc_count:-0}"
     if [[ "$proc_count" -gt 0 ]]; then
         warn "User '${APP_USER}' still has ${proc_count} running process(es)."
         warn "Cannot safely remove user. Stop all processes first."
@@ -729,7 +1053,7 @@ remove_app_user() {
     fi
 
     # Safety: check if user owns files outside of managed paths
-    local stray_files
+    local stray_files stray_count
     stray_files="$(find / -user "$APP_USER" \
         -not -path "${APP_DIR}/*" \
         -not -path "${WEB_DIR}/*" \
@@ -738,24 +1062,44 @@ remove_app_user() {
         -not -path "${BACKUP_ROOT}/backup-eyemole-*" \
         -not -path "/proc/*" \
         -not -path "/sys/*" \
-        2>/dev/null | head -5 || true)"
+        2>/dev/null | head -20 || true)"
 
-    if [[ -n "$stray_files" ]]; then
-        warn "User '${APP_USER}' owns files outside managed paths:"
-        echo "$stray_files" | while read -r f; do warn "  $f"; done
-        warn "Proceeding with user removal, but stray files will remain."
+    stray_count="$(printf '%s' "$stray_files" | grep -c '.' || true)"
+    stray_count="${stray_count:-0}"
+
+    if [[ "$stray_count" -gt 0 ]]; then
+        warn "User '${APP_USER}' owns ${stray_count} file(s) outside managed paths:"
+        echo "$stray_files" | head -5 | while read -r f; do warn "  $f"; done
+        if [[ "$stray_count" -gt 5 ]]; then
+            warn "  ... and $((stray_count - 5)) more."
+        fi
+        warn "Refusing to remove user. Reassign or remove stray files first."
+        return 1
     fi
 
     # Remove user (without removing home if it is a managed path)
-    userdel "$APP_USER" 2>/dev/null || true
+    if ! userdel "$APP_USER" 2>/dev/null; then
+        warn "userdel '${APP_USER}' failed."
+        return 1
+    fi
+
+    # Confirm removal
+    if id "$APP_USER" &>/dev/null; then
+        warn "User '${APP_USER}' still exists after userdel."
+        return 1
+    fi
+
     log "  User '${APP_USER}' removed."
     ACTIONS_TAKEN+=("Removed user: ${APP_USER}")
 
     # Remove group if it exists and is not a primary group elsewhere
     if getent group "$APP_USER" &>/dev/null; then
-        groupdel "$APP_USER" 2>/dev/null || true
-        log "  Group '${APP_USER}' removed."
-        ACTIONS_TAKEN+=("Removed group: ${APP_USER}")
+        if groupdel "$APP_USER" 2>/dev/null; then
+            log "  Group '${APP_USER}' removed."
+            ACTIONS_TAKEN+=("Removed group: ${APP_USER}")
+        else
+            warn "groupdel '${APP_USER}' failed. Group may be in use elsewhere."
+        fi
     fi
 }
 
@@ -807,27 +1151,44 @@ final_report() {
     echo "    cd ${BACKUP_DIR} && sha256sum -c MANIFEST.sha256"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-    echo "  Uninstall complete."
+    if [[ "$FATAL" -ne 0 ]]; then
+        echo "  FAILED — step: ${FATAL_STEP:-unknown}"
+        if [[ -n "${FATAL_STEP:-}" && ( "$FATAL_STEP" == "nginx" || "$FATAL_STEP" == "nginx_transaction" ) ]]; then
+            case "${NGINX_ROLLBACK_STATUS:-not_needed}" in
+                succeeded)
+                    echo "  Rollback: succeeded (site config, snippet, htpasswd restored)"
+                    ;;
+                failed)
+                    echo "  Rollback: failed or incomplete"
+                    ;;
+                *)
+                    echo "  Rollback: not needed (no changes made)"
+                    ;;
+            esac
+        elif [[ -n "${FATAL_STEP:-}" && "$FATAL_STEP" == "htpasswd_preservation" ]]; then
+            echo "  Rollback: not needed (no Nginx changes made)"
+        elif [[ -n "${FATAL_STEP:-}" && "$FATAL_STEP" == "user_removal" ]]; then
+            echo "  Rollback: not applicable (user was not removed)"
+        else
+            echo "  Rollback: incomplete or not applicable"
+        fi
+    else
+        echo "  Uninstall complete."
+    fi
     echo "═══════════════════════════════════════════════════════════════"
 }
 
 # =============================================================================
-# Main orchestration
+# Uninstall orchestration (testable — returns rather than exits)
+#
+# This function contains the exact transactional sequence executed by the
+# real entrypoint. It is a separate function (rather than inlined in main)
+# specifically so that automated tests can invoke the real sequence — with
+# all external commands (systemctl, nginx, id, pgrep, userdel) mocked and
+# all paths pointed at a sandbox — instead of re-implementing this logic as
+# a duplicate string in the test suite.
 # =============================================================================
-main() {
-    # 1. Parse args
-    parse_args "$@"
-
-    # Show help has no side effects
-    # (handled inside parse_args via usage)
-
-    echo ""
-    echo "═══════════════════════════════════════════════════════════════"
-    echo "  EyeMole Safe Uninstaller"
-    echo "  $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "═══════════════════════════════════════════════════════════════"
-    echo ""
-
+run_uninstall() {
     # 2. Root check (skip in dry-run for convenience)
     if [[ "$DRY_RUN" -eq 0 ]]; then
         check_root
@@ -846,7 +1207,7 @@ main() {
     # 5. Dry-run output
     if [[ "$DRY_RUN" -eq 1 ]]; then
         show_dry_run
-        exit 0
+        return 0
     fi
 
     # 6. Purge confirmation
@@ -855,11 +1216,22 @@ main() {
     # 7. Backup (with space check)
     create_backup
 
-    # 8. Stop/disable services
-    stop_services
+    # 8. Antecipated htpasswd preservation for preserve mode (PURGE=0)
+    if ! preserve_htpasswd_for_uninstall; then
+        final_report
+        return 1
+    fi
 
-    # 9. Remove Nginx integration (with rollback)
-    remove_nginx_integration
+    # 9. Remove Nginx integration FIRST (atomic transaction with rollback).
+    #    Services remain running until nginx is confirmed healthy, so that a
+    #    failed nginx -t or reload does NOT leave the API stopped/disabled.
+    if ! remove_nginx_integration; then
+        final_report
+        return 1
+    fi
+
+    # 9. Stop/disable services (only after nginx is healthy)
+    stop_services
 
     # 10. Remove systemd units + daemon-reload
     remove_systemd_units
@@ -875,13 +1247,42 @@ main() {
     remove_app_directories
 
     # 14. Final validations
-    final_validations
+    final_validations || true
 
-    # 15. Optional user removal
-    remove_app_user
+    # 15. Optional user removal — skip if earlier steps set FATAL
+    if [[ "$REMOVE_USER" -eq 1 ]]; then
+        if [[ "$FATAL" -ne 0 ]]; then
+            warn "Skipping user removal due to prior failure (step: ${FATAL_STEP:-unknown})."
+        elif ! remove_app_user; then
+            FATAL=1
+            FATAL_STEP="user_removal"
+        fi
+    fi
 
     # 16. Final report
     final_report
+    return "$FATAL"
+}
+
+# =============================================================================
+# Main entrypoint
+# =============================================================================
+main() {
+    # 1. Parse args
+    parse_args "$@"
+
+    # Show help has no side effects
+    # (handled inside parse_args via usage)
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  EyeMole Safe Uninstaller"
+    echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    run_uninstall
+    exit $?
 }
 
 # =============================================================================
