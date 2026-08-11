@@ -427,17 +427,191 @@ Se aparecer `inactive (dead)` com `status=0/SUCCESS`, o serviço funcionou corre
 
 ### 14.5 Configuração de credenciais (credentials.env)
 
-Se `/etc/hmg-soar/credentials.env` não existir, o instalador cria automaticamente o arquivo a partir do modelo com permissão `0640`.
+O instalador cria automaticamente o arquivo `/etc/hmg-soar/credentials.env` com
+permissão `root:root 0640`. Esse arquivo contém as credenciais que o EyeMole
+utiliza para consultar o Wazuh Indexer (OpenSearch) e a Wazuh Server API.
 
-Para configurar o acesso real ao Wazuh/Indexer:
+#### Estrutura do arquivo
 
-1. Edite o arquivo:
+```text
+# OPENSEARCH_HOST=127.0.0.1
+# OPENSEARCH_PORT=9200
+# OPENSEARCH_USER=admin
+OPENSEARCH_PASS=
+
+# WAZUH_API_HOST=127.0.0.1
+# WAZUH_API_PORT=55000
+# WAZUH_API_USER=wazuh-wui
+WAZUH_API_PASS=
+
+# HMG_USE_HTTPS=true
+```
+
+- Linhas comentadas (`#`) representam valores padrão já utilizados pelo EyeMole.
+  Descomente e altere somente se o ambiente for customizado.
+- **Duas variáveis são obrigatórias** para sair do modo Bootstrap / Offline:
+  - `OPENSEARCH_PASS`
+  - `WAZUH_API_PASS`
+
+#### Modo Bootstrap / Offline
+
+Enquanto `OPENSEARCH_PASS` ou `WAZUH_API_PASS` estiver vazia:
+
+- A instalação continua normalmente — **não é um erro**.
+- O EyeMole permanece em **Bootstrap / Offline**.
+- Um placeholder informativo é publicado em `/soar/`.
+- O serviço `hmg-soar-report.service` utiliza `ExecCondition` para não executar
+  o relatório real até que ambas as credenciais estejam preenchidas.
+- O timer continua ativo e verificará novamente no próximo ciclo.
+
+#### Onde encontrar WAZUH_API_PASS
+
+`WAZUH_API_PASS` é a senha da conta da Wazuh Server API utilizada pelo EyeMole.
+Por padrão, o EyeMole conecta com o usuário `wazuh-wui`.
+
+Em instalações padrão do Wazuh, essa credencial está configurada no arquivo de
+conexão do Wazuh Dashboard com a Wazuh Server API:
+
+```bash
+sudo nano /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+```
+
+No final do arquivo, localize a seção de hosts. O formato típico é:
+
+```yaml
+hosts:
+  - default:
+      url: https://localhost
+      port: 55000
+      username: wazuh-wui
+      password: "SUA_SENHA_AQUI"
+```
+
+O valor do campo `password` correspondente ao `username: wazuh-wui` é o que deve
+ser preenchido em `WAZUH_API_PASS`.
+
+> **Nota:** Em versões mais recentes do Wazuh (5.x), a configuração migrou para
+> `/etc/wazuh-dashboard/opensearch_dashboards.yml` sob a chave `wazuh_core.hosts`.
+> Consulte a documentação oficial correspondente à versão do Wazuh instalada no
+> ambiente.
+
+> **Ambientes customizados:** Se o ambiente utiliza outro usuário de API
+> (diferente de `wazuh-wui`), descomente e altere `WAZUH_API_USER` no
+> `credentials.env` e use a senha correspondente.
+
+#### Onde encontrar OPENSEARCH_PASS
+
+`OPENSEARCH_PASS` é a senha do usuário do Wazuh Indexer (OpenSearch) configurado
+em `OPENSEARCH_USER`, que por padrão no EyeMole é `admin`.
+
+Essa é a senha definida para o usuário `admin` do Wazuh Indexer durante a
+instalação/configuração inicial do Wazuh. **Não existe um comando seguro e
+universal para recuperar essa senha após a instalação.** Diferentemente da senha
+da API, ela não fica armazenada em texto claro em um arquivo de configuração
+acessível em todas as implantações.
+
+**Como obter a credencial:**
+
+1. **Se você administrou a instalação do Wazuh:** use a senha definida durante a
+   instalação ou alterada posteriormente.
+2. **Se o Wazuh foi instalado por outra equipe:** solicite a credencial do
+   usuário `admin` do Wazuh Indexer ao responsável pelo ambiente.
+3. **Se a senha foi alterada via Wazuh Dashboard:** navegue em *Index Management
+   → Security → Internal Users → admin* — ali é possível redefinir a senha, mas
+   NÃO recuperar a atual.
+
+> **⚠️ ATENÇÃO:** A ferramenta `wazuh-passwords-tool` (quando disponível) pode
+> ser usada para **redefinir** senhas, mas isso **altera** a credencial e pode
+> exigir atualização em outros componentes integrados (Filebeat, Wazuh
+> Dashboard). Não execute a troca de senha apenas para configurar o EyeMole
+> se a senha atual puder ser obtida de outra forma.
+>
+> Referência: [Wazuh — Password Management](https://documentation.wazuh.com/current/user-manual/user-administration/password-management.html)
+
+#### Preenchendo as credenciais
+
+1. Abra o arquivo:
    ```bash
    sudo nano /etc/hmg-soar/credentials.env
    ```
-2. Preencha as variáveis obrigatórias `OPENSEARCH_PASS` e `WAZUH_API_PASS`.
-3. Variáveis com valores padrão (ex: `OPENSEARCH_HOST=127.0.0.1`) aparecem comentadas no modelo e podem ser descomentadas para personalização.
-4. Após preencher, o próximo disparo do `hmg-soar-report.service` (manual ou via timer) detectará as credenciais e publicará os dados reais.
+
+2. Localize as duas linhas obrigatórias:
+   ```text
+   OPENSEARCH_PASS=
+   WAZUH_API_PASS=
+   ```
+
+3. Preencha com os valores reais:
+   ```text
+   OPENSEARCH_PASS=senha_do_indexer
+   WAZUH_API_PASS=senha_da_api
+   ```
+
+4. **Não altere** as linhas comentadas a menos que o ambiente possua
+   configuração diferente dos padrões (host, porta, usuário, HTTPS).
+
+5. Salve o arquivo (`Ctrl+O`, `Enter`, `Ctrl+X`).
+
+#### Verificando que as credenciais foram preenchidas
+
+Para confirmar sem expor os valores das senhas:
+
+```bash
+sudo awk -F= '/^OPENSEARCH_PASS=/{print "OPENSEARCH_PASS:", ($2 != "" ? "DEFINIDA" : "VAZIA")} /^WAZUH_API_PASS=/{print "WAZUH_API_PASS:", ($2 != "" ? "DEFINIDA" : "VAZIA")}' /etc/hmg-soar/credentials.env
+```
+
+Resultado esperado após preenchimento:
+
+```text
+OPENSEARCH_PASS: DEFINIDA
+WAZUH_API_PASS: DEFINIDA
+```
+
+#### Publicando o dashboard real
+
+Após preencher ambas as credenciais, dispare o serviço de relatório:
+
+```bash
+sudo systemctl start hmg-soar-report.service
+```
+
+Verifique o resultado:
+
+```bash
+systemctl show hmg-soar-report.service -p Result -p ExecMainCode -p ExecMainStatus --no-pager
+```
+
+Resultado esperado após execução bem-sucedida:
+
+```text
+Result=success
+ExecMainCode=1
+ExecMainStatus=0
+```
+
+> **Nota:** `hmg-soar-report.service` é do tipo `oneshot`. Após concluir, seu
+> estado fica `inactive (dead)` — isso é **normal e esperado**. O que importa é
+> `Result=success` e `ExecMainStatus=0`. O campo `ExecMainCode=1` indica
+> `code=exited` no systemd (o processo terminou normalmente) e não representa
+> erro por si só; o exit status real está em `ExecMainStatus`.
+
+Após a primeira execução bem-sucedida, o placeholder Bootstrap / Offline é
+substituído pelo dashboard real em `/soar/`.
+
+Para acompanhar logs em caso de falha:
+
+```bash
+sudo journalctl -u hmg-soar-report.service -n 50 --no-pager
+```
+
+#### Segurança do credentials.env
+
+- **Não** compartilhe o arquivo `credentials.env`.
+- **Não** adicione ao Git (o `.gitignore` do repositório já exclui `*.env`).
+- **Não** copie senhas para issues, Pull Requests ou logs.
+- **Não** altere as permissões para tornar o arquivo legível por outros usuários.
+- O instalador mantém `/etc/hmg-soar/credentials.env` como `root:root 0640`.
+- Comandos nesta documentação **nunca** imprimem o conteúdo das senhas.
 
 ---
 
