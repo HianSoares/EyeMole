@@ -895,16 +895,133 @@ validate_web_publication() {
   log "Publicação web em ${index_file} validada com sucesso."
 }
 
+is_credentials_ready() {
+  local cred_file="${ETC_DIR}/credentials.env"
+
+  if [[ ! -f "${cred_file}" || -L "${cred_file}" ]]; then
+    return 1
+  fi
+
+  local opensearch_pass=""
+  local wazuh_pass=""
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="$(echo "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ "${line}" =~ ^# ]] && continue
+    [[ -z "${line}" ]] && continue
+
+    if [[ "${line}" =~ ^OPENSEARCH_PASS[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      opensearch_pass="${BASH_REMATCH[1]}"
+      opensearch_pass="${opensearch_pass%\"}"
+      opensearch_pass="${opensearch_pass#\"}"
+      opensearch_pass="${opensearch_pass%\'}"
+      opensearch_pass="${opensearch_pass#\'}"
+    elif [[ "${line}" =~ ^WAZUH_API_PASS[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      wazuh_pass="${BASH_REMATCH[1]}"
+      wazuh_pass="${wazuh_pass%\"}"
+      wazuh_pass="${wazuh_pass#\"}"
+      wazuh_pass="${wazuh_pass%\'}"
+      wazuh_pass="${wazuh_pass#\'}"
+    fi
+  done < "${cred_file}"
+
+  if [[ -n "${opensearch_pass}" && -n "${wazuh_pass}" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+secure_credentials_env() {
+  local cred_file="${ETC_DIR}/credentials.env"
+  local template_src="${REPO_ROOT}/credentials.env.example"
+
+  if [[ -L "${cred_file}" ]]; then
+    die "Erro de segurança: ${cred_file} é um link simbólico."
+  fi
+
+  mkdir -p "${ETC_DIR}"
+
+  if [[ -f "${cred_file}" ]]; then
+    log "Arquivo de credenciais ${cred_file} já existe. Preservando o conteúdo atual."
+  else
+    log "Criando arquivo de modelo de credenciais em ${cred_file}..."
+    local tmp_cred=""
+    if ! tmp_cred="$(mktemp "${ETC_DIR}/.credentials.env.tmp.XXXXXX" 2>/dev/null)"; then
+      die "Falha ao criar arquivo temporário de credenciais em ${ETC_DIR}."
+    fi
+
+    _cleanup_cred_tmp() {
+      if [[ -n "${tmp_cred:-}" && ( -e "${tmp_cred:-}" || -L "${tmp_cred:-}" ) ]]; then
+        rm -f "${tmp_cred}" 2>/dev/null || true
+      fi
+    }
+
+    if [[ -f "${template_src}" ]]; then
+      if ! cat "${template_src}" > "${tmp_cred}"; then
+        _cleanup_cred_tmp
+        die "Falha ao copiar o modelo de credenciais para ${tmp_cred}."
+      fi
+    else
+      if ! cat > "${tmp_cred}" <<'EOF'
+# EyeMole SOAR - Credenciais de integração
+#
+# Este arquivo será instalado em:
+# /etc/hmg-soar/credentials.env
+#
+# Preencha as duas senhas obrigatórias abaixo.
+# Não faça commit de credentials.env real.
+
+# OpenSearch / Wazuh Indexer
+# OPENSEARCH_HOST=127.0.0.1
+# OPENSEARCH_PORT=9200
+# OPENSEARCH_USER=admin
+OPENSEARCH_PASS=
+
+# Wazuh API
+# WAZUH_API_HOST=127.0.0.1
+# WAZUH_API_PORT=55000
+# WAZUH_API_USER=wazuh-wui
+WAZUH_API_PASS=
+
+# Opcional
+# HMG_USE_HTTPS=true
+EOF
+      then
+        _cleanup_cred_tmp
+        die "Falha ao escrever o modelo de credenciais em ${tmp_cred}."
+      fi
+    fi
+
+    if ! chmod 0640 "${tmp_cred}"; then
+      _cleanup_cred_tmp
+      die "Falha ao definir permissão 0640 no arquivo de credenciais temporário."
+    fi
+
+    chown root:root "${tmp_cred}" 2>/dev/null || true
+
+    if ! mv -fT "${tmp_cred}" "${cred_file}"; then
+      _cleanup_cred_tmp
+      die "Falha ao mover o arquivo de credenciais temporário para ${cred_file}."
+    fi
+
+    log "Modelo de credenciais criado com sucesso em ${cred_file}."
+  fi
+
+  chmod 0640 "${cred_file}"
+  chown root:root "${cred_file}" 2>/dev/null || true
+}
+
 run_report_once_if_possible() {
   if [[ ! -f "${SYSTEMD_UNIT_DIR}/${SERVICE_FILE}" ]]; then
     warn "Service systemd não instalado. Pulando execução do serviço de relatório."
-    if [[ ! -f "${ETC_DIR}/credentials.env" ]]; then
+    if ! is_credentials_ready; then
       publish_offline_dashboard_placeholder
     fi
     return 0
   fi
 
-  if [[ -f "${ETC_DIR}/credentials.env" ]]; then
+  if is_credentials_ready; then
     log "Executando serviço real uma vez para publicar o dashboard..."
     if ! systemctl restart "${SERVICE_FILE}"; then
       warn "Falha ao executar ${SERVICE_FILE}."
@@ -913,7 +1030,7 @@ run_report_once_if_possible() {
       die "Execução inicial do serviço de relatório falhou."
     fi
   else
-    warn "Credenciais não encontradas em ${ETC_DIR}/credentials.env. Gerando bootstrap offline."
+    log "Credenciais de integração não configuradas. Executando bootstrap offline..."
   fi
 
   log "Executando bootstrap de contexto (context_bootstrap.py)..."
@@ -921,7 +1038,7 @@ run_report_once_if_possible() {
     die "Falha no bootstrap de contexto (context_bootstrap.py)."
   fi
 
-  if [[ -f "${ETC_DIR}/credentials.env" ]]; then
+  if is_credentials_ready; then
     log "Executando novamente ${SERVICE_FILE} após o bootstrap..."
     if ! systemctl restart "${SERVICE_FILE}"; then
       warn "Falha na segunda execução do ${SERVICE_FILE}."
@@ -952,12 +1069,16 @@ final_message() {
     echo "          Execução manual (admin): sudo systemctl start hmg-soar-report.service"
   fi
 
-  if [[ ! -f "${ETC_DIR}/credentials.env" ]]; then
+  if ! is_credentials_ready; then
     echo
-    echo "Status  : BOOTSTRAP / OFFLINE (credenciais de integração ausentes)"
-    echo "          O dashboard inicial exibe a página de bootstrap."
-    echo "          Para publicar os dados reais do Wazuh/Indexer, crie e configure:"
+    echo "Status  : BOOTSTRAP / OFFLINE (credenciais de integração não configuradas)"
+    echo "          O arquivo de credenciais foi criado em:"
     echo "          ${ETC_DIR}/credentials.env"
+    echo
+    echo "          Para publicar o dashboard real com dados do Wazuh/Indexer:"
+    echo "          sudo nano ${ETC_DIR}/credentials.env"
+    echo
+    echo "          Preencha as variáveis obrigatórias OPENSEARCH_PASS e WAZUH_API_PASS."
     echo "          Após a configuração, o serviço/timer hmg-soar-report publicará os dados."
   fi
 

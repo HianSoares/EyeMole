@@ -22,13 +22,13 @@ Antes de iniciar, confirme que o servidor possui:
 - Nginx instalado ou disponível para instalação.
 - Wazuh Dashboard já publicado via Nginx.
 - Repositório EyeMole acessível pelo servidor.
-- Arquivo de credenciais do ambiente, quando for usar dados reais:
+- Arquivo de credenciais do ambiente, para publicação dos dados reais:
 
 ```text
 /etc/hmg-soar/credentials.env
 ```
 
-Observação: caso o arquivo `credentials.env` não exista, o instalador consegue gerar uma estrutura inicial offline/bootstrap, mas a análise real depende das credenciais corretas do ambiente.
+Observação: se o arquivo `credentials.env` não existir, o instalador criará automaticamente o modelo em `/etc/hmg-soar/credentials.env` com permissão 0640. O dashboard opera em modo bootstrap/offline até que as senhas obrigatórias `OPENSEARCH_PASS` e `WAZUH_API_PASS` sejam configuradas.
 
 ---
 
@@ -425,16 +425,19 @@ systemctl status hmg-soar-report.service --no-pager
 
 Se aparecer `inactive (dead)` com `status=0/SUCCESS`, o serviço funcionou corretamente.
 
-### 14.5 Arquivo credentials.env ausente
+### 14.5 Configuração de credenciais (credentials.env)
 
-Se `/etc/hmg-soar/credentials.env` não existir, o instalador gera um bootstrap inicial, mas a análise real depende das credenciais.
+Se `/etc/hmg-soar/credentials.env` não existir, o instalador cria automaticamente o arquivo a partir do modelo com permissão `0640`.
 
-Após criar o arquivo:
+Para configurar o acesso real ao Wazuh/Indexer:
 
-```bash
-sudo ./install.sh
-sudo systemctl start hmg-soar-report.service
-```
+1. Edite o arquivo:
+   ```bash
+   sudo nano /etc/hmg-soar/credentials.env
+   ```
+2. Preencha as variáveis obrigatórias `OPENSEARCH_PASS` e `WAZUH_API_PASS`.
+3. Variáveis com valores padrão (ex: `OPENSEARCH_HOST=127.0.0.1`) aparecem comentadas no modelo e podem ser descomentadas para personalização.
+4. Após preencher, o próximo disparo do `hmg-soar-report.service` (manual ou via timer) detectará as credenciais e publicará os dados reais.
 
 ---
 
