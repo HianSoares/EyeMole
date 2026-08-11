@@ -30,6 +30,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from remediation.models import VulnRecord
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
@@ -1073,20 +1074,7 @@ class AppContext:
         self.timings[label] = elapsed
 
 
-@dataclass
-class VulnRecord:
-    agent_id: str
-    agent_name: str
-    cve: str
-    package_name: str
-    version: str
-    severity: str
-    cvss_score: Optional[float]
-    is_kev: bool
-    is_ransomware: bool
-    epss_score: Optional[float]
-    priority: str = "Priority 4"
-    agent_os: str = "N/A"
+
 
 
 
@@ -1282,22 +1270,7 @@ def export_json(
     """Gera JSON com dados do relatório + metadados. Retorna True se sucesso."""
     metadata = _build_report_metadata(ctx, records, agent_ids, mode)
 
-    vuln_list = []
-    for r in records:
-        vuln_list.append({
-            "agent_id": r.agent_id,
-            "agent_name": r.agent_name,
-            "cve": r.cve,
-            "priority": r.priority,
-            "cvss": r.cvss_score,
-            "severity": r.severity,
-            "epss": r.epss_score,
-            "package": r.package_name,
-            "version": r.version,
-            "is_kev": r.is_kev,
-            "is_ransomware": r.is_ransomware,
-            "operating_system": r.agent_os,
-        })
+    vuln_list = [r.to_dict() for r in records]
 
     payload = {
         "metadata": metadata,
@@ -5563,22 +5536,7 @@ def main() -> int:
 
         # Gerar JSON para publicação web
         metadata = _build_report_metadata(ctx, records, agent_ids, args.mode)
-        vuln_list = []
-        for r in records:
-            vuln_list.append({
-                "agent_id": r.agent_id,
-                "agent_name": r.agent_name,
-                "cve": r.cve,
-                "priority": r.priority,
-                "cvss": r.cvss_score,
-                "severity": r.severity,
-                "epss": r.epss_score,
-                "package": r.package_name,
-                "version": r.version,
-                "is_kev": r.is_kev,
-                "is_ransomware": r.is_ransomware,
-                "operating_system": r.agent_os,
-            })
+        vuln_list = [r.to_dict() for r in records]
         json_payload = json.dumps({"metadata": metadata, "vulnerabilities": vuln_list}, indent=2, ensure_ascii=False)
 
         # Gerar inteligência de risco (Fase 3A)

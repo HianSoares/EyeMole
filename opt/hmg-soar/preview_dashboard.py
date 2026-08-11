@@ -24,7 +24,8 @@ from pathlib import Path
 # Garantir que o diretorio do script esta no path para import local
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from analyserV1 import AppContext, VulnRecord, render_html  # noqa: E402
+from analyserV1 import AppContext, render_html  # noqa: E402
+from remediation.models import VulnRecord
 
 
 def main() -> int:

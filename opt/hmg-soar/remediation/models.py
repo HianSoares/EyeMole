@@ -191,3 +191,40 @@ class RenderedCommand:
             self.verification = ""
         if not self.verification or not self.verification.strip():
             self.verification = ""
+
+
+@dataclass
+class VulnRecord:
+    """Registro de vulnerabilidade detectado no Wazuh Indexer.
+
+    Utilizado como modelo compartilhado entre o analisador e a API.
+    """
+    agent_id: str
+    agent_name: str
+    cve: str
+    package_name: str
+    version: str
+    severity: str
+    cvss_score: Optional[float]
+    is_kev: bool
+    is_ransomware: bool
+    epss_score: Optional[float]
+    priority: str = "Priority 4"
+    agent_os: str = "N/A"
+
+    def to_dict(self) -> dict:
+        """Ponto único de serialização do VulnRecord para JSON/Snapshot."""
+        return {
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "cve": self.cve,
+            "priority": self.priority,
+            "cvss": self.cvss_score,
+            "severity": self.severity,
+            "epss": self.epss_score,
+            "package": self.package_name,
+            "version": self.version,
+            "is_kev": self.is_kev,
+            "is_ransomware": self.is_ransomware,
+            "operating_system": self.agent_os,
+        }
