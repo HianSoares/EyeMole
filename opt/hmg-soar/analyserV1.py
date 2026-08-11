@@ -5577,6 +5577,7 @@ def main() -> int:
                 "version": r.version,
                 "is_kev": r.is_kev,
                 "is_ransomware": r.is_ransomware,
+                "operating_system": r.agent_os,
             })
         json_payload = json.dumps({"metadata": metadata, "vulnerabilities": vuln_list}, indent=2, ensure_ascii=False)
 
