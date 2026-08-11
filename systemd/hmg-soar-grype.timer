@@ -1,0 +1,15 @@
+[Unit]
+Description=Timer para processamento Grype de SBOMs HMG Wazuh SOAR Brain
+
+[Timer]
+# Processar SBOMs pendentes a cada 30 minutos
+OnCalendar=*:0/30
+
+# Se o servidor estava desligado no horário, executar ao ligar
+Persistent=true
+
+# Espalhar execuções em até 2 minutos para evitar pico
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -12,6 +12,8 @@ HTPASSWD_FILE="${HTPASSWD_FILE:-/etc/nginx/.htpasswd-wazuh-soar}"
 SNIPPET_FILE="${SNIPPET_FILE:-/etc/nginx/snippets/eyemole-soar-locations.conf}"
 SERVICE_FILE="${SERVICE_FILE:-hmg-soar-report.service}"
 TIMER_FILE="${TIMER_FILE:-hmg-soar-report.timer}"
+GRYPE_SERVICE_FILE="${GRYPE_SERVICE_FILE:-hmg-soar-grype.service}"
+GRYPE_TIMER_FILE="${GRYPE_TIMER_FILE:-hmg-soar-grype.timer}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -158,6 +160,10 @@ create_user_and_dirs() {
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/assets"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/output"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/.hmg_cache"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/sbom"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/sbom/pending"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/sbom/processed"
+  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/sbom/failed"
 
   # Diretório exigido pelo sandbox/ReadWritePaths do systemd da API.
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/audit"
@@ -257,6 +263,7 @@ install_app_files() {
   rsync -a --delete \
     --exclude 'config/' \
     --exclude 'output/' \
+    --exclude 'sbom/' \
     --exclude '.hmg_cache/' \
     --exclude '__pycache__/' \
     "${REPO_ROOT}/opt/hmg-soar/" \
@@ -280,6 +287,7 @@ validate_python() {
   local py_files=()
   py_files+=("${APP_DIR}/analyserV1.py")
   py_files+=("${APP_DIR}/soar_api.py")
+  py_files+=("${APP_DIR}/grype_runner.py")
 
   # Módulos opcionais
   local optional
@@ -471,6 +479,22 @@ install_systemd() {
     warn "Timer não encontrado no repo: systemd/${TIMER_FILE}"
   fi
 
+  if [[ -f "${REPO_ROOT}/systemd/${GRYPE_SERVICE_FILE}" ]]; then
+    install -o root -g root -m 0644 \
+      "${REPO_ROOT}/systemd/${GRYPE_SERVICE_FILE}" \
+      "${SYSTEMD_UNIT_DIR}/${GRYPE_SERVICE_FILE}"
+  else
+    warn "Service Grype não encontrado no repo: systemd/${GRYPE_SERVICE_FILE}"
+  fi
+
+  if [[ -f "${REPO_ROOT}/systemd/${GRYPE_TIMER_FILE}" ]]; then
+    install -o root -g root -m 0644 \
+      "${REPO_ROOT}/systemd/${GRYPE_TIMER_FILE}" \
+      "${SYSTEMD_UNIT_DIR}/${GRYPE_TIMER_FILE}"
+  else
+    warn "Timer Grype não encontrado no repo: systemd/${GRYPE_TIMER_FILE}"
+  fi
+
   API_SERVICE_FILE="hmg-soar-api.service"
   if [[ -f "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
@@ -491,6 +515,24 @@ install_systemd() {
       die "Falha ao ativar timer ${TIMER_FILE}."
     fi
     log "Timer ${TIMER_FILE} ativo."
+  fi
+
+  # Grype: requer instalação operacional prévia do binário em PATH do systemd
+  # (preferencialmente /usr/local/bin/grype). O install.sh não instala binários
+  # de terceiros.
+  if [[ -f "${SYSTEMD_UNIT_DIR}/${GRYPE_TIMER_FILE}" ]]; then
+    if command -v grype >/dev/null 2>&1; then
+      systemctl enable --now "${GRYPE_TIMER_FILE}"
+      if ! systemctl is-active --quiet "${GRYPE_TIMER_FILE}"; then
+        warn "Timer ${GRYPE_TIMER_FILE} não está ativo após enable."
+        systemctl status "${GRYPE_TIMER_FILE}" --no-pager || true
+        die "Falha ao ativar timer ${GRYPE_TIMER_FILE}."
+      fi
+      log "Timer ${GRYPE_TIMER_FILE} ativo."
+    else
+      warn "Binário 'grype' ausente no PATH. Timer ${GRYPE_TIMER_FILE} instalado, mas não habilitado."
+      warn "Pré-requisito operacional: instale/mova o grype para /usr/local/bin/grype antes de habilitar o timer."
+    fi
   fi
 
   # API: enable, restart e health check

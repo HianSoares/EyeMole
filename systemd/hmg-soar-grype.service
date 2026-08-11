@@ -1,0 +1,48 @@
+[Unit]
+Description=HMG Wazuh SOAR Brain - Processamento Grype de SBOMs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hmg-soar
+Group=www-data
+WorkingDirectory=/opt/hmg-soar
+
+# Pré-requisito operacional: o binário grype deve estar em PATH do systemd,
+# preferencialmente /usr/local/bin/grype. O instalador não instala binários de terceiros.
+Environment=HOME=/opt/hmg-soar
+Environment=XDG_CACHE_HOME=/opt/hmg-soar/.hmg_cache
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /opt/hmg-soar/grype_runner.py
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hmg-soar-grype
+
+# ====================================================================
+# HARDENING (compatível com execução local do Grype e escrita em sbom/output/cache)
+# ====================================================================
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0027
+
+# Sem capabilities especiais.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# /opt/hmg-soar somente leitura, exceto diretórios operacionais necessários.
+ReadOnlyPaths=/opt/hmg-soar
+ReadWritePaths=/opt/hmg-soar/output /opt/hmg-soar/sbom /opt/hmg-soar/.hmg_cache
+
+[Install]
+WantedBy=multi-user.target
