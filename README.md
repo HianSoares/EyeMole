@@ -162,6 +162,14 @@ Instale no modo seguro padrão:
 sudo ./install.sh
 ```
 
+Configure as credenciais em `/etc/hmg-soar/credentials.env` (criado automaticamente):
+
+```bash
+sudo nano /etc/hmg-soar/credentials.env
+```
+
+Preencha as senhas `OPENSEARCH_PASS` e `WAZUH_API_PASS`.
+
 Crie o usuário de acesso web:
 
 ```bash

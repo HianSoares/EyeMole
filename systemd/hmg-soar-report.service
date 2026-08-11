@@ -10,6 +10,8 @@ User=hmg-soar
 Group=www-data
 WorkingDirectory=/opt/hmg-soar
 EnvironmentFile=/etc/hmg-soar/credentials.env
+ExecCondition=/usr/bin/test -n "${OPENSEARCH_PASS}"
+ExecCondition=/usr/bin/test -n "${WAZUH_API_PASS}"
 
 # IMPORTANTE: --mode audit garante que NUNCA haverá correção automática
 ExecStart=/usr/bin/python3 /opt/hmg-soar/analyserV1.py \
