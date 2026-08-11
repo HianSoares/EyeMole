@@ -30,7 +30,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from remediation.models import VulnRecord
+from remediation.models import VulnRecord, generate_vulnerability_key
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
@@ -802,10 +802,7 @@ def _merge_exposure_context(exposure_info: dict, defaults: dict) -> dict:
             res[key] = res[key].lower().strip()
     return res
 
-def generate_vulnerability_key(cve: str, agent_id: str, package: str, severity: str) -> str:
-    """Gera uma chave SHA-256 estável para cada ocorrência de vulnerabilidade."""
-    raw_str = f"{cve or ''}|{agent_id or ''}|{package or ''}|{severity or ''}"
-    return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
+
 
 def add_days(start_date_iso: str, days: int, business_days_only: bool = False) -> str:
     """Adiciona dias (úteis ou civis) a uma data ISO 8601 e retorna em ISO 8601."""

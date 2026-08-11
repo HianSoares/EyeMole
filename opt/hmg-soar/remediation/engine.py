@@ -29,6 +29,7 @@ from typing import Dict, List, Optional
 
 from .models import GuidanceRecord, ProviderResult, RenderedCommand
 from .providers.wazuh_provider import WazuhProvider
+from .providers.grype_provider import GrypeProvider
 from .templates import TemplateRepository
 from .validation import ParameterValidator
 
@@ -134,6 +135,12 @@ class RemediationEngine:
         self._wazuh_provider = WazuhProvider(
             snapshot_path=self._snapshot_path,
             assets_context_path=self._config_dir / "assets_context.json",
+        )
+
+        # Instanciar GrypeProvider repassando o wazuh_provider (evita duplo I/O)
+        self._grype_provider = GrypeProvider(
+            wazuh_provider=self._wazuh_provider,
+            grype_snapshot_path=self._config_dir.parent / "output" / "grype_latest.json",
         )
 
         # Snapshot cache
@@ -433,51 +440,127 @@ class RemediationEngine:
         )
 
     def _query_providers(self, finding_id: str) -> Optional[ProviderResult]:
-        """Consulta providers em ordem de prioridade.
-
-        Retorna o primeiro resultado com confidence >= "medium",
-        ou o melhor resultado disponível (incluindo "low").
-        """
+        """Consulta providers habilitados e realiza a fusão/consenso das fontes."""
         providers_cfg = self._providers_config.get("providers", [])
         if not isinstance(providers_cfg, list):
             providers_cfg = []
 
-        # Ordenar por prioridade
-        sorted_providers = sorted(
-            [p for p in providers_cfg if isinstance(p, dict) and p.get("enabled", False)],
-            key=lambda p: p.get("priority", 999),
-        )
+        enabled_names = [p.get("name") for p in providers_cfg if isinstance(p, dict) and p.get("enabled", False)]
 
-        best_result: Optional[ProviderResult] = None
+        wazuh_enabled = "wazuh_snapshot" in enabled_names
+        grype_enabled = "grype_snapshot" in enabled_names
 
-        for pcfg in sorted_providers:
-            name = pcfg.get("name", "")
-
+        wazuh_res = None
+        if wazuh_enabled:
             try:
-                result = self._invoke_provider(name, finding_id)
+                wazuh_res = self._wazuh_provider.query(finding_id)
             except Exception as e:
-                logger.warning("Provider '%s' falhou: %s", name, str(e))
-                continue
+                logger.warning("Wazuh provider falhou: %s", str(e))
 
-            if result is None:
-                continue
+        grype_res = None
+        if grype_enabled:
+            try:
+                grype_res = self._grype_provider.query(finding_id)
+            except Exception as e:
+                logger.warning("Grype provider falhou: %s", str(e))
 
-            # Se confidence >= medium, retornar imediatamente
-            if result.confidence in ("high", "medium"):
-                return result
+        # Cenário 1: Fusão dos dois resultados se ambos estiverem disponíveis
+        if wazuh_res and grype_res:
+            return self._fuse_results(wazuh_res, grype_res)
 
-            # Guardar melhor resultado low/none como fallback
-            if best_result is None:
-                best_result = result
-            elif _confidence_rank(result.confidence) > _confidence_rank(best_result.confidence):
-                best_result = result
+        # Cenário 2: Apenas Wazuh disponível
+        if wazuh_res:
+            if grype_enabled:
+                # Confiança degradada por falta de consenso positivo com o Grype
+                new_confidence = "medium" if wazuh_res.confidence == "high" else wazuh_res.confidence
+                wazuh_res.confidence = new_confidence
+                wazuh_res.warnings.append("Vulnerabilidade não confirmada pelo scanner Grype (achado único Wazuh).")
+            return wazuh_res
 
-        return best_result
+        # Cenário 3: Apenas Grype disponível (Caso raro de desvio de indexação)
+        if grype_res:
+            wazuh_record = self._wazuh_provider.resolve_finding(finding_id)
+            if wazuh_record:
+                agent_name = str(wazuh_record.get("agent_name") or "")
+                snapshot_os = wazuh_record.get("operating_system")
+                operating_system = self._wazuh_provider._resolve_os(grype_res.agent_id, agent_name, snapshot_os)
+                package_manager = self._wazuh_provider._resolve_package_manager(operating_system)
+
+                grype_res.operating_system = operating_system
+                grype_res.package_manager = package_manager
+                grype_res.agent_name = agent_name
+                grype_res.severity = str(wazuh_record.get("severity") or "")
+
+            if wazuh_enabled:
+                new_confidence = "medium" if grype_res.confidence == "high" else grype_res.confidence
+                grype_res.confidence = new_confidence
+                grype_res.warnings.append("Vulnerabilidade não confirmada pelo Wazuh (achado único Grype).")
+            return grype_res
+
+        return None
+
+    def _fuse_results(self, wazuh_res: ProviderResult, grype_res: ProviderResult) -> ProviderResult:
+        """Realiza a fusão de dados e regras de consenso entre Wazuh e Grype."""
+        warnings = list(wazuh_res.warnings)
+        assumptions = list(wazuh_res.assumptions)
+
+        # Regra Crítica: Estado do fix não-fixed (Fail-Closed)
+        if grype_res.status in ("not-fixed", "wont-fix", "unknown"):
+            warnings.append(f"Scanner Grype reportou status '{grype_res.status}' para esta vulnerabilidade. Comando de remediação desabilitado.")
+            return ProviderResult(
+                cve=wazuh_res.cve,
+                package_name=wazuh_res.package_name,
+                installed_version=wazuh_res.installed_version,
+                fixed_version=None,  # Fail-Closed
+                operating_system=wazuh_res.operating_system,
+                package_manager=wazuh_res.package_manager,
+                agent_id=wazuh_res.agent_id,
+                agent_name=wazuh_res.agent_name,
+                severity=wazuh_res.severity,
+                confidence="none",  # Impede geração de comando
+                source="fusion_consensus",
+                warnings=warnings,
+                assumptions=assumptions,
+                status=grype_res.status
+            )
+
+        # Consenso Positivo: Usar fixed_version do Grype se Wazuh não tiver
+        fixed_version = wazuh_res.fixed_version
+        if not fixed_version and grype_res.fixed_version:
+            fixed_version = grype_res.fixed_version
+            warnings.append("fixed_version resolvida com sucesso através do scanner Grype.")
+
+        # Determinar status e confiança baseados na presença da versão de fix
+        if fixed_version is not None:
+            status = "fixed"
+            confidence = "high"
+        else:
+            status = "unknown"
+            confidence = "medium"  # Ambos concordam sobre a falha, mas não há versão para remediar
+
+        return ProviderResult(
+            cve=wazuh_res.cve,
+            package_name=wazuh_res.package_name,
+            installed_version=wazuh_res.installed_version,
+            fixed_version=fixed_version,
+            operating_system=wazuh_res.operating_system,
+            package_manager=wazuh_res.package_manager,
+            agent_id=wazuh_res.agent_id,
+            agent_name=wazuh_res.agent_name,
+            severity=wazuh_res.severity,
+            confidence=confidence,
+            source="fusion_consensus",
+            warnings=warnings,
+            assumptions=assumptions,
+            status=status
+        )
 
     def _invoke_provider(self, name: str, finding_id: str) -> Optional[ProviderResult]:
         """Invoca um provider pelo nome."""
         if name == "wazuh_snapshot":
             return self._wazuh_provider.query(finding_id)
+        elif name == "grype_snapshot":
+            return self._grype_provider.query(finding_id)
 
         # Providers futuros retornam None (não implementados no MVP)
         logger.info("Provider '%s' não implementado no MVP.", name)

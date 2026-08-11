@@ -9,10 +9,15 @@
       "enabled": true,
       "priority": 1,
       "timeout_seconds": 5
+    },
+    {
+      "name": "grype_snapshot",
+      "enabled": true,
+      "priority": 2,
+      "timeout_seconds": 5
     }
   ],
   "future_providers": [
-    {"name": "grype", "enabled": false, "priority": 0},
     {"name": "osv", "enabled": false, "priority": 0},
     {"name": "compliance_as_code", "enabled": false, "priority": 0}
   ]

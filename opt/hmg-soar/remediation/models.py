@@ -9,6 +9,7 @@ configuração, variável de ambiente ou parâmetro de API.
 from __future__ import annotations
 
 import uuid
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -171,6 +172,7 @@ class ProviderResult:
     source: str = ""
     warnings: List[str] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)
+    status: str = "unknown"
 
     def __post_init__(self) -> None:
         if self.confidence not in VALID_CONFIDENCE_LEVELS:
@@ -228,3 +230,52 @@ class VulnRecord:
             "is_ransomware": self.is_ransomware,
             "operating_system": self.agent_os,
         }
+
+
+@dataclass
+class GrypeVulnRecord:
+    """Registro de vulnerabilidade detectado pelo Grype."""
+
+    cve: str                             # CVE real extraído de relatedVulnerabilities
+    advisory_id: str                     # ID do Advisory (ex: GHSA-...)
+    agent_id: str
+    package_name: str
+    installed_version: str
+    fixed_version: Optional[str] = None  # Primeiro elemento de fix.versions
+    fixed_versions: List[str] = field(default_factory=list) # Lista completa
+    confidence: str = "none"             # Mapeado de match-type do Grype (high, medium, low)
+    match_type: str = ""                 # exact-direct-match, exact-indirect-match, cpe-match
+    purl: str = ""                       # Package URL para rastreabilidade
+    source: str = "grype"
+    db_version: str = "unknown"
+    status: str = "unknown"              # fixed, not-fixed, wont-fix, unknown
+
+    def to_dict(self) -> dict:
+        """Ponto único de serialização do GrypeVulnRecord para JSON/Snapshot."""
+        return {
+            "cve": self.cve,
+            "advisory_id": self.advisory_id,
+            "agent_id": self.agent_id,
+            "package_name": self.package_name,
+            "installed_version": self.installed_version,
+            "fixed_version": self.fixed_version,
+            "fixed_versions": list(self.fixed_versions) if self.fixed_versions else [],
+            "confidence": self.confidence,
+            "match_type": self.match_type,
+            "purl": self.purl,
+            "source": self.source,
+            "db_version": self.db_version,
+            "status": self.status,
+        }
+
+
+def generate_vulnerability_key(
+    cve: str, agent_id: str, package: str, severity: str
+) -> str:
+    """Gera chave SHA-256 estável para identificação de achados (finding_id).
+
+    Mantém compatibilidade com os snapshots legados do Wazuh.
+    """
+    raw_str = f"{cve or ''}|{agent_id or ''}|{package or ''}|{severity or ''}"
+    return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
+

@@ -18,13 +18,12 @@ Invariantes:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from ..models import ProviderResult
+from ..models import ProviderResult, generate_vulnerability_key
 from ..validation import ParameterValidator
 
 logger = logging.getLogger("hmg-soar-remediation.wazuh_provider")
@@ -33,12 +32,8 @@ logger = logging.getLogger("hmg-soar-remediation.wazuh_provider")
 def _generate_vulnerability_key(
     cve: str, agent_id: str, package: str, severity: str
 ) -> str:
-    """Gera chave SHA-256 estável (mesma lógica do analyserV1.py).
-
-    NÃO modifica analyserV1.py — replica a fórmula para lookup.
-    """
-    raw_str = f"{cve or ''}|{agent_id or ''}|{package or ''}|{severity or ''}"
-    return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
+    """Wrapper privado para manter retrocompatibilidade com chamadas internas."""
+    return generate_vulnerability_key(cve, agent_id, package, severity)
 
 
 class WazuhProvider:

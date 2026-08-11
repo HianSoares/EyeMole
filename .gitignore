@@ -1,4 +1,4 @@
-﻿# Runtime / generated
+# Runtime / generated
 var-www-wazuh-soar/
 output/
 *.log
@@ -21,6 +21,8 @@ eyemole_redesign*.py
 extract_template.py
 template_only.html
 *.backup-*
+*.backup_*
+*.patch
 
 # Local donut patch tooling
 eyemole_donut_patch.py
@@ -41,3 +43,6 @@ eyemole_card_color_logo_patch.py
 # Dados reais de ambiente - gerados automaticamente pelo context_bootstrap.py
 opt/hmg-soar/config/assets_context.json
 opt/hmg-soar/config/exposure_context.json
+
+# Test inputs/outputs
+*test_output.json
