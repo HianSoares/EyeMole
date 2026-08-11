@@ -1086,6 +1086,7 @@ class VulnRecord:
     is_ransomware: bool
     epss_score: Optional[float]
     priority: str = "Priority 4"
+    agent_os: str = "N/A"
 
 
 
@@ -1295,6 +1296,7 @@ def export_json(
             "version": r.version,
             "is_kev": r.is_kev,
             "is_ransomware": r.is_ransomware,
+            "operating_system": r.agent_os,
         })
 
     payload = {
@@ -4719,6 +4721,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
     agent = source.get("agent", {}) or {}
     vuln = source.get("vulnerability", {}) or {}
     pkg = source.get("package", {}) or {}
+    host = source.get("host", {}) or {}
 
     cve_raw = vuln.get("id")
     if not cve_raw:
@@ -4763,6 +4766,16 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
     is_kev = cve in cisa_kev
     is_ransomware = cisa_kev.get(cve, {}).get("ransomware", False) if is_kev else False
 
+    agent_os = "N/A"
+    # 1. Tenta obter do host.os (ECS standard)
+    os_info = host.get("os")
+    if not isinstance(os_info, dict):
+        # 2. Fallback para agent.os (Wazuh legacy)
+        os_info = agent.get("os")
+
+    if isinstance(os_info, dict):
+        agent_os = str(os_info.get("platform") or os_info.get("name") or "N/A").strip()
+
     return VulnRecord(
         agent_id=agent_id,
         agent_name=agent_name,
@@ -4774,6 +4787,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
         is_kev=is_kev,
         is_ransomware=is_ransomware,
         epss_score=epss_data.get(cve), # Retorna None se estiver ausente/abaixo do threshold
+        agent_os=agent_os,
     )
 
 

@@ -11,13 +11,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
-# Ativos padrão caso o relatório ainda não tenha rodado
-KNOWN_AGENTS = {
-    "001": "windows-server-sscapps",
-    "003": "linux-server-asc-linux-02",
-    "004": "linux-server-asc-linux-01",
-    "005": "linux-siemapps",
-}
+
 
 def set_file_permissions(filepath: Path):
     """Ajusta permissões para hmg-soar:www-data e 0640."""
@@ -56,8 +50,9 @@ def bootstrap(config_dir: Path, latest_json_path: Path):
             print(f"[!] Falha ao ler {latest_json_path}: {e}. Utilizando fallbacks padrão.")
 
     if not agents:
-        agents = KNOWN_AGENTS.copy()
-        print(f"[+] Utilizando {len(agents)} agentes padrão como fallback.")
+        print("[!] Aviso: Snapshot latest.json não encontrado ou sem agentes cadastrados.")
+        print("[*] Os arquivos de contexto serão inicializados sem ativos mapeados.")
+        print("[*] Execute o script de bootstrap novamente após a primeira execução do relatório.")
 
     # 2. Inicializar / Atualizar assets_context.json
     assets_path = config_dir / "assets_context.json"

@@ -205,8 +205,9 @@ class WazuhProvider:
                     fixed_version = fixed_str
                     confidence = "high"
 
-        # Resolver OS a partir do assets_context (não inventar)
-        operating_system = self._resolve_os(agent_id, agent_name)
+        # Resolver OS a partir do snapshot ou assets_context (não inventar)
+        snapshot_os = vuln_record.get("operating_system")
+        operating_system = self._resolve_os(agent_id, agent_name, snapshot_os)
 
         # Resolver package_manager a partir do OS (regra explícita apenas)
         package_manager = self._resolve_package_manager(operating_system)
@@ -242,11 +243,20 @@ class WazuhProvider:
             assumptions=assumptions,
         )
 
-    def _resolve_os(self, agent_id: str, agent_name: str) -> str:
-        """Resolve o sistema operacional a partir do assets_context.
+    def _resolve_os(self, agent_id: str, agent_name: str, snapshot_os: Optional[str] = None) -> str:
+        """Resolve o sistema operacional a partir do snapshot ou assets_context.
 
         Não infere sem regra explícita. Retorna "unknown" se não encontrar.
         """
+        if snapshot_os:
+            os_lower = str(snapshot_os).lower().strip()
+            if os_lower and os_lower not in ("n/a", "unknown", "none", "null", ""):
+                if os_lower in _OS_TO_PACKAGE_MANAGER:
+                    return os_lower
+                for known_os in _OS_TO_PACKAGE_MANAGER:
+                    if known_os in os_lower:
+                        return known_os
+
         if not self._assets_context:
             self.load_assets_context()
 
