@@ -44,5 +44,11 @@ eyemole_card_color_logo_patch.py
 opt/hmg-soar/config/assets_context.json
 opt/hmg-soar/config/exposure_context.json
 
+# Configurações reais de Nginx do ambiente não devem ser versionadas
+nginx/*.bak*
+nginx/wazuh-dashboard-proxy
+nginx/wazuh-reports
+nginx/wazuh-soar
+
 # Test inputs/outputs
 *test_output.json
