@@ -647,6 +647,32 @@ location ^~ /soar/ {
     add_header Cache-Control "no-cache, no-store, must-revalidate" always;
 }
 
+location ^~ /soar-api/sbom/ {
+    # Endpoint machine-to-machine: autenticação própria via Authorization: Bearer <token>.
+    # Não usar Basic Auth nem X-Remote-User humano aqui.
+    auth_basic off;
+
+    limit_except POST {
+        deny all;
+    }
+
+    client_max_body_size 25m;
+
+    # Proxy SOMENTE para a API local em 127.0.0.1:8765 (nunca exposta na rede).
+    proxy_pass http://127.0.0.1:8765/soar-api/sbom/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Authorization \$http_authorization;
+    proxy_set_header X-Remote-User "";
+
+    proxy_connect_timeout 10s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+}
+
 location /soar-api/ {
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
