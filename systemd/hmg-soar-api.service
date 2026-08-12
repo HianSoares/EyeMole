@@ -55,7 +55,7 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # e ao diretório de configuração (classificação de ativos via web edita apenas
 # /opt/hmg-soar/config/assets_context.json).
 ReadOnlyPaths=/opt/hmg-soar
-ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config /opt/hmg-soar/sbom/pending
 
 [Install]
 WantedBy=multi-user.target
