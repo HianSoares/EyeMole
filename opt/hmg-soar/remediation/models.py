@@ -214,6 +214,7 @@ class VulnRecord:
     priority: str = "Priority 4"
     agent_os: str = "N/A"
     os_version: str = ""
+    scanner_condition: str = ""
 
     def to_dict(self) -> dict:
         """Ponto único de serialização do VulnRecord para JSON/Snapshot."""
@@ -231,6 +232,7 @@ class VulnRecord:
             "is_ransomware": self.is_ransomware,
             "operating_system": self.agent_os,
             "os_version": self.os_version,
+            "scanner_condition": self.scanner_condition,
         }
 
 

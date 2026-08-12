@@ -12,7 +12,7 @@
     },
     {
       "name": "grype_snapshot",
-      "enabled": true,
+      "enabled": false,
       "priority": 2,
       "timeout_seconds": 5
     }

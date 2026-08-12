@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from ..models import ProviderResult, generate_vulnerability_key
+from ..scanner_condition import parse_scanner_condition
 from ..validation import ParameterValidator
 
 logger = logging.getLogger("hmg-soar-remediation.wazuh_provider")
@@ -200,6 +201,25 @@ class WazuhProvider:
                     fixed_version = fixed_str
                     confidence = "high"
 
+        parsed_condition = None
+        if fixed_version is None:
+            parsed_condition = parse_scanner_condition(
+                str(vuln_record.get("scanner_condition") or "")
+            )
+            if parsed_condition.fixed_version:
+                err = ParameterValidator.validate_version(parsed_condition.fixed_version)
+                if err is None:
+                    fixed_version = parsed_condition.fixed_version
+                    confidence = parsed_condition.confidence
+                else:
+                    logger.warning(
+                        "scanner.condition gerou fixed_version inválida para %s/%s/%s: %r",
+                        cve,
+                        agent_id,
+                        package_name,
+                        parsed_condition.fixed_version,
+                    )
+
         # Resolver OS a partir do snapshot ou assets_context (não inventar)
         snapshot_os = vuln_record.get("operating_system")
         operating_system = self._resolve_os(agent_id, agent_name, snapshot_os)
@@ -213,6 +233,8 @@ class WazuhProvider:
 
         if not fixed_version:
             warnings.append("Campo fixed_version ausente no snapshot Wazuh")
+        elif raw_fixed is None and parsed_condition and parsed_condition.fixed_version:
+            warnings.append("fixed_version extraída de vulnerability.scanner.condition")
 
         if operating_system == "unknown":
             warnings.append("Sistema operacional não identificado para o agente")
