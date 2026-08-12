@@ -6,6 +6,7 @@ DASHBOARD_CERT="${DASHBOARD_CERT:-/etc/wazuh-dashboard/certs/dashboard.pem}"
 DASHBOARD_KEY="${DASHBOARD_KEY:-/etc/wazuh-dashboard/certs/dashboard-key.pem}"
 DASHBOARD_SERVICE="${DASHBOARD_SERVICE:-wazuh-dashboard}"
 CERT_DAYS="${CERT_DAYS:-825}"
+WORKDIR=""
 
 log() {
   echo "[+] $*"
@@ -86,6 +87,14 @@ file_mode() {
   stat -c '%a' "${path}"
 }
 
+cleanup() {
+  if [[ -n "${WORKDIR}" && -d "${WORKDIR}" ]]; then
+    rm -rf "${WORKDIR}"
+  fi
+}
+
+trap cleanup EXIT
+
 main() {
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     usage
@@ -99,7 +108,7 @@ main() {
 
   require_root
 
-  local primary_hostname short_hostname ts workdir openssl_conf
+  local primary_hostname short_hostname ts openssl_conf
   local cert_owner cert_mode key_owner key_mode
   local new_cert new_key backup_dir
 
@@ -117,15 +126,10 @@ main() {
 
   ts="$(date +%Y%m%d-%H%M%S)"
   backup_dir="$(dirname "${DASHBOARD_CERT}")/backup-san-${ts}"
-  workdir="$(mktemp -d)"
-  openssl_conf="${workdir}/openssl-san.cnf"
-  new_cert="${workdir}/dashboard.pem"
-  new_key="${workdir}/dashboard-key.pem"
-
-  cleanup() {
-    rm -rf "${workdir}"
-  }
-  trap cleanup EXIT
+  WORKDIR="$(mktemp -d)"
+  openssl_conf="${WORKDIR}/openssl-san.cnf"
+  new_cert="${WORKDIR}/dashboard.pem"
+  new_key="${WORKDIR}/dashboard-key.pem"
 
   cert_owner="$(file_owner_group "${DASHBOARD_CERT}")"
   cert_mode="$(file_mode "${DASHBOARD_CERT}")"
