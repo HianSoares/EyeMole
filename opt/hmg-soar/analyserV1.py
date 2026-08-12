@@ -4737,6 +4737,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
     is_ransomware = cisa_kev.get(cve, {}).get("ransomware", False) if is_kev else False
 
     agent_os = "N/A"
+    os_version = ""
     # 1. Tenta obter do host.os (ECS standard)
     os_info = host.get("os")
     if not isinstance(os_info, dict):
@@ -4745,6 +4746,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
 
     if isinstance(os_info, dict):
         agent_os = str(os_info.get("platform") or os_info.get("name") or "N/A").strip()
+        os_version = str(os_info.get("version") or "").strip()
 
     return VulnRecord(
         agent_id=agent_id,
@@ -4758,6 +4760,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
         is_ransomware=is_ransomware,
         epss_score=epss_data.get(cve), # Retorna None se estiver ausente/abaixo do threshold
         agent_os=agent_os,
+        os_version=os_version,
     )
 
 
