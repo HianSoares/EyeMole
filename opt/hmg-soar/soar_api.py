@@ -18,15 +18,19 @@ Endpoints:
   POST /run-analysis → Disparar hmg-soar-report.service
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -41,12 +45,15 @@ try:
     from remediation.rate_limiter import SlidingWindowLog
     _guidance_rate_limiter = SlidingWindowLog(max_tokens=60, window_seconds=60)
     _audit_rate_limiter = SlidingWindowLog(max_tokens=10, window_seconds=60)
+    _sbom_rate_limiter = SlidingWindowLog(max_tokens=30, window_seconds=60)
 except Exception:
     logger.error("Falha ao carregar rate limiter de remediação")
     _guidance_rate_limiter = None
     _audit_rate_limiter = None
+    _sbom_rate_limiter = None
 
 _remediation_audit_lock = Lock()
+_assets_context_lock = Lock()
 _init_lock = Lock()
 _init_state = "uninitialized"
 _last_failure_time = 0.0
@@ -139,6 +146,8 @@ APP_DIR = Path("/opt/hmg-soar")
 CONFIG_DIR = APP_DIR / "config"
 # ÚNICO arquivo autorizado para escrita de contexto de ativos.
 ASSETS_CONTEXT_JSON = CONFIG_DIR / "assets_context.json"
+ASSETS_CONTEXT_LOCK = CONFIG_DIR / ".assets_context.lock"
+SBOM_PENDING_DIR = APP_DIR / "sbom" / "pending"
 
 # Marcador ÚNICO do modo opt-in (web-run). Criado pelo install.sh --enable-web-run
 # e removido no modo seguro. É a única fonte de verdade usada tanto pelo backend
@@ -151,6 +160,7 @@ CONTEXT_AUDIT_LOG = CONTEXT_AUDIT_DIR / "audit_actions.jsonl"
 
 # Limites e listas de validação (defesa em profundidade).
 MAX_BODY_BYTES = 16 * 1024          # 16 KB
+MAX_SBOM_BYTES = 20 * 1024 * 1024   # 20 MB
 MAX_TEXT_LEN = 256                  # donos técnico/negócio
 MAX_NOTES_LEN = 1000               # observações
 MAX_AGENT_ID_LEN = 64
@@ -415,6 +425,132 @@ def _context_audit_log(remote_addr: str, user: str, agent_id: str,
         logger.error(f"Falha ao gravar auditoria de contexto: {e}")
 
 
+@contextmanager
+def _assets_context_file_lock():
+    """Serializa read-modify-write do assets_context.json entre processos."""
+    ASSETS_CONTEXT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _assets_context_lock:
+        with open(ASSETS_CONTEXT_LOCK, "a+", encoding="utf-8") as lock_file:
+            locked = False
+            try:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                    locked = True
+                except ImportError:
+                    locked = False
+                yield
+            finally:
+                if locked:
+                    try:
+                        import fcntl
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    except (ImportError, OSError):
+                        pass
+
+
+def _load_assets_context_unlocked() -> dict:
+    if not ASSETS_CONTEXT_JSON.exists() or not ASSETS_CONTEXT_JSON.is_file():
+        return {}
+    with open(ASSETS_CONTEXT_JSON, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Estrutura de contexto inválida")
+    return data
+
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def generate_agent_token() -> str:
+    """Gera token opaco para provisionamento manual de agente."""
+    return secrets.token_urlsafe(32)
+
+
+def set_agent_sbom_token(agent_id: str, token: str, enabled: bool = True) -> dict:
+    """Salva apenas o hash do token SBOM no contexto do agente."""
+    if not AGENT_ID_RE.match(agent_id):
+        raise ValueError("agent_id inválido")
+    if not isinstance(token, str) or not token:
+        raise ValueError("token inválido")
+
+    with _assets_context_file_lock():
+        data = _load_assets_context_unlocked()
+        agents = data.get("agents")
+        if not isinstance(agents, dict) or agent_id not in agents:
+            raise KeyError("agent_id desconhecido")
+        agent = agents.get(agent_id)
+        if not isinstance(agent, dict):
+            raise ValueError("Estrutura do agente inválida")
+
+        agent["sbom_token_sha256"] = _sha256_hex(token)
+        agent["sbom_upload_enabled"] = bool(enabled)
+        agent["token_rotated_at"] = datetime.now(timezone.utc).isoformat()
+
+        if not isinstance(data.get("metadata"), dict):
+            data["metadata"] = {}
+        data["metadata"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        data["metadata"]["updated_by"] = "cli:generate_agent_token"
+
+        _atomic_write_assets_context(data)
+        return agent.copy()
+
+
+def _agent_token_is_valid(agent: dict, token: str) -> bool:
+    expected_hash = agent.get("sbom_token_sha256") if isinstance(agent, dict) else None
+    if not agent.get("sbom_upload_enabled", False):
+        return False
+    if not isinstance(expected_hash, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_hash):
+        return False
+    if not isinstance(token, str) or not token:
+        return False
+    return hmac.compare_digest(_sha256_hex(token), expected_hash)
+
+
+def _parse_bearer_token(header_value: str) -> str:
+    if not isinstance(header_value, str):
+        return ""
+    scheme, sep, token = header_value.strip().partition(" ")
+    if sep != " " or scheme.lower() != "bearer":
+        return ""
+    return token.strip()
+
+
+def _looks_like_cyclonedx_sbom(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("bomFormat") != "CycloneDX":
+        return False
+    components = payload.get("components", [])
+    return isinstance(components, list)
+
+
+def _atomic_write_json_file(target: Path, data: dict) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=f".tmp_{target.name}_", suffix=".json",
+                                    dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            json.dump(data, tmp, indent=2, ensure_ascii=False)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            json.load(f)
+        os.replace(tmp_path, target)
+        tmp_path = None
+        try:
+            os.chmod(target, 0o640)
+        except OSError:
+            pass
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 def _atomic_write_assets_context(data: dict) -> None:
     """Escreve o JSON de contexto de forma atômica e segura.
 
@@ -464,7 +600,7 @@ def _atomic_write_assets_context(data: dict) -> None:
             uid = pwd.getpwnam("hmg-soar").pw_uid
             gid = grp.getgrnam("www-data").gr_gid
             os.chown(target, uid, gid)
-        except (KeyError, PermissionError, OSError):
+        except (ImportError, KeyError, PermissionError, OSError):
             pass
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -559,6 +695,13 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         if path.startswith("/remediation-guidance/") and path.endswith("/audit"):
             self._handle_remediation_audit_post(parsed_url)
             return
+
+        # POST /sbom/<agent_id> (ou /soar-api/sbom/<agent_id>)
+        for prefix in ("/sbom/", "/soar-api/sbom/"):
+            if path.startswith(prefix):
+                raw_agent_id = unquote(path[len(prefix):])
+                self._handle_upload_sbom(raw_agent_id)
+                return
 
         # POST /assets-context/<agent_id>  (ou /context/assets/<agent_id>)
         for prefix in ("/assets-context/", "/context/assets/"):
@@ -1027,54 +1170,55 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             fail(400, "Nenhum campo válido para atualização.")
             return
 
-        # 7) Carregar contexto atual (ou estrutura mínima).
-        if ASSETS_CONTEXT_JSON.exists():
-            data, error, status = self._read_assets_context_file()
-            if error is not None:
-                self._send_json(status, error)
-                _context_audit_log(client_ip, remote_user, agent_id, changed_fields,
-                                   "failure", error.get("message", "leitura inválida"))
-                return
-        else:
-            data = {}
-
-        if not isinstance(data.get("agents"), dict):
-            data["agents"] = {}
-
-        agent = data["agents"].get(agent_id)
-        if not isinstance(agent, dict):
-            agent = {
-                "id": agent_id,
-                "asset_name": f"agent-{agent_id}",
-                "hostname": f"agent-{agent_id}",
-                "criticality": "unknown",
-                "environment": "unknown",
-                "exposure": "unknown",
-                "technical_owner": "unknown",
-                "business_owner": "unknown",
-                "is_critical_service": False,
-                "notes": "",
-                "classification_status": "pending",
-                "tags": [],
-            }
-
-        agent.update(updates)
-
-        # 8) classification_status derivado da criticidade final.
-        final_crit = agent.get("criticality", "unknown")
-        agent["classification_status"] = "pending" if final_crit == "unknown" else "classified"
-
-        data["agents"][agent_id] = agent
-
-        # Metadados (sem segredos).
-        if not isinstance(data.get("metadata"), dict):
-            data["metadata"] = {}
-        data["metadata"]["updated_at"] = datetime.now(timezone.utc).isoformat()
-        data["metadata"]["updated_by"] = f"web:{remote_user}" if remote_user and remote_user != "unknown" else "web"
-
-        # 9) Escrita atômica e segura no único arquivo autorizado.
+        # 7-9) Read-modify-write protegido por lock de arquivo.
         try:
-            _atomic_write_assets_context(data)
+            with _assets_context_file_lock():
+                if ASSETS_CONTEXT_JSON.exists():
+                    data = _load_assets_context_unlocked()
+                else:
+                    data = {}
+
+                if not isinstance(data.get("agents"), dict):
+                    data["agents"] = {}
+
+                agent = data["agents"].get(agent_id)
+                if not isinstance(agent, dict):
+                    agent = {
+                        "id": agent_id,
+                        "asset_name": f"agent-{agent_id}",
+                        "hostname": f"agent-{agent_id}",
+                        "criticality": "unknown",
+                        "environment": "unknown",
+                        "exposure": "unknown",
+                        "technical_owner": "unknown",
+                        "business_owner": "unknown",
+                        "is_critical_service": False,
+                        "notes": "",
+                        "classification_status": "pending",
+                        "tags": [],
+                    }
+
+                agent.update(updates)
+
+                final_crit = agent.get("criticality", "unknown")
+                agent["classification_status"] = "pending" if final_crit == "unknown" else "classified"
+
+                data["agents"][agent_id] = agent
+
+                if not isinstance(data.get("metadata"), dict):
+                    data["metadata"] = {}
+                data["metadata"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                data["metadata"]["updated_by"] = (
+                    f"web:{remote_user}" if remote_user and remote_user != "unknown" else "web"
+                )
+
+                _atomic_write_assets_context(data)
+        except json.JSONDecodeError:
+            self._send_json(422, {"status": "error",
+                                  "message": "JSON de contexto de ativos inválido."})
+            _context_audit_log(client_ip, remote_user, agent_id, changed_fields,
+                               "failure", "JSON de contexto de ativos inválido.")
+            return
         except (OSError, ValueError) as e:
             logger.error(f"Falha ao gravar contexto de ativos: {e}")
             fail(500, "Falha ao gravar o contexto de ativos.", changed=changed_fields)
@@ -1091,6 +1235,93 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             "classification_status": agent["classification_status"],
             "changed_fields": changed_fields,
             "agent": _sanitize_agent_for_output(agent_id, agent),
+        })
+
+    def _handle_upload_sbom(self, raw_agent_id: str) -> None:
+        client_ip = self._get_client_ip()
+        agent_id = raw_agent_id.strip()
+
+        def fail(http_status: int, message: str, audit_result: str = "failure") -> None:
+            _context_audit_log(client_ip, f"agent:{agent_id or 'unknown'}",
+                               agent_id[:MAX_AGENT_ID_LEN], ["sbom_upload"],
+                               audit_result, message)
+            self._send_json(http_status, {"status": "error", "message": message})
+
+        if not AGENT_ID_RE.match(agent_id):
+            fail(400, "agent_id inválido.")
+            return
+
+        rate_key = f"sbom:{agent_id}:{client_ip}"
+        if _sbom_rate_limiter is not None and not _sbom_rate_limiter.is_allowed(rate_key):
+            retry_after = _sbom_rate_limiter.get_retry_after(rate_key)
+            self._send_json(429, {
+                "status": "error",
+                "message": "Limite de requisições excedido.",
+                "retry_after": retry_after,
+            })
+            return
+
+        token = _parse_bearer_token(self.headers.get("Authorization", ""))
+        try:
+            data = _load_assets_context_unlocked()
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.error(f"Falha ao ler contexto para upload de SBOM: {e}")
+            fail(500, "Falha ao validar credenciais do agente.")
+            return
+
+        agents = data.get("agents", {})
+        agent = agents.get(agent_id) if isinstance(agents, dict) else None
+        if not isinstance(agent, dict) or not _agent_token_is_valid(agent, token):
+            self._send_json(401, {"status": "error", "message": "Unauthorized"})
+            _context_audit_log(client_ip, f"agent:{agent_id}", agent_id,
+                               ["sbom_upload"], "failure", "Unauthorized")
+            return
+
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            fail(415, "Content-Type deve ser application/json.")
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            fail(400, "Content-Length inválido.")
+            return
+        if content_length <= 0:
+            fail(400, "Corpo da requisição vazio.")
+            return
+        if content_length > MAX_SBOM_BYTES:
+            fail(413, "Payload excede o limite de SBOM.")
+            return
+
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) > MAX_SBOM_BYTES:
+            fail(413, "Payload excede o limite de SBOM.")
+            return
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            fail(400, "JSON do corpo inválido.")
+            return
+        if not _looks_like_cyclonedx_sbom(payload):
+            fail(422, "Payload não parece um SBOM CycloneDX válido.")
+            return
+
+        target = SBOM_PENDING_DIR / f"{agent_id}.json"
+        try:
+            _atomic_write_json_file(target, payload)
+        except OSError as e:
+            logger.error(f"Falha ao gravar SBOM do agente {agent_id}: {e}")
+            fail(500, "Falha ao gravar SBOM.")
+            return
+
+        _context_audit_log(client_ip, f"agent:{agent_id}", agent_id,
+                           ["sbom_upload"], "success", "SBOM recebido.")
+        self._send_json(202, {
+            "status": "accepted",
+            "message": "SBOM recebido para processamento.",
+            "agent_id": agent_id,
         })
 
     def _handle_exposure_context(self) -> None:
