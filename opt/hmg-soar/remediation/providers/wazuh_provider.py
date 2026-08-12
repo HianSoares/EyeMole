@@ -311,6 +311,7 @@ class WazuhProvider:
 # Mapeamento explícito de OS → package manager
 # Apenas regras comprovadas e documentadas
 _OS_TO_PACKAGE_MANAGER: Dict[str, str] = {
+    "windows": "windows",
     "ubuntu": "apt",
     "debian": "apt",
     "raspbian": "apt",

@@ -139,13 +139,17 @@ class TemplateRepository:
             return None
 
         # Validar parâmetros antes de qualquer operação (fail-fast)
-        validation_err = ParameterValidator.validate_for_template_rendering(
-            package_name, installed_version, fixed_version, package_manager
-        )
+        pm_lower = package_manager.lower().strip()
+        if pm_lower == "windows":
+            validation_err = self._validate_windows_template_rendering(
+                installed_version, fixed_version, package_manager
+            )
+        else:
+            validation_err = ParameterValidator.validate_for_template_rendering(
+                package_name, installed_version, fixed_version, package_manager
+            )
         if validation_err is not None:
             return None
-
-        pm_lower = package_manager.lower().strip()
 
         # Verificar allowlist
         if pm_lower not in self._templates:
@@ -205,6 +209,23 @@ class TemplateRepository:
             remediation=rendered_remediation,
             verification=rendered_verification or "",
         )
+
+    @staticmethod
+    def _validate_windows_template_rendering(
+        installed_version: str,
+        fixed_version: Optional[str],
+        package_manager: str,
+    ) -> Optional[ValidationError]:
+        err = ParameterValidator.validate_version(installed_version)
+        if err:
+            return err
+
+        if fixed_version is not None:
+            err = ParameterValidator.validate_version(fixed_version)
+            if err:
+                return err
+
+        return ParameterValidator.validate_package_manager(package_manager)
 
     @staticmethod
     def _safe_substitute(

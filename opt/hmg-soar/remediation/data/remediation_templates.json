@@ -7,6 +7,7 @@
   },
   "allowlist": {
     "os_to_package_manager": {
+      "windows": "windows",
       "ubuntu": "apt",
       "debian": "apt",
       "raspbian": "apt",
@@ -26,6 +27,18 @@
     }
   },
   "templates": {
+    "windows": {
+      "package_manager": "windows",
+      "os_families": ["windows"],
+      "remediation": {
+        "with_version": "Aplique as atualizações do Windows Update, WSUS, SCCM ou Intune até atingir a build {fixed_version} ou superior. Consulte o Windows Update/MSRC para os KBs disponíveis no seu canal de atualização.",
+        "generic_update": "Aplique as atualizações do Windows Update, WSUS, SCCM ou Intune disponíveis para este servidor."
+      },
+      "verification": {
+        "check_version": "(Get-CimInstance Win32_OperatingSystem).Version"
+      },
+      "notes": "Windows não expõe KB estruturado no snapshot Wazuh; não gerar comando de instalação específico."
+    },
     "apt": {
       "package_manager": "apt",
       "os_families": ["ubuntu", "debian", "raspbian"],
