@@ -6370,37 +6370,187 @@ HTML_TEMPLATE = """<!DOCTYPE html>
        (bloco final: vence a cascata; system fonts; sem CDN; sem imagens externas)
        ===================================================================== */
     :root {
-      --vm-bg-0: #060b14;
-      --vm-bg-1: #0a1220;
-      --vm-panel: #0e1a2b;
-      --vm-panel-2: #11213a;
-      --vm-stroke: rgba(148, 178, 214, 0.14);
-      --vm-stroke-soft: rgba(148, 178, 214, 0.08);
-      --vm-text: #eaf2ff;
-      --vm-muted: #93a7c4;
-      --vm-faint: #6f83a1;
-      --vm-accent: #4f8cff;
-      --vm-accent-2: #22d3ee;
-      --vm-crit: #fb3b6e;
-      --vm-high: #f5924b;
-      --vm-med: #eab308;
-      --vm-low: #34d399;
-      --vm-info: #60a5fa;
-      --vm-kev: #f43f5e;
-      --vm-epss: #a78bfa;
+      --vm-bg-0: #030711;
+      --vm-bg-1: #07111f;
+      --vm-bg-2: #0a1526;
+      --vm-panel: rgba(11, 22, 38, 0.78);
+      --vm-panel-2: rgba(14, 29, 50, 0.72);
+      --vm-glass: rgba(13, 27, 47, 0.64);
+      --vm-glass-strong: rgba(15, 31, 53, 0.82);
+      --vm-stroke: rgba(155, 187, 220, 0.16);
+      --vm-stroke-soft: rgba(155, 187, 220, 0.09);
+      --vm-text: #edf6ff;
+      --vm-muted: #9badc7;
+      --vm-faint: #71829f;
+      --vm-brand-cyan: #2de2f2;
+      --vm-brand-magenta: #f59df4;
+      --vm-brand-violet: #9b7cff;
+      --vm-accent: var(--vm-brand-violet);
+      --vm-accent-2: var(--vm-brand-cyan);
+      --vm-crit: #f15d7c;
+      --vm-high: #f7a35d;
+      --vm-med: #e4c15b;
+      --vm-low: #56d99f;
+      --vm-info: #78a8ff;
+      --vm-kev: #f36b91;
+      --vm-epss: var(--vm-brand-violet);
+      --vm-shadow-soft: 0 20px 70px -46px rgba(0, 0, 0, 0.86);
+      --vm-shadow-panel: 0 18px 48px -38px rgba(0, 0, 0, 0.78);
+      --vm-blur: blur(18px);
     }
     body {
       background-color: var(--vm-bg-0) !important;
       background-image:
-        radial-gradient(1200px 620px at 82% -8%, rgba(79, 140, 255, 0.10), transparent 60%),
-        radial-gradient(1000px 560px at -6% 4%, rgba(34, 211, 238, 0.07), transparent 55%),
-        linear-gradient(180deg, #0a1220 0%, #060b14 640px) !important;
+        radial-gradient(1100px 560px at 84% -12%, rgba(155, 124, 255, 0.12), transparent 62%),
+        radial-gradient(820px 440px at -12% 8%, rgba(45, 226, 242, 0.08), transparent 60%),
+        linear-gradient(180deg, #06101d 0%, var(--vm-bg-0) 680px) !important;
       color: var(--vm-text);
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
     }
-    .sidebar { background: linear-gradient(180deg, #0a1424 0%, #070d18 100%) !important; border-right: 1px solid var(--vm-stroke) !important; }
-    .content-header { backdrop-filter: blur(8px); }
+    .app-layout { grid-template-columns: 264px minmax(0, 1fr); }
+    .sidebar {
+      background:
+        linear-gradient(180deg, rgba(10, 20, 35, 0.94) 0%, rgba(4, 9, 17, 0.98) 100%) !important;
+      border-right: 1px solid var(--vm-stroke) !important;
+      box-shadow: 18px 0 50px -42px rgba(0, 0, 0, 0.9);
+      backdrop-filter: var(--vm-blur);
+      padding: 1.15rem 0.8rem !important;
+    }
+    .sidebar-header {
+      align-items: center !important;
+      padding: 0.2rem 0.35rem 1.05rem !important;
+      border-bottom: 1px solid var(--vm-stroke-soft);
+      margin-bottom: 0.85rem;
+    }
+    .brand-logo {
+      height: 116px !important;
+      max-width: 214px !important;
+      object-fit: contain;
+      filter: drop-shadow(0 12px 32px rgba(45, 226, 242, 0.10));
+    }
+    .sidebar-nav { gap: 0.22rem; overflow-y: auto; padding-right: 0.1rem; }
+    .tab-btn {
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 10px !important;
+      color: var(--vm-muted) !important;
+      font-weight: 650 !important;
+      letter-spacing: 0;
+    }
+    .tab-btn:hover {
+      background: rgba(255, 255, 255, 0.035) !important;
+      border-color: var(--vm-stroke-soft);
+      color: var(--vm-text) !important;
+    }
+    .tab-btn.active {
+      background:
+        linear-gradient(90deg, rgba(45, 226, 242, 0.13), rgba(155, 124, 255, 0.08)) !important;
+      border-color: rgba(45, 226, 242, 0.22);
+      color: #eaffff !important;
+      box-shadow: inset 3px 0 0 var(--vm-brand-cyan);
+    }
+    .tab-btn .tab-ico { opacity: 0.72; }
+    .tab-btn.active .tab-ico { stroke: var(--vm-brand-cyan) !important; opacity: 1; }
+    .sidebar-footer { border-top: 1px solid var(--vm-stroke-soft); padding-top: 0.85rem; }
+    .sidebar-status { gap: 0.48rem !important; }
+    .status-chip {
+      background: rgba(12, 25, 43, 0.58) !important;
+      border-color: var(--vm-stroke-soft) !important;
+      border-radius: 10px !important;
+      padding: 0.55rem 0.65rem !important;
+      color: var(--vm-muted) !important;
+    }
+    .status-chip strong { color: var(--vm-text) !important; }
+    .content-wrapper { padding: 1.35rem clamp(1rem, 2.4vw, 2.5rem) 2.2rem !important; }
+    .content-header {
+      backdrop-filter: blur(10px);
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    .breadcrumb { color: var(--vm-faint) !important; }
+    .hero-text h1 { color: var(--vm-text) !important; font-weight: 780 !important; }
+    .hero-text .subtitle { color: var(--vm-muted) !important; }
+    .meta-badge {
+      background: rgba(12, 25, 43, 0.52) !important;
+      border-color: var(--vm-stroke-soft) !important;
+      border-radius: 999px !important;
+      color: var(--vm-muted) !important;
+      backdrop-filter: blur(12px);
+    }
+    .meta-badge strong { color: var(--vm-brand-cyan) !important; }
+    .global-filterbar {
+      background: var(--vm-glass) !important;
+      border-color: var(--vm-stroke) !important;
+      border-radius: 12px !important;
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    .filter-field select,
+    .search-input,
+    .classify-field input,
+    .classify-field select,
+    .classify-field textarea {
+      background: rgba(4, 10, 19, 0.62) !important;
+      border-color: var(--vm-stroke-soft) !important;
+      color: var(--vm-text) !important;
+      border-radius: 9px !important;
+    }
+    .filter-field select:focus,
+    .search-input:focus,
+    .classify-field input:focus,
+    .classify-field select:focus,
+    .classify-field textarea:focus {
+      border-color: rgba(45, 226, 242, 0.44) !important;
+      box-shadow: 0 0 0 3px rgba(45, 226, 242, 0.08) !important;
+      outline: none !important;
+    }
+    .toolbar {
+      background: var(--vm-glass) !important;
+      border-color: var(--vm-stroke) !important;
+      border-radius: 12px !important;
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    .btn,
+    .vm-btn {
+      border-radius: 9px !important;
+      border-color: var(--vm-stroke) !important;
+      background: rgba(255, 255, 255, 0.035) !important;
+      color: var(--vm-text) !important;
+      box-shadow: none !important;
+    }
+    .btn:hover,
+    .vm-btn:hover {
+      border-color: rgba(45, 226, 242, 0.30) !important;
+      background: rgba(45, 226, 242, 0.075) !important;
+    }
+    .btn-primary,
+    .btn-run {
+      background: linear-gradient(135deg, var(--vm-brand-cyan), #67f5ff) !important;
+      border-color: transparent !important;
+      color: #03101a !important;
+      font-weight: 800 !important;
+    }
+    .btn-primary:hover,
+    .btn-run:hover {
+      background: linear-gradient(135deg, #67f5ff, var(--vm-brand-cyan)) !important;
+      color: #03101a !important;
+    }
+    .metric-card,
+    .risk-card,
+    .vm-panel,
+    .table-container,
+    .vm-stat,
+    .queue-card,
+    .vuln-queue-card,
+    .cc-card,
+    .overview-executive-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), var(--vm-glass) !important;
+      border-color: var(--vm-stroke) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
 
     /* ---- HERO ---- */
     .vm-hero {
