@@ -6646,14 +6646,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .vuln-queue-card {
       background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--vm-panel);
       border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.15rem 1.3rem;
-      display: grid; grid-template-columns: 1.2fr 1fr 180px 100px; gap: 1.2rem; align-items: center;
+      display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 1fr) minmax(130px, 170px) minmax(132px, 150px); gap: 1.2rem; align-items: center;
       transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
     .vuln-queue-card:hover { transform: translateY(-1px); border-color: rgba(148, 178, 214, 0.24); box-shadow: 0 10px 25px -10px rgba(0,0,0,0.5); }
     .vuln-queue-card .col-vuln { display: flex; flex-direction: column; gap: 0.35rem; }
     .vuln-queue-card .col-asset { display: flex; flex-direction: column; gap: 0.3rem; }
-    .vuln-queue-card .col-metrics { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
-    .vuln-queue-card .col-actions { display: flex; justify-content: flex-end; }
+    .vuln-queue-card .col-metrics { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; min-width: 0; }
+    .vuln-queue-card .col-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+    .vuln-queue-card .col-actions .vm-btn {
+      justify-content: center;
+      text-align: center;
+      line-height: 1.12;
+      white-space: normal;
+      margin-left: 0 !important;
+    }
     .vuln-queue-card .cve-id { font-size: 1.05rem; font-weight: 800; color: #fff; text-decoration: none; }
     .vuln-queue-card .cve-id:hover { color: var(--vm-accent-2); text-decoration: underline; }
     .vuln-queue-card .pkg-name { font-size: 0.8rem; color: var(--vm-muted); font-family: monospace; }
@@ -7248,7 +7262,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Prioritized Vulnerability Queue Container -->
         <div class="vuln-queue-container" id="vuln-table" style="margin-bottom: 1.5rem;">
           <!-- Header with sorting links -->
-          <div style="background: rgba(255,255,255,0.025); border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.8rem 1.3rem; display: grid; grid-template-columns: 1.2fr 1fr 180px 100px; gap: 1.2rem; font-size: 0.72rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vm-muted);">
+          <div style="background: rgba(255,255,255,0.025); border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.8rem 1.3rem; display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 1fr) minmax(130px, 170px) minmax(132px, 150px); gap: 1.2rem; font-size: 0.72rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vm-muted);">
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('cve')"><span>Vulnerabilidade &amp; Pacote</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('agent_id')"><span>Ativo Afetado</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem; justify-content: flex-end;" onclick="sortTable('cvss')"><span>Risco &amp; SLA</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
