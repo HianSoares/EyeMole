@@ -135,6 +135,7 @@ class RemediationEngine:
         self._wazuh_provider = WazuhProvider(
             snapshot_path=self._snapshot_path,
             assets_context_path=self._config_dir / "assets_context.json",
+            allowlist_path=self._config_dir / "remediation_allowlist.json",
         )
 
         # Instanciar GrypeProvider repassando o wazuh_provider (evita duplo I/O)

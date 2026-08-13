@@ -4703,6 +4703,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
 
     package_name = str(pkg.get("name") or vuln.get("category") or "Sistema Operacional").strip()
     version = str(pkg.get("version") or "N/A").strip()
+    package_type = str(pkg.get("type") or "").strip().lower()
     severity = str(vuln.get("severity") or "N/A").strip()
     scanner = vuln.get("scanner", {}) or {}
     scanner_condition = ""
@@ -4765,6 +4766,7 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
         epss_score=epss_data.get(cve), # Retorna None se estiver ausente/abaixo do threshold
         agent_os=agent_os,
         os_version=os_version,
+        package_type=package_type,
         scanner_condition=scanner_condition,
     )
 

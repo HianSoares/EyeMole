@@ -49,6 +49,7 @@ class WazuhProvider:
         self,
         snapshot_path: Optional[Path] = None,
         assets_context_path: Optional[Path] = None,
+        allowlist_path: Optional[Path] = None,
     ) -> None:
         self._snapshot_path = snapshot_path or Path(
             "/var/www/wazuh-soar/data/latest.json"
@@ -56,6 +57,10 @@ class WazuhProvider:
         self._assets_context_path = assets_context_path or Path(
             "/opt/hmg-soar/config/assets_context.json"
         )
+        self._allowlist_path = allowlist_path or Path(
+            "/opt/hmg-soar/config/remediation_allowlist.json"
+        )
+        self._allowlist = self._load_remediation_allowlist()
         self._snapshot_data: Optional[dict] = None
         self._snapshot_index: Dict[str, dict] = {}
         self._assets_context: dict = {}
@@ -178,6 +183,7 @@ class WazuhProvider:
         cve = str(vuln_record.get("cve", "")).strip()
         package_name = str(vuln_record.get("package", "")).strip()
         installed_version = str(vuln_record.get("version", "")).strip()
+        package_type = str(vuln_record.get("package_type", "")).strip().lower()
         agent_id = str(vuln_record.get("agent_id", "")).strip()
         agent_name = str(vuln_record.get("agent_name", "")).strip()
         severity = str(vuln_record.get("severity", "")).strip()
@@ -224,8 +230,12 @@ class WazuhProvider:
         snapshot_os = vuln_record.get("operating_system")
         operating_system = self._resolve_os(agent_id, agent_name, snapshot_os)
 
-        # Resolver package_manager a partir do OS (regra explícita apenas)
-        package_manager = self._resolve_package_manager(operating_system)
+        # Resolver package_manager preferindo package.type.
+        # Se package.type existe e não está aprovado, falha fechada.
+        package_manager = self._resolve_package_manager(
+            operating_system=operating_system,
+            package_type=package_type,
+        )
 
         # Construir resultado
         warnings = []
@@ -240,8 +250,15 @@ class WazuhProvider:
             warnings.append("Sistema operacional não identificado para o agente")
             assumptions.append("OS inferido como unknown — template pode não estar disponível")
 
+        if package_type and not package_manager:
+            warnings.append(
+                f"package.type '{package_type}' não está aprovado na allowlist de remediação"
+            )
+        elif not package_type:
+            assumptions.append("package.type ausente; fallback temporário por OS aplicado")
+
         if not package_manager:
-            warnings.append("Gerenciador de pacotes não identificado para o OS")
+            warnings.append("Gerenciador de pacotes não identificado para o pacote")
             package_manager = ""
 
         return ProviderResult(
@@ -299,13 +316,74 @@ class WazuhProvider:
 
         return "unknown"
 
-    def _resolve_package_manager(self, operating_system: str) -> str:
-        """Resolve package manager a partir do OS via mapeamento explícito.
+    def _resolve_package_manager(self, operating_system: str, package_type: str = "") -> str:
+        """Resolve package manager por package.type e fallback legado por OS.
 
         Retorna string vazia se não houver mapeamento (fail-safe).
         """
         os_lower = operating_system.lower().strip()
+        type_lower = package_type.lower().strip()
+
+        if type_lower:
+            direct_rules = self._allowlist.get("package_type_to_package_manager", {})
+            if type_lower in direct_rules:
+                return str(direct_rules[type_lower]).strip()
+
+            typed_os_rules = self._allowlist.get("package_type_os_to_package_manager", {})
+            os_rules = typed_os_rules.get(type_lower, {})
+            if isinstance(os_rules, dict):
+                return str(os_rules.get(os_lower, "")).strip()
+
+            return ""
+
+        # Fallback legado/transicional: somente para snapshots antigos sem package.type.
+        os_rules = self._allowlist.get("os_to_package_manager", {})
+        if isinstance(os_rules, dict):
+            return str(os_rules.get(os_lower, "")).strip()
         return _OS_TO_PACKAGE_MANAGER.get(os_lower, "")
+
+    def _load_remediation_allowlist(self) -> dict:
+        """Carrega allowlist local de remediação com defaults fail-closed."""
+        defaults = {
+            "os_to_package_manager": dict(_OS_TO_PACKAGE_MANAGER),
+            "package_type_to_package_manager": {
+                "deb": "apt",
+                "windows": "windows",
+            },
+            "package_type_os_to_package_manager": {
+                "rpm": {
+                    "rocky": "dnf",
+                },
+            },
+        }
+
+        try:
+            if not self._allowlist_path.is_file():
+                logger.warning("Allowlist de remediação não encontrada: %s", self._allowlist_path)
+                return defaults
+
+            with open(self._allowlist_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if not isinstance(data, dict):
+                logger.warning("Allowlist de remediação com formato inválido; usando defaults.")
+                return defaults
+
+            merged = dict(defaults)
+            for key in (
+                "os_to_package_manager",
+                "package_type_to_package_manager",
+                "package_type_os_to_package_manager",
+            ):
+                value = data.get(key)
+                if isinstance(value, dict):
+                    merged[key] = value
+
+            return merged
+
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Erro ao carregar allowlist de remediação: %s", str(e))
+            return defaults
 
 
 # Mapeamento explícito de OS → package manager

@@ -214,6 +214,7 @@ class VulnRecord:
     priority: str = "Priority 4"
     agent_os: str = "N/A"
     os_version: str = ""
+    package_type: str = ""
     scanner_condition: str = ""
 
     def to_dict(self) -> dict:
@@ -232,6 +233,7 @@ class VulnRecord:
             "is_ransomware": self.is_ransomware,
             "operating_system": self.agent_os,
             "os_version": self.os_version,
+            "package_type": self.package_type,
             "scanner_condition": self.scanner_condition,
         }
 

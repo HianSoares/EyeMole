@@ -21,6 +21,7 @@ def _hit_with_os(os_payload: dict) -> dict:
             "package": {
                 "name": "linux-image-5.15.0-186-generic",
                 "version": "5.15.0-186.196",
+                "type": "deb",
             },
         }
     }
@@ -85,3 +86,30 @@ def test_extract_record_leaves_scanner_condition_empty_when_absent():
     assert record is not None
     assert record.scanner_condition == ""
     assert record.to_dict()["scanner_condition"] == ""
+
+
+def test_extract_record_reads_package_type_when_present():
+    record = extract_record(
+        _hit_with_os({"platform": "ubuntu", "version": "22.04.5"}),
+        cisa_kev={},
+        epss_data={},
+    )
+
+    assert record is not None
+    assert record.package_type == "deb"
+    assert record.to_dict()["package_type"] == "deb"
+
+
+def test_extract_record_leaves_package_type_empty_when_absent():
+    hit = _hit_with_os({"platform": "ubuntu", "version": "22.04.5"})
+    del hit["_source"]["package"]["type"]
+
+    record = extract_record(
+        hit,
+        cisa_kev={},
+        epss_data={},
+    )
+
+    assert record is not None
+    assert record.package_type == ""
+    assert record.to_dict()["package_type"] == ""

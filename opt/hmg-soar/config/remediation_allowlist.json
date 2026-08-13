@@ -23,6 +23,15 @@
     "opensuse": "zypper",
     "alpine": "apk"
   },
+  "package_type_to_package_manager": {
+    "deb": "apt",
+    "windows": "windows"
+  },
+  "package_type_os_to_package_manager": {
+    "rpm": {
+      "rocky": "dnf"
+    }
+  },
   "validation_patterns": {
     "package_name": "^[A-Za-z0-9._+~-]+$",
     "version": "^[A-Za-z0-9._+~:-]+$",
