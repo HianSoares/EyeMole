@@ -6485,6 +6485,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-radius: 12px !important;
       box-shadow: var(--vm-shadow-panel);
       backdrop-filter: var(--vm-blur);
+      padding: 0.95rem !important;
+      gap: 0.72rem !important;
+    }
+    .filter-field label {
+      color: var(--vm-faint) !important;
+      font-weight: 760 !important;
+      letter-spacing: 0.06em !important;
     }
     .filter-field select,
     .search-input,
@@ -6505,12 +6512,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       box-shadow: 0 0 0 3px rgba(45, 226, 242, 0.08) !important;
       outline: none !important;
     }
+    .search-wrapper { min-width: min(420px, 100%); }
+    .search-input {
+      min-height: 38px !important;
+      padding-left: 2.05rem !important;
+    }
     .toolbar {
       background: var(--vm-glass) !important;
       border-color: var(--vm-stroke) !important;
       border-radius: 12px !important;
       box-shadow: var(--vm-shadow-panel);
       backdrop-filter: var(--vm-blur);
+      gap: 0.75rem !important;
     }
     .btn,
     .vm-btn {
@@ -6537,6 +6550,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       background: linear-gradient(135deg, #67f5ff, var(--vm-brand-cyan)) !important;
       color: #03101a !important;
     }
+    .badge {
+      border-radius: 999px !important;
+      letter-spacing: 0.02em !important;
+      box-shadow: none !important;
+    }
+    .badge-p1plus { background: rgba(241, 93, 124, 0.14) !important; color: #ff9caf !important; border-color: rgba(241, 93, 124, 0.34) !important; }
+    .badge-p1 { background: rgba(247, 163, 93, 0.13) !important; color: #ffc28d !important; border-color: rgba(247, 163, 93, 0.30) !important; }
+    .badge-p2 { background: rgba(228, 193, 91, 0.13) !important; color: #efd77f !important; border-color: rgba(228, 193, 91, 0.28) !important; }
+    .badge-p3 { background: rgba(120, 168, 255, 0.12) !important; color: #abc7ff !important; border-color: rgba(120, 168, 255, 0.26) !important; }
+    .badge-p4 { background: rgba(86, 217, 159, 0.12) !important; color: #8ff0bf !important; border-color: rgba(86, 217, 159, 0.25) !important; }
+    .badge-kev { background: rgba(243, 107, 145, 0.14) !important; color: #ffa9c1 !important; border-color: rgba(243, 107, 145, 0.34) !important; }
+    .badge-ransomware { background: rgba(241, 93, 124, 0.16) !important; color: #ff9caf !important; border-color: rgba(241, 93, 124, 0.34) !important; }
     .metric-card,
     .risk-card,
     .vm-panel,
@@ -6797,13 +6822,59 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     /* --- NEW ENTERPRISE REDESIGN v2 COMPONENTS --- */
     /* Prioritized Vulnerability Queue */
     .vuln-queue-container { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; }
+    #tab-risk .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-risk .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-risk .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-risk .vm-strip { gap: 0.62rem; margin-bottom: 0.95rem; }
+    #tab-risk .vm-stat {
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.60);
+      border-color: var(--vm-stroke-soft);
+    }
+    #tab-risk .grid-metrics { gap: 0.65rem; margin-bottom: 0.85rem; }
+    #tab-risk .grid-metrics .metric-card {
+      min-height: 92px;
+      cursor: pointer;
+      border-radius: 12px !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.58) !important;
+    }
+    #tab-risk .grid-metrics .metric-card.active {
+      border-color: rgba(45, 226, 242, 0.42) !important;
+      background: linear-gradient(180deg, rgba(45, 226, 242, 0.08), rgba(155, 124, 255, 0.035)), rgba(12, 25, 43, 0.72) !important;
+    }
+    #tab-risk .grid-metrics .metric-title { color: var(--vm-muted) !important; font-size: 0.66rem !important; }
+    #tab-risk .grid-metrics .metric-value { color: var(--vm-text) !important; font-size: 1.62rem !important; font-weight: 810 !important; }
+    .vuln-queue-header {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 1fr) minmax(130px, 170px) minmax(132px, 150px);
+      gap: 1.2rem;
+      align-items: center;
+      padding: 0.72rem 1.3rem;
+      border: 1px solid var(--vm-stroke-soft);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.018);
+      color: var(--vm-faint);
+      font-size: 0.68rem;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .vuln-queue-header [onclick] { cursor: pointer; transition: color .15s ease; }
+    .vuln-queue-header [onclick]:hover { color: var(--vm-brand-cyan); }
     .vuln-queue-card {
-      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--vm-panel);
-      border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.15rem 1.3rem;
+      background: linear-gradient(180deg, rgba(255,255,255,0.034), rgba(255,255,255,0.012)), rgba(12, 25, 43, 0.66);
+      border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.05rem 1.18rem;
       display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 1fr) minmax(130px, 170px) minmax(132px, 150px); gap: 1.2rem; align-items: center;
       transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .vuln-queue-card:hover { transform: translateY(-1px); border-color: rgba(148, 178, 214, 0.24); box-shadow: 0 10px 25px -10px rgba(0,0,0,0.5); }
+    .vuln-queue-card:hover { transform: translateY(-1px); border-color: rgba(45, 226, 242, 0.22); box-shadow: 0 18px 38px -30px rgba(0,0,0,0.72); }
     .vuln-queue-card .col-vuln { display: flex; flex-direction: column; gap: 0.35rem; }
     .vuln-queue-card .col-asset { display: flex; flex-direction: column; gap: 0.3rem; }
     .vuln-queue-card .col-metrics { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; min-width: 0; }
@@ -6822,11 +6893,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       white-space: normal;
       margin-left: 0 !important;
     }
-    .vuln-queue-card .cve-id { font-size: 1.05rem; font-weight: 800; color: #fff; text-decoration: none; }
+    .vuln-queue-card .col-actions .guidance-btn {
+      border-color: rgba(45, 226, 242, 0.20) !important;
+      background: rgba(45, 226, 242, 0.055) !important;
+    }
+    .vuln-queue-card .cve-id { font-size: 1.03rem; font-weight: 790; color: #fff; text-decoration: none; letter-spacing: 0; }
     .vuln-queue-card .cve-id:hover { color: var(--vm-accent-2); text-decoration: underline; }
-    .vuln-queue-card .pkg-name { font-size: 0.8rem; color: var(--vm-muted); font-family: monospace; }
-    .vuln-queue-card .host-name { font-size: 0.95rem; font-weight: 700; color: var(--vm-text); }
+    .vuln-queue-card .pkg-name { font-size: 0.78rem; color: var(--vm-muted); font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+    .vuln-queue-card .host-name { font-size: 0.94rem; font-weight: 760; color: var(--vm-text); }
     .vuln-queue-card .agent-id { font-size: 0.76rem; color: var(--vm-faint); font-family: monospace; }
+    .vuln-queue-card .score {
+      background: rgba(255,255,255,0.045) !important;
+      border: 1px solid var(--vm-stroke-soft) !important;
+      color: var(--vm-text) !important;
+    }
+    .vuln-queue-card .rchip {
+      border-radius: 999px;
+      padding: 0.18rem 0.48rem;
+      font-size: 0.68rem;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
 
     /* SaaS list cards for Treatment Plan & SLA */
     .saas-list-container { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -7416,7 +7503,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Prioritized Vulnerability Queue Container -->
         <div class="vuln-queue-container" id="vuln-table" style="margin-bottom: 1.5rem;">
           <!-- Header with sorting links -->
-          <div style="background: rgba(255,255,255,0.025); border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.8rem 1.3rem; display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(180px, 1fr) minmax(130px, 170px) minmax(132px, 150px); gap: 1.2rem; font-size: 0.72rem; font-weight: 750; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vm-muted);">
+          <div class="vuln-queue-header">
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('cve')"><span>Vulnerabilidade &amp; Pacote</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem;" onclick="sortTable('agent_id')"><span>Ativo Afetado</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
             <div style="cursor: pointer; display: flex; align-items: center; gap: 0.25rem; justify-content: flex-end;" onclick="sortTable('cvss')"><span>Risco &amp; SLA</span><span style="font-size:0.6rem;opacity:0.7;">↕</span></div>
@@ -10213,7 +10300,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const escAgentName = JSON.stringify(String(item.agent_name));
 
         const isValidFindingId = item.finding_id && /^[A-Fa-f0-9]{64}$/.test(item.finding_id);
-        const guidanceBtnHtml = isValidFindingId ? `<button type="button" class="vm-btn guidance-btn" style="padding:0.4rem 0.75rem; font-size:0.74rem; font-weight:750; margin-left:0.5rem;" data-finding-id="${escapeHtmlAttribute(item.finding_id)}" aria-label="Ver correção para ${escapeHtmlAttribute(item.cve)}">Ver correção</button>` : '';
+        const guidanceBtnHtml = isValidFindingId ? `<button type="button" class="vm-btn guidance-btn" style="padding:0.4rem 0.75rem; font-size:0.74rem; font-weight:750;" data-finding-id="${escapeHtmlAttribute(item.finding_id)}" aria-label="Ver correção para ${escapeHtmlAttribute(item.cve)}">Ver correção</button>` : '';
 
         card.innerHTML = `
           <div class="col-vuln">
