@@ -526,9 +526,10 @@ install_systemd() {
       if ! systemctl is-active --quiet "${GRYPE_TIMER_FILE}"; then
         warn "Timer ${GRYPE_TIMER_FILE} não está ativo após enable."
         systemctl status "${GRYPE_TIMER_FILE}" --no-pager || true
-        die "Falha ao ativar timer ${GRYPE_TIMER_FILE}."
+        warn "Falha ao ativar timer ${GRYPE_TIMER_FILE}. Continuando instalação do core sem bloquear API/Nginx."
+      else
+        log "Timer ${GRYPE_TIMER_FILE} ativo."
       fi
-      log "Timer ${GRYPE_TIMER_FILE} ativo."
     else
       warn "Binário 'grype' ausente no PATH. Timer ${GRYPE_TIMER_FILE} instalado, mas não habilitado."
       warn "Pré-requisito operacional: instale/mova o grype para /usr/local/bin/grype antes de habilitar o timer."
