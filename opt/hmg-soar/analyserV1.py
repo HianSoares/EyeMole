@@ -6556,24 +6556,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .vm-hero {
       position: relative; overflow: hidden;
       border: 1px solid var(--vm-stroke);
-      border-radius: 20px;
+      border-radius: 14px;
       background:
-        radial-gradient(900px 380px at 88% -30%, rgba(79,140,255,0.22), transparent 60%),
-        radial-gradient(600px 300px at 6% 120%, rgba(244,63,94,0.14), transparent 55%),
-        linear-gradient(135deg, #0f1d33 0%, #0b1626 60%, #0a1322 100%);
-      padding: 1.2rem 1.8rem 1.2rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 24px 60px -32px rgba(0,0,0,0.75);
+        linear-gradient(135deg, rgba(12, 27, 48, 0.88) 0%, rgba(8, 17, 31, 0.78) 58%, rgba(10, 17, 31, 0.72) 100%);
+      padding: 1.05rem 1.25rem;
+      margin-bottom: 0.95rem;
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
     }
     .vm-hero::after {
       content: ""; position: absolute; inset: 0; pointer-events: none;
-      background-image: linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
-      background-size: 34px 34px; mask-image: radial-gradient(720px 340px at 85% 0%, #000 20%, transparent 72%);
+      background: linear-gradient(90deg, rgba(45, 226, 242, 0.16), rgba(155, 124, 255, 0.12), transparent 46%);
+      height: 1px;
+      opacity: 0.9;
     }
-    .vm-hero-eyebrow { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--vm-accent-2); background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.2); padding: 0.32rem 0.7rem; border-radius: 999px; }
-    .vm-hero h1 { position: relative; font-size: clamp(1.8rem, 3vw, 2.7rem); line-height: 1.06; font-weight: 850; letter-spacing: -0.02em; margin: 1rem 0 0.7rem; background: linear-gradient(92deg, #ffffff, #cfe0ff 60%, #9dc2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; max-width: 22ch; }
-    .vm-hero-sub { position: relative; font-size: 1.02rem; color: #cddcf3; max-width: 62ch; margin-bottom: 0.5rem; }
-    .vm-hero-desc { position: relative; font-size: 0.9rem; color: var(--vm-muted); max-width: 70ch; }
+    .vm-hero-eyebrow { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.68rem; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; color: var(--vm-brand-cyan); background: rgba(45,226,242,0.07); border: 1px solid rgba(45,226,242,0.16); padding: 0.28rem 0.62rem; border-radius: 999px; }
+    .vm-hero h1 { position: relative; font-size: clamp(1.55rem, 2.25vw, 2.15rem); line-height: 1.08; font-weight: 790; letter-spacing: 0; margin: 0.78rem 0 0.45rem; color: var(--vm-text); max-width: 32ch; }
+    .vm-hero-sub { position: relative; font-size: 0.96rem; color: #d7e5f7; max-width: 68ch; margin-bottom: 0.35rem; }
+    .vm-hero-desc { position: relative; font-size: 0.84rem; color: var(--vm-muted); max-width: 76ch; }
     /* Fase 9.1 — .vm-hero-chips/.vm-chip/.dot-* removidos: eram CSS órfão dos
        chips hero (IDs hero-* inexistentes no HTML), agora também eliminados. */
 
@@ -6588,44 +6588,48 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .vm-source-warn { font-size: 0.74rem; color: var(--vm-high); background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.28); border-radius: 8px; padding: 0.45rem 0.7rem; margin: 0.6rem 0 0.2rem; font-weight: 600; }
 
     /* ---- RISK COMMAND CENTER ---- */
-    .cc-grid { display: grid; grid-template-columns: 1.15fr 2fr; gap: 1rem; margin-bottom: 0.5rem; }
+    .cc-grid { display: grid; grid-template-columns: minmax(250px, 0.9fr) minmax(0, 2.1fr); gap: 0.85rem; margin-bottom: 0.5rem; }
     .cc-score {
-      position: relative; border: 1px solid var(--vm-stroke); border-radius: 18px; padding: 1.6rem;
-      background: radial-gradient(420px 240px at 20% -20%, rgba(251,59,110,0.18), transparent 60%), linear-gradient(160deg, #14101d, #0d1526);
-      display: flex; flex-direction: column; justify-content: space-between; min-height: 236px;
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1.25rem;
+      background: linear-gradient(155deg, rgba(21, 37, 64, 0.82), rgba(9, 18, 33, 0.78)) !important;
+      display: flex; flex-direction: column; justify-content: space-between; min-height: 210px;
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
     }
-    .cc-score .lbl { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
-    .cc-score .val { font-size: 4.1rem; font-weight: 860; line-height: 1; letter-spacing: -0.03em; background: linear-gradient(180deg,#fff,#ffd7e3); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-    .cc-score .cap { font-size: 0.86rem; color: var(--vm-muted); }
-    .cc-gauge { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 0.5rem; }
-    .cc-gauge > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--vm-low), var(--vm-med) 45%, var(--vm-high) 72%, var(--vm-crit)); }
-    .cc-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .cc-score .lbl { font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--vm-muted); font-weight: 750; }
+    .cc-score .val { font-size: clamp(3rem, 5vw, 3.65rem); font-weight: 820; line-height: 1; letter-spacing: 0; color: var(--vm-text); -webkit-text-fill-color: initial; background: none; }
+    .cc-score .cap { font-size: 0.82rem; color: var(--vm-muted); }
+    .cc-gauge { height: 7px; border-radius: 999px; background: rgba(255,255,255,0.055); overflow: hidden; margin-top: 0.5rem; }
+    .cc-gauge > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--vm-low), var(--vm-med) 46%, var(--vm-high) 72%, var(--vm-crit)); }
+    .cc-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.65rem; }
     .cc-card {
-      position: relative; border: 1px solid var(--vm-stroke); border-radius: 14px; padding: 1rem 1rem 0.9rem;
-      background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0)) , var(--vm-panel);
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.85rem 0.9rem 0.8rem;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), var(--vm-glass);
       display: flex; flex-direction: column; gap: 0.35rem; transition: transform .15s ease, border-color .15s ease;
       overflow: hidden;
     }
-    .cc-card::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 100%; background: var(--accent, var(--vm-accent)); opacity: 0.85; }
-    .cc-card:hover { transform: translateY(-2px); border-color: rgba(148,178,214,0.28); }
-    .cc-card .t { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vm-muted); font-weight: 700; }
-    .cc-card .n { font-size: 2rem; font-weight: 840; letter-spacing: -0.02em; color: #fff; }
+    .cc-card::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 100%; background: var(--accent, var(--vm-accent)); opacity: 0.62; }
+    .cc-card:hover { transform: translateY(-1px); border-color: rgba(155,187,220,0.26); }
+    .cc-card .t { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vm-muted); font-weight: 750; }
+    .cc-card .n { font-size: 1.72rem; font-weight: 810; letter-spacing: 0; color: #fff; }
     .cc-card .c { font-size: 0.74rem; color: var(--vm-faint); }
     .cc-crit { --accent: var(--vm-crit); } .cc-high { --accent: var(--vm-high); } .cc-kev { --accent: var(--vm-kev); }
     .cc-epss { --accent: var(--vm-epss); } .cc-exp { --accent: var(--vm-accent-2); } .cc-asset { --accent: var(--vm-info); }
     .cc-sla { --accent: var(--vm-high); } .cc-total { --accent: var(--vm-accent); }
 
     /* ---- VALIDATION FUNNEL ---- */
-    .vm-funnel { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; }
+    .vm-funnel { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.55rem; }
     .fn-step {
-      position: relative; border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.95rem 0.8rem;
-      background: linear-gradient(180deg, var(--vm-panel-2), var(--vm-panel));
-      display: flex; flex-direction: column; gap: 0.35rem; min-height: 118px; overflow: hidden;
+      position: relative; border: 1px solid var(--vm-stroke); border-radius: 12px; padding: 0.82rem 0.75rem;
+      background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.01)), var(--vm-glass);
+      display: flex; flex-direction: column; gap: 0.3rem; min-height: 106px; overflow: hidden;
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
     }
     .fn-step .stage { font-size: 0.66rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vm-faint); font-weight: 700; }
-    .fn-step .fn-n { font-size: 1.7rem; font-weight: 840; color: #fff; letter-spacing: -0.02em; }
+    .fn-step .fn-n { font-size: 1.48rem; font-weight: 810; color: #fff; letter-spacing: 0; }
     .fn-step .fn-l { font-size: 0.76rem; color: var(--vm-muted); font-weight: 600; line-height: 1.2; }
-    .fn-step .fn-bar { margin-top: auto; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+    .fn-step .fn-bar { margin-top: auto; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.055); overflow: hidden; }
     .fn-step .fn-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--fn, var(--vm-accent)); }
     .fn-step::after { content: ""; position: absolute; right: -7px; top: 50%; transform: translateY(-50%) rotate(45deg); width: 12px; height: 12px; background: var(--vm-panel); border-top: 1px solid var(--vm-stroke); border-right: 1px solid var(--vm-stroke); z-index: 2; }
     .vm-funnel .fn-step:last-child::after { display: none; }
@@ -6882,17 +6886,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     /* Panorama de Risco integrado */
-    .overview-executive-card { width: 100%; margin-bottom: 2rem; padding: 1.25rem 1.35rem 1rem; background: linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0)), var(--vm-panel); border: 1px solid var(--vm-stroke); border-radius: 14px; }
-    .overview-executive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.25rem; }
-    .overview-executive-title { margin: 0; color: var(--text-main); font-size: 1.05rem; font-weight: 800; }
-    .overview-executive-subtitle { margin: 0.3rem 0 0; color: var(--vm-muted); font-size: 0.82rem; line-height: 1.4; }
+    .overview-executive-card { width: 100%; margin-bottom: 1.8rem; padding: 1.05rem 1.15rem 0.95rem; background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), var(--vm-glass); border: 1px solid var(--vm-stroke); border-radius: 14px; }
+    .overview-executive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.15rem; }
+    .overview-executive-title { margin: 0; color: var(--text-main); font-size: 1rem; font-weight: 780; }
+    .overview-executive-subtitle { margin: 0.25rem 0 0; color: var(--vm-muted); font-size: 0.8rem; line-height: 1.4; }
     .overview-executive-updated { flex: 0 0 auto; color: var(--vm-faint); font-size: 0.72rem; white-space: nowrap; }
-    .overview-executive-note { margin: 0.6rem 0 0.35rem; color: var(--vm-faint); font-size: 0.72rem; }
+    .overview-executive-note { margin: 0.45rem 0 0.25rem; color: var(--vm-faint); font-size: 0.7rem; }
     .overview-executive-chart { width: 100%; min-height: 0; }
-    .overview-executive-chart[data-layout="wide"] { height: clamp(590px, 55vw, 680px); }
+    .overview-executive-chart[data-layout="wide"] { height: clamp(520px, 48vw, 600px); }
     .overview-executive-chart[data-layout="compact"] { height: auto; aspect-ratio: var(--overview-compact-ratio, 480 / 1080); }
     .overview-executive-chart svg { display: block; width: 100%; height: 100%; max-height: none; }
-    .overview-executive-summary { margin-top: 0.35rem; padding-top: 0.75rem; border-top: 1px solid var(--vm-stroke-soft); color: var(--vm-muted); font-size: 0.78rem; line-height: 1.5; }
+    .overview-executive-summary { margin-top: 0.25rem; padding-top: 0.65rem; border-top: 1px solid var(--vm-stroke-soft); color: var(--vm-muted); font-size: 0.76rem; line-height: 1.5; }
     @media (max-width: 760px) {
       .overview-executive-card { padding: 1rem 0.75rem 0.85rem; }
       .overview-executive-head { flex-direction: column; gap: 0.35rem; }
@@ -9496,6 +9500,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const plotRight = right - 68;
       const plotWidth = plotRight - plotLeft;
       const SVG_NS = 'http://www.w3.org/2000/svg';
+      const chartPalette = {
+        text: '#edf6ff',
+        muted: '#9badc7',
+        faint: '#71829f',
+        grid: 'rgba(155,187,220,0.10)',
+        axis: 'rgba(155,187,220,0.22)',
+        track: 'rgba(255,255,255,0.045)',
+        cyan: '#2de2f2',
+        red: '#f15d7c',
+        orange: '#f7a35d',
+        yellow: '#e4c15b',
+        green: '#56d99f',
+        blue: '#78a8ff'
+      };
 
       const svgNode = (tag, attrs = {}) => {
         const node = document.createElementNS(SVG_NS, tag);
@@ -9527,10 +9545,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       svg.appendChild(accessibleDesc);
 
       const statusMeta = {
-        fresh: { label: 'Atualizado', color: '#34d399' },
-        loading: { label: 'Atualizando', color: '#60a5fa' },
-        stale: { label: 'Dados preservados', color: '#fbbf24' },
-        unavailable: { label: 'Indisponível', color: '#f87171' }
+        fresh: { label: 'Atualizado', color: chartPalette.green },
+        loading: { label: 'Atualizando', color: chartPalette.cyan },
+        stale: { label: 'Dados preservados', color: chartPalette.yellow },
+        unavailable: { label: 'Indisponível', color: chartPalette.red }
       };
       const bandTitle = (label, y, detail, source) => {
         const sourceStatus = overviewExecutiveState.sourceStatus[source];
@@ -9540,24 +9558,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const titleSize = compact ? 24 : 15;
         const statusSize = compact ? 22 : 11;
         const detailSize = compact ? 22 : 11;
-        svgText(svg, left, y, displayLabel, { fill: '#eaf2ff', 'font-size': titleSize, 'font-weight': 800, 'letter-spacing': 0.3 });
+        svgText(svg, left, y, displayLabel, { fill: chartPalette.text, 'font-size': titleSize, 'font-weight': 780, 'letter-spacing': 0 });
         const statusText = svgText(svg, compact ? left : left + 310, compact ? y + 28 : y, meta.label, {
           fill: meta.color, 'font-size': statusSize, 'font-weight': 700
         });
         const statusDate = parseValidOverviewTimestamp(sourceStatus.updatedAt);
         addTitle(statusText, statusDate ? `${meta.label} · ${statusDate.toLocaleString()}` : meta.label);
         if (displayDetail) svgText(svg, compact ? left : right, compact ? y + 54 : y, displayDetail, {
-          fill: '#71839b', 'font-size': detailSize, 'text-anchor': compact ? 'start' : 'end'
+          fill: chartPalette.faint, 'font-size': detailSize, 'text-anchor': compact ? 'start' : 'end'
         });
       };
       const divider = y => svg.appendChild(svgNode('line', {
-        x1: left, y1: y, x2: right, y2: y, stroke: 'rgba(148,178,214,0.14)', 'stroke-width': 1
+        x1: left, y1: y, x2: right, y2: y, stroke: chartPalette.grid, 'stroke-width': 1
       }));
-      const emptyMessage = (y, message) => svgText(svg, left, y, message, { fill: '#71839b', 'font-size': compact ? 22 : 13 });
+      const emptyMessage = (y, message) => svgText(svg, left, y, message, { fill: chartPalette.faint, 'font-size': compact ? 22 : 13 });
       const drawStack = (items, y, emptyText, noItemsText) => {
         const barHeight = compact ? 30 : 24;
         const total = items ? items.reduce((sum, item) => sum + item.value, 0) : 0;
-        svg.appendChild(svgNode('rect', { x: left, y, width: right - left, height: barHeight, rx: 5, fill: 'rgba(255,255,255,0.055)' }));
+        svg.appendChild(svgNode('rect', { x: left, y, width: right - left, height: barHeight, rx: 5, fill: chartPalette.track }));
         if (!items) {
           emptyMessage(y + (compact ? 23 : 17), noItemsText);
           return 0;
@@ -9589,7 +9607,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const dotSize = compact ? 14 : 9;
           svg.appendChild(svgNode('rect', { x, y: itemY - dotSize + 1, width: dotSize, height: dotSize, rx: 2, fill: item.color }));
           svgText(svg, x + 15, itemY - 1, `${item.label}  ${item.value} \u00b7 ${safePercent(item.value, total).toFixed(0)}%`, {
-            fill: '#a9b8ca', 'font-size': compact ? 22 : 12, 'font-weight': 600
+            fill: chartPalette.muted, 'font-size': compact ? 22 : 12, 'font-weight': 600
           });
         });
       };
@@ -9598,10 +9616,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         : loadingText;
 
       const severity = overviewExecutiveState.severity ? [
-        { label: 'Cr\u00edticas', value: normalizeCount(overviewExecutiveState.severity.critical), color: '#f87171' },
-        { label: 'Altas', value: normalizeCount(overviewExecutiveState.severity.high), color: '#fb923c' },
-        { label: 'M\u00e9dias', value: normalizeCount(overviewExecutiveState.severity.medium), color: '#facc15' },
-        { label: 'Baixas', value: normalizeCount(overviewExecutiveState.severity.low), color: '#3b82f6' }
+        { label: 'Cr\u00edticas', value: normalizeCount(overviewExecutiveState.severity.critical), color: chartPalette.red },
+        { label: 'Altas', value: normalizeCount(overviewExecutiveState.severity.high), color: chartPalette.orange },
+        { label: 'M\u00e9dias', value: normalizeCount(overviewExecutiveState.severity.medium), color: chartPalette.yellow },
+        { label: 'Baixas', value: normalizeCount(overviewExecutiveState.severity.low), color: chartPalette.blue }
       ] : null;
       bandTitle('DISTRIBUI\u00c7\u00c3O POR SEVERIDADE', 28, '100% da severidade', 'severity');
       const severityTotal = drawStack(severity, compact ? 92 : 43, 'Sem dados de severidade.',
@@ -9611,9 +9629,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       const slaY = compact ? 285 : 142;
       const sla = overviewExecutiveState.sla ? [
-        { label: 'Vencidas', value: normalizeCount(overviewExecutiveState.sla.overdue), color: '#f87171' },
-        { label: 'Pr\u00f3ximas', value: normalizeCount(overviewExecutiveState.sla.due_soon), color: '#fb923c' },
-        { label: 'Dentro do SLA', value: normalizeCount(overviewExecutiveState.sla.within_sla), color: '#34d399' }
+        { label: 'Vencidas', value: normalizeCount(overviewExecutiveState.sla.overdue), color: chartPalette.red },
+        { label: 'Pr\u00f3ximas', value: normalizeCount(overviewExecutiveState.sla.due_soon), color: chartPalette.orange },
+        { label: 'Dentro do SLA', value: normalizeCount(overviewExecutiveState.sla.within_sla), color: chartPalette.green }
       ] : null;
       bandTitle('SLA OPERACIONAL', slaY, '100% dos itens com SLA', 'sla');
       const slaTotal = drawStack(sla, compact ? 350 : slaY + 15, 'Sem dados de SLA.',
@@ -9625,10 +9643,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const treatmentY = compact ? 515 : slaDivider + 26;
       bandTitle('PRIORIDADES DE TRATATIVA', treatmentY, 'Volume de itens \u00b7 escala pela maior barra', 'treatment');
       const treatment = overviewExecutiveState.treatment ? [
-        { label: 'Imediato (Now)', value: normalizeCount(overviewExecutiveState.treatment.now), color: '#ef4444' },
-        { label: 'Pr\u00f3x. 7 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_7_days), color: '#f97316' },
-        { label: 'Pr\u00f3x. 15 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_15_days), color: '#eab308' },
-        { label: 'Pr\u00f3x. 30 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_30_days), color: '#3b82f6' }
+        { label: 'Imediato (Now)', value: normalizeCount(overviewExecutiveState.treatment.now), color: chartPalette.red },
+        { label: 'Pr\u00f3x. 7 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_7_days), color: chartPalette.orange },
+        { label: 'Pr\u00f3x. 15 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_15_days), color: chartPalette.yellow },
+        { label: 'Pr\u00f3x. 30 Dias', value: normalizeCount(overviewExecutiveState.treatment.next_30_days), color: chartPalette.blue }
       ] : null;
       if (!treatment) {
         emptyMessage(compact ? 605 : treatmentY + 45, missingSourceText('treatment', 'Carregando tratativa\u2026'));
@@ -9640,15 +9658,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           const trackY = compact ? y + 13 : y;
           const trackWidth = compact ? right - left : plotWidth;
           const barHeight = compact ? 18 : 15;
-          svgText(svg, left, compact ? y : y + 12, item.label, { fill: '#a9b8ca', 'font-size': compact ? 22 : 12, 'font-weight': 600 });
-          svg.appendChild(svgNode('rect', { x: trackX, y: trackY, width: trackWidth, height: barHeight, rx: 4, fill: 'rgba(255,255,255,0.055)' }));
+          svgText(svg, left, compact ? y : y + 12, item.label, { fill: chartPalette.muted, 'font-size': compact ? 22 : 12, 'font-weight': 600 });
+          svg.appendChild(svgNode('rect', { x: trackX, y: trackY, width: trackWidth, height: barHeight, rx: 4, fill: chartPalette.track }));
           const barWidth = treatmentMax > 0 ? trackWidth * item.value / treatmentMax : 0;
           if (barWidth > 0) {
             const bar = svgNode('rect', { x: trackX, y: trackY, width: barWidth, height: barHeight, rx: 4, fill: item.color });
             addTitle(bar, `${item.label}: ${item.value} itens`);
             svg.appendChild(bar);
           }
-          svgText(svg, right, compact ? y : y + 12, item.value, { fill: '#eaf2ff', 'font-size': compact ? 22 : 12, 'font-weight': 800, 'text-anchor': 'end' });
+          svgText(svg, right, compact ? y : y + 12, item.value, { fill: chartPalette.text, 'font-size': compact ? 22 : 12, 'font-weight': 780, 'text-anchor': 'end' });
         });
       }
       const trendDivider = compact ? 805 : treatmentY + 157;
@@ -9677,8 +9695,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const yMax = Math.max(1, Math.ceil(maxTotal * 1.1));
         [0, 0.5, 1].forEach(ratio => {
           const y = chartBottom - (chartBottom - chartTop) * ratio;
-          svg.appendChild(svgNode('line', { x1: chartLeft, y1: y, x2: chartRight, y2: y, stroke: 'rgba(148,178,214,0.12)', 'stroke-width': 1 }));
-          svgText(svg, chartLeft - 8, y + (compact ? 7 : 4), Math.round(yMax * ratio), { fill: '#71839b', 'font-size': compact ? 22 : 10, 'text-anchor': 'end' });
+          svg.appendChild(svgNode('line', { x1: chartLeft, y1: y, x2: chartRight, y2: y, stroke: chartPalette.grid, 'stroke-width': 1 }));
+          svgText(svg, chartLeft - 8, y + (compact ? 7 : 4), Math.round(yMax * ratio), { fill: chartPalette.faint, 'font-size': compact ? 22 : 10, 'text-anchor': 'end' });
         });
         const step = trend.length > 1 ? (chartRight - chartLeft) / (trend.length - 1) : 0;
         const points = trend.map((point, index) => ({
@@ -9689,20 +9707,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (points.length > 1) {
           svg.appendChild(svgNode('path', {
             d: points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '),
-            fill: 'none', stroke: '#4f8cff', 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+            fill: 'none', stroke: chartPalette.cyan, 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
           }));
         }
         points.forEach((point, index) => {
-          const marker = svgNode('circle', { cx: point.x, cy: point.y, r: 3.5, fill: '#4f8cff', stroke: '#0b1626', 'stroke-width': 1.5 });
+          const marker = svgNode('circle', { cx: point.x, cy: point.y, r: 3.2, fill: chartPalette.cyan, stroke: '#07111f', 'stroke-width': 1.5 });
           addTitle(marker, `${point.date.toLocaleString()} \u00b7 Total: ${point.total}`);
           svg.appendChild(marker);
           if (index === 0 || index === points.length - 1 || (points.length > 4 && index === Math.floor(points.length / 2))) {
             svgText(svg, point.x, chartBottom + (compact ? 27 : 17), point.date.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }), {
-              fill: '#71839b', 'font-size': compact ? 22 : 10, 'text-anchor': 'middle'
+              fill: chartPalette.faint, 'font-size': compact ? 22 : 10, 'text-anchor': 'middle'
             });
           }
         });
-        svg.appendChild(svgNode('line', { x1: chartLeft, y1: chartBottom, x2: chartRight, y2: chartBottom, stroke: 'rgba(148,178,214,0.28)', 'stroke-width': 1 }));
+        svg.appendChild(svgNode('line', { x1: chartLeft, y1: chartBottom, x2: chartRight, y2: chartBottom, stroke: chartPalette.axis, 'stroke-width': 1 }));
       }
 
       container.appendChild(svg);
