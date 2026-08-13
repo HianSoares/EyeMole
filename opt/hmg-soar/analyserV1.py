@@ -6972,6 +6972,472 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       .vuln-queue-card .col-actions { justify-content: flex-start; grid-column: 1 / -1; }
     }
 
+    /* Step 4 - Assets & Exposure */
+    #tab-assets .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-assets .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-assets .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-assets .vm-strip { gap: 0.62rem; margin-bottom: 1rem; }
+    #tab-assets .vm-stat,
+    #tab-assets .risk-card,
+    #tab-assets .metric-card,
+    #tab-assets .vm-panel,
+    #tab-assets .table-container {
+      border-radius: 12px !important;
+      border-color: var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-assets .vm-panel { padding: 1rem 1.1rem !important; }
+    #tab-assets .vm-panel h4,
+    #tab-assets .table-container > div:first-child {
+      color: var(--vm-text) !important;
+      font-size: 0.86rem !important;
+      font-weight: 760 !important;
+      letter-spacing: 0 !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+      background: transparent !important;
+    }
+    #tab-assets .workqueue-card {
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(247, 163, 93, 0.055), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.68);
+      border-color: rgba(247, 163, 93, 0.22);
+    }
+    #tab-assets .workqueue-card::before {
+      width: 3px;
+      background: rgba(247, 163, 93, 0.82);
+    }
+    #tab-assets table th {
+      background: rgba(255,255,255,0.025) !important;
+      color: var(--vm-faint) !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    #tab-assets table td {
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    #tab-assets .alert-item {
+      border-radius: 12px;
+      border-color: rgba(247, 163, 93, 0.24);
+      background: rgba(247, 163, 93, 0.075);
+    }
+    #tab-assets .vm-empty,
+    #tab-assets .ep-d { color: var(--vm-faint) !important; }
+
+    /* Step 5 - Treatment & SLA */
+    #tab-sla .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-sla .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-sla .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-sla .vm-strip { gap: 0.62rem; margin-bottom: 1rem; }
+    #tab-sla .vm-stat,
+    #tab-sla .risk-card,
+    #tab-sla .metric-card,
+    #tab-sla .vm-panel,
+    #tab-sla .table-container,
+    #tab-sla .saas-list-card {
+      border-radius: 12px !important;
+      border-color: var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-sla .queue-card {
+      border-radius: 12px;
+      border-top-width: 2px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.64);
+    }
+    #tab-sla .queue-card .q-n { letter-spacing: 0; font-weight: 810; }
+    #tab-sla .queue-card .q-t,
+    #tab-sla .metric-title { color: var(--vm-muted) !important; letter-spacing: 0.04em !important; }
+    #tab-sla .sla-card-overdue {
+      border-color: rgba(241, 93, 124, 0.24) !important;
+      background: linear-gradient(180deg, rgba(241, 93, 124, 0.07), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.64) !important;
+    }
+    #tab-sla .sla-card-due-soon {
+      border-color: rgba(247, 163, 93, 0.24) !important;
+      background: linear-gradient(180deg, rgba(247, 163, 93, 0.06), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.64) !important;
+    }
+    #tab-sla .sla-card-within-sla {
+      border-color: rgba(86, 217, 159, 0.22) !important;
+      background: linear-gradient(180deg, rgba(86, 217, 159, 0.045), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.64) !important;
+    }
+    #tab-sla .hbar-track,
+    #tab-sla .sla-progress-row .spr-track {
+      height: 7px;
+      background: rgba(255,255,255,0.045);
+    }
+    #tab-sla .hbar-fill,
+    #tab-sla .sla-progress-row .spr-segment {
+      box-shadow: none;
+    }
+    #tab-sla .saas-list-card {
+      padding: 0.85rem 1rem;
+      gap: 0.85rem;
+    }
+    #tab-sla .saas-list-card .c-meta { gap: 0.38rem; }
+    #tab-sla .alert-item {
+      border-radius: 12px;
+      border-color: rgba(247, 163, 93, 0.22);
+      background: rgba(247, 163, 93, 0.065);
+    }
+    #tab-sla table th {
+      background: rgba(255,255,255,0.025) !important;
+      color: var(--vm-faint) !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    #tab-sla table td { border-bottom-color: var(--vm-stroke-soft) !important; }
+
+    /* Step 6 - Prioritization & Governance */
+    #tab-governance .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-governance .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-governance .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-governance .vm-strip { gap: 0.62rem; margin-bottom: 1rem; }
+    #tab-governance .vm-stat,
+    #tab-governance .risk-card,
+    #tab-governance .metric-card,
+    #tab-governance .vm-panel,
+    #tab-governance .table-container,
+    #governance-no-data-msg {
+      border-radius: 12px !important;
+      border-color: var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-governance .vm-stat {
+      background: linear-gradient(180deg, rgba(155, 124, 255, 0.045), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+    }
+    #tab-governance .risk-card {
+      border-left: 0 !important;
+      border-top: 2px solid rgba(155, 124, 255, 0.34) !important;
+    }
+    #tab-governance .metric-title {
+      color: var(--vm-muted) !important;
+      letter-spacing: 0.04em !important;
+    }
+    #tab-governance .metric-value {
+      color: var(--vm-text) !important;
+      letter-spacing: 0 !important;
+      font-weight: 810 !important;
+    }
+    #tab-governance .vm-panel { padding: 1rem 1.1rem !important; }
+    #tab-governance .vm-panel h4,
+    #tab-governance .table-container > div:first-child {
+      color: var(--vm-text) !important;
+      font-size: 0.86rem !important;
+      font-weight: 760 !important;
+      letter-spacing: 0 !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+      background: transparent !important;
+    }
+    #tab-governance .alert-item {
+      border-radius: 12px;
+      border-color: rgba(155, 124, 255, 0.22);
+      background: rgba(155, 124, 255, 0.065);
+    }
+    #tab-governance table th {
+      background: rgba(255,255,255,0.025) !important;
+      color: var(--vm-faint) !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    #tab-governance table td { border-bottom-color: var(--vm-stroke-soft) !important; }
+    #tab-governance .badge {
+      background-color: rgba(255,255,255,0.045);
+      border-color: var(--vm-stroke-soft);
+    }
+
+    /* Step 7 - Trends */
+    #tab-trends .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-trends .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-trends .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-trends .vm-strip { gap: 0.62rem; margin-bottom: 1rem; }
+    #tab-trends .vm-stat,
+    #tab-trends .metric-card,
+    #tab-trends .table-container,
+    #tab-trends .vm-panel,
+    #tab-trends #trend-insights > * {
+      border-radius: 12px !important;
+      border-color: var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-trends .metric-card {
+      border-left: 0 !important;
+      border-top: 2px solid rgba(120, 168, 255, 0.30) !important;
+    }
+    #tab-trends .metric-title {
+      color: var(--vm-muted) !important;
+      letter-spacing: 0.04em !important;
+    }
+    #tab-trends .metric-value {
+      color: var(--vm-text) !important;
+      letter-spacing: 0 !important;
+      font-weight: 810 !important;
+    }
+    #tab-trends .table-container > div:first-child {
+      color: var(--vm-text) !important;
+      font-size: 0.86rem !important;
+      font-weight: 760 !important;
+      letter-spacing: 0 !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+      background: transparent !important;
+    }
+    #tab-trends [id^="trend-chart-"] {
+      background: rgba(3, 7, 17, 0.18);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #tab-trends [id^="trend-chart-"] svg line {
+      stroke: rgba(155,187,220,0.10) !important;
+    }
+    #tab-trends [id^="trend-chart-"] svg path {
+      stroke-width: 2 !important;
+      filter: none !important;
+    }
+    #tab-trends [id^="trend-chart-"] svg text {
+      fill: var(--vm-faint) !important;
+      font-weight: 600 !important;
+    }
+    #tab-trends [id^="trend-chart-"] svg circle {
+      stroke: #07111f !important;
+      stroke-width: 1.4 !important;
+    }
+    #tab-trends .alert-item {
+      border-radius: 12px;
+      border-color: rgba(120, 168, 255, 0.20);
+      background: rgba(120, 168, 255, 0.055);
+    }
+    #tab-trends table th {
+      background: rgba(255,255,255,0.025) !important;
+      color: var(--vm-faint) !important;
+      border-bottom-color: var(--vm-stroke-soft) !important;
+    }
+    #tab-trends table td { border-bottom-color: var(--vm-stroke-soft) !important; }
+
+    /* Step 8 - Status & Audit */
+    #tab-status .tab-hero {
+      padding: 1.05rem 1.15rem;
+      border: 1px solid var(--vm-stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(13, 27, 47, 0.72), rgba(7, 15, 28, 0.64));
+      box-shadow: var(--vm-shadow-panel);
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-status .tab-hero h2 { letter-spacing: 0 !important; font-weight: 790 !important; }
+    #tab-status .tab-hero p { max-width: 78ch; color: var(--vm-muted) !important; }
+    #tab-status .toolbar,
+    #tab-status .metric-card,
+    #tab-status .vm-panel,
+    #tab-status .secmode {
+      border-radius: 12px !important;
+      border-color: var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.62) !important;
+      box-shadow: var(--vm-shadow-panel) !important;
+      backdrop-filter: var(--vm-blur);
+    }
+    #tab-status .secmode {
+      border-color: rgba(86, 217, 159, 0.24) !important;
+      background: linear-gradient(180deg, rgba(86, 217, 159, 0.065), rgba(255,255,255,0.01)), rgba(12, 25, 43, 0.68) !important;
+    }
+    #tab-status .secmode h4 {
+      color: #8ff0bf !important;
+      letter-spacing: 0 !important;
+    }
+    #tab-status .secmode li {
+      color: var(--vm-muted);
+      line-height: 1.45;
+    }
+    #tab-status .secmode li::before {
+      color: var(--vm-low);
+      opacity: 0.86;
+    }
+    #tab-status .metric-card {
+      border-top: 2px solid rgba(45, 226, 242, 0.28) !important;
+    }
+    #tab-status .metric-title {
+      color: var(--vm-muted) !important;
+      letter-spacing: 0.04em !important;
+    }
+    #tab-status .metric-value {
+      color: var(--vm-text) !important;
+      letter-spacing: 0 !important;
+      font-weight: 780 !important;
+    }
+    #tab-status .run-status {
+      padding: 0.32rem 0.62rem;
+      border-radius: 999px;
+      border: 1px solid var(--vm-stroke-soft);
+      background: rgba(255,255,255,0.035);
+      color: var(--vm-muted);
+      font-weight: 700;
+    }
+    #tab-status #run-disabled-msg {
+      border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid rgba(247, 163, 93, 0.22);
+      background: rgba(247, 163, 93, 0.055);
+    }
+    #tab-status .vm-timeline {
+      padding-left: 1.25rem;
+    }
+    #tab-status .vm-timeline::before {
+      left: 5px;
+      width: 1px;
+      background: rgba(155,187,220,0.16);
+    }
+    #tab-status .tl-item {
+      padding: 0.1rem 0 1rem 0.55rem;
+    }
+    #tab-status .tl-item::before {
+      left: -1.27rem;
+      top: 0.42rem;
+      width: 8px;
+      height: 8px;
+      box-shadow: 0 0 0 4px rgba(45, 226, 242, 0.08);
+    }
+    #tab-status .tl-head .tl-act { color: var(--vm-text); font-weight: 760; }
+    #tab-status .tl-meta { color: var(--vm-muted); line-height: 1.45; }
+
+    /* Step 9 - Modals */
+    .classify-overlay {
+      background: rgba(3, 7, 17, 0.78) !important;
+      backdrop-filter: blur(8px);
+      padding: 1rem;
+    }
+    .classify-modal {
+      width: min(760px, calc(100vw - 2rem));
+      max-height: calc(100vh - 2rem);
+      overflow: hidden;
+      border-radius: 14px !important;
+      border: 1px solid var(--vm-stroke) !important;
+      background: linear-gradient(180deg, rgba(15, 31, 53, 0.96), rgba(7, 15, 28, 0.96)) !important;
+      box-shadow: 0 34px 90px -34px rgba(0,0,0,0.9) !important;
+    }
+    .classify-modal-header {
+      padding: 1rem 1.1rem !important;
+      border-bottom: 1px solid var(--vm-stroke-soft) !important;
+      background: rgba(255,255,255,0.018);
+    }
+    .classify-modal-header h3 {
+      color: var(--vm-text) !important;
+      letter-spacing: 0 !important;
+      font-weight: 780 !important;
+    }
+    .classify-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px !important;
+      border: 1px solid var(--vm-stroke-soft) !important;
+      background: rgba(255,255,255,0.035) !important;
+      color: var(--vm-muted) !important;
+    }
+    .classify-close:hover {
+      color: var(--vm-text) !important;
+      border-color: rgba(45, 226, 242, 0.30) !important;
+      background: rgba(45, 226, 242, 0.075) !important;
+    }
+    .classify-modal-body {
+      padding: 1rem 1.1rem !important;
+      max-height: min(70vh, 720px);
+      overflow-y: auto;
+      background: transparent !important;
+    }
+    .classify-field {
+      border-radius: 11px;
+      border: 1px solid var(--vm-stroke-soft);
+      background: rgba(255,255,255,0.018);
+      padding: 0.72rem;
+    }
+    .classify-field label {
+      color: var(--vm-faint) !important;
+      font-size: 0.68rem !important;
+      font-weight: 760 !important;
+      letter-spacing: 0.06em !important;
+    }
+    .classify-field input,
+    .classify-field select,
+    .classify-field textarea {
+      min-height: 36px;
+      background: rgba(3, 7, 17, 0.40) !important;
+      border-color: var(--vm-stroke-soft) !important;
+    }
+    .classify-field input[readonly] {
+      color: var(--vm-muted) !important;
+      background: rgba(255,255,255,0.026) !important;
+    }
+    .classify-modal-footer {
+      padding: 0.85rem 1.1rem !important;
+      border-top: 1px solid var(--vm-stroke-soft) !important;
+      background: rgba(255,255,255,0.014) !important;
+    }
+    .classify-msg {
+      border-radius: 10px !important;
+      border-color: var(--vm-stroke) !important;
+    }
+    #guidance-modal-overlay .classify-modal {
+      max-width: 720px !important;
+    }
+    #guidance-content {
+      gap: 0.82rem !important;
+    }
+    #guidance-content .classify-field > div {
+      color: var(--vm-text) !important;
+    }
+    #guidance-meta-rationale {
+      background: rgba(3, 7, 17, 0.32) !important;
+      border-color: var(--vm-stroke-soft) !important;
+      border-radius: 10px !important;
+      color: var(--vm-muted) !important;
+    }
+    #guidance-remediation-section pre,
+    #guidance-verification-section pre {
+      min-height: 44px !important;
+      border-radius: 10px !important;
+      border-color: rgba(45, 226, 242, 0.18) !important;
+      background: rgba(3, 7, 17, 0.62) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+      line-height: 1.45;
+    }
+    #guidance-remediation-code,
+    #guidance-verification-code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      white-space: pre;
+    }
+    #guidance-copy-remediation-btn,
+    #guidance-copy-verification-btn {
+      border-radius: 8px !important;
+      background: rgba(45, 226, 242, 0.08) !important;
+      border-color: rgba(45, 226, 242, 0.22) !important;
+    }
+
     /* Panorama de Risco integrado */
     .overview-executive-card { width: 100%; margin-bottom: 1.8rem; padding: 1.05rem 1.15rem 0.95rem; background: linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.01)), var(--vm-glass); border: 1px solid var(--vm-stroke); border-radius: 14px; }
     .overview-executive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.15rem; }
