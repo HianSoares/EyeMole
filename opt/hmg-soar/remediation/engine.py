@@ -38,6 +38,7 @@ logger = logging.getLogger("hmg-soar-remediation.engine")
 # Caminhos padrão
 _DEFAULT_CONFIG_DIR = Path("/opt/hmg-soar/config")
 _DEFAULT_SNAPSHOT_PATH = Path("/var/www/wazuh-soar/data/latest.json")
+MAX_GROUPED_PACKAGES = 10
 
 
 class SnapshotCache:
@@ -382,12 +383,18 @@ class RemediationEngine:
                 assumptions=list(provider_result.assumptions),
             )
 
+        package_names = [provider_result.package_name]
+        related_package_count = 1
+        if package_manager == "apt":
+            package_names, related_package_count = self._find_related_apt_packages(provider_result)
+
         rendered = self._template_repo.render_command(
             package_manager=package_manager,
             package_name=provider_result.package_name,
             installed_version=provider_result.installed_version,
             fixed_version=fixed_version,
             generic_policy_enabled=generic_policy_enabled,
+            package_names=package_names,
         )
 
         if rendered is None:
@@ -414,6 +421,17 @@ class RemediationEngine:
 
         # 8. Sucesso: gerar GuidanceRecord com comando
         warnings = list(provider_result.warnings)
+        assumptions = list(provider_result.assumptions)
+        if package_manager == "apt" and len(package_names) > 1:
+            assumptions.append(
+                "Comando agrupado com pacotes relacionados do mesmo CVE/agente para reduzir conflito de dependências co-versionadas."
+            )
+        if package_manager == "apt" and related_package_count > len(package_names):
+            warnings.append(
+                f"Encontrados {related_package_count} pacotes relacionados ao mesmo CVE/agente; "
+                f"comando limitado aos primeiros {MAX_GROUPED_PACKAGES}. "
+                "Revise manualmente os demais pacotes afetados antes de aplicar."
+            )
         if generic_policy_enabled and fixed_version is None:
             warnings.append(
                 "Comando gerado via política genérica (sem fixed_version confirmada)."
@@ -437,8 +455,54 @@ class RemediationEngine:
             source=provider_result.source,
             confidence=confidence,
             warnings=warnings,
-            assumptions=list(provider_result.assumptions),
+            assumptions=assumptions,
         )
+
+    def _find_related_apt_packages(self, provider_result: ProviderResult) -> tuple[List[str], int]:
+        """Encontra pacotes apt relacionados ao mesmo CVE/agente."""
+        package_names = [provider_result.package_name]
+        seen = {provider_result.package_name}
+
+        data = self._snapshot_cache.get_data()
+        if not isinstance(data, dict):
+            return package_names, len(package_names)
+
+        vulnerabilities = data.get("vulnerabilities", [])
+        if not isinstance(vulnerabilities, list):
+            return package_names, len(package_names)
+
+        for vuln in vulnerabilities:
+            if not isinstance(vuln, dict):
+                continue
+            if str(vuln.get("cve", "")).strip() != provider_result.cve:
+                continue
+            if str(vuln.get("agent_id", "")).strip() != provider_result.agent_id:
+                continue
+
+            related_name = str(vuln.get("package", "")).strip()
+            if not related_name or related_name in seen:
+                continue
+            if ParameterValidator.validate_package_name(related_name) is not None:
+                continue
+
+            snapshot_os = vuln.get("operating_system")
+            related_os = self._wazuh_provider._resolve_os(
+                provider_result.agent_id,
+                str(vuln.get("agent_name", "")).strip(),
+                snapshot_os,
+            )
+            package_type = str(vuln.get("package_type", "")).strip().lower()
+            related_pm = self._wazuh_provider._resolve_package_manager(
+                operating_system=related_os,
+                package_type=package_type,
+            )
+            if related_pm != "apt":
+                continue
+
+            package_names.append(related_name)
+            seen.add(related_name)
+
+        return package_names[:MAX_GROUPED_PACKAGES], len(package_names)
 
     def _query_providers(self, finding_id: str) -> Optional[ProviderResult]:
         """Consulta providers habilitados e realiza a fusão/consenso das fontes."""

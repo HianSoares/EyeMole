@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .models import RenderedCommand
 from .validation import ParameterValidator, ValidationError
@@ -113,6 +113,7 @@ class TemplateRepository:
         installed_version: str,
         fixed_version: Optional[str],
         generic_policy_enabled: bool = False,
+        package_names: Optional[List[str]] = None,
     ) -> Optional[RenderedCommand]:
         """Renderiza comandos de correção e verificação.
 
@@ -150,6 +151,13 @@ class TemplateRepository:
             )
         if validation_err is not None:
             return None
+
+        if pm_lower == "windows":
+            grouped_package_names = [package_name]
+        else:
+            grouped_package_names = self._normalize_package_names(package_name, package_names)
+            if not grouped_package_names:
+                return None
 
         # Verificar allowlist
         if pm_lower not in self._templates:
@@ -193,10 +201,18 @@ class TemplateRepository:
         # Renderizar via substituição estrita (sem eval/exec/format arbitrário)
         try:
             rendered_remediation = self._safe_substitute(
-                remediation_tpl, package_name, installed_version, fixed_version
+                remediation_tpl,
+                package_name,
+                installed_version,
+                fixed_version,
+                grouped_package_names,
             )
             rendered_verification = self._safe_substitute(
-                verification_tpl, package_name, installed_version, fixed_version
+                verification_tpl,
+                package_name,
+                installed_version,
+                fixed_version,
+                grouped_package_names,
             )
         except (KeyError, ValueError):
             # Template malformado → fail-closed
@@ -228,11 +244,36 @@ class TemplateRepository:
         return ParameterValidator.validate_package_manager(package_manager)
 
     @staticmethod
+    def _normalize_package_names(
+        package_name: str,
+        package_names: Optional[List[str]],
+    ) -> List[str]:
+        """Normaliza e valida lista de pacotes para comandos agrupados."""
+        candidates = package_names if package_names else [package_name]
+        normalized: List[str] = []
+        seen = set()
+
+        for raw_name in candidates:
+            name = str(raw_name or "").strip()
+            if not name or name in seen:
+                continue
+
+            err = ParameterValidator.validate_package_name(name)
+            if err is not None:
+                continue
+
+            normalized.append(name)
+            seen.add(name)
+
+        return normalized
+
+    @staticmethod
     def _safe_substitute(
         template: str,
         package_name: str,
         installed_version: str,
         fixed_version: Optional[str],
+        package_names: List[str],
     ) -> str:
         """Substituição segura de parâmetros no template.
 
@@ -241,6 +282,7 @@ class TemplateRepository:
         """
         result = template
         result = result.replace("{package_name}", package_name)
+        result = result.replace("{package_names}", " ".join(package_names))
         result = result.replace("{installed_version}", installed_version)
         if fixed_version is not None:
             result = result.replace("{fixed_version}", fixed_version)

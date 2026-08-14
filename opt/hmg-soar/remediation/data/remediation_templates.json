@@ -43,13 +43,13 @@
       "package_manager": "apt",
       "os_families": ["ubuntu", "debian", "raspbian"],
       "remediation": {
-        "with_version": "sudo apt-get install --only-upgrade {package_name}={fixed_version}",
-        "generic_update": "sudo apt-get install --only-upgrade {package_name}"
+        "with_version": "sudo apt-get install --only-upgrade {package_names}",
+        "generic_update": "sudo apt-get install --only-upgrade {package_names}"
       },
       "verification": {
         "check_version": "dpkg-query -W {package_name}"
       },
-      "notes": "Requer apt-get update prévio para atualizar índices."
+      "notes": "Requer apt-get update prévio para atualizar índices. O comando não fixa versão exata: apt resolve a Candidate disponível no repositório, evitando pins obsoletos e conflitos de dependências co-versionadas."
     },
     "dnf": {
       "package_manager": "dnf",
