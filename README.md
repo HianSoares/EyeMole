@@ -298,6 +298,24 @@ As alterações passam a influenciar integralmente a priorização no próximo r
 
 ---
 
+## Atualizações do EyeMole
+
+A primeira instalação continua seguindo o passo a passo acima. O instalador
+também disponibiliza a CLI e uma consulta de atualização duas vezes ao dia.
+Quando houver uma revisão nova na `main`, o painel mostra um aviso; o código
+não é atualizado automaticamente.
+
+```bash
+eyemole version
+eyemole check-update
+sudo eyemole update
+```
+
+`update` baixa a revisão exata, verifica TLS antes de instalar, faz backup e
+reutiliza o instalador, preservando credenciais, configurações e o modo web-run.
+Instalações anteriores à CLI precisam executar o instalador desta versão uma
+vez. Detalhes e recuperação: [Atualizações](docs/UPDATES.md).
+
 ## Serviços
 
 API local:

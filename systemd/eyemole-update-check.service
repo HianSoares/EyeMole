@@ -1,0 +1,26 @@
+[Unit]
+Description=EyeMole - consultar nova versão (sem instalar)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/hmg-soar/installed-version.json
+
+[Service]
+Type=oneshot
+User=hmg-soar
+Group=www-data
+ExecStart=/usr/local/bin/eyemole check-update --write-status
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/www/wazuh-soar/data
+UMask=0022

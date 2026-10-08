@@ -233,6 +233,11 @@ Isso remove a regra PolicyKit, o marcador de estado e eventuais sudoers legados.
 
 ## Atualização do código
 
+Instalações com a CLI podem usar `eyemole check-update` e
+`sudo eyemole update`. Instalações antigas precisam instalar a CLI uma vez.
+Consulte [UPDATES.md](UPDATES.md) para avisos, preflight e recuperação.
+O procedimento manual abaixo continua disponível.
+
 ### Verificar estado do repositório
 
 ```bash
@@ -317,9 +322,10 @@ cd opt/hmg-soar && python3 -m pytest -q tests/test_installation.py tests/test_un
 > implantação no servidor Wazuh.
 
 > **TLS interno:** a validação de certificado do Indexer/API Wazuh é obrigatória.
-> Configure `HMG_INTERNAL_CA_BUNDLE` em `/etc/hmg-soar/credentials.env` (CA legível
-> pelo usuário do serviço e certificado com SAN igual a `OPENSEARCH_HOST`/
-> `WAZUH_API_HOST`) antes de atualizar o código.
+> Se a CA interna não for confiável pelo sistema, configure
+> `HMG_INTERNAL_CA_BUNDLE` em `/etc/hmg-soar/credentials.env` (CA legível
+> pelo usuário do serviço). Os certificados precisam ter SAN correspondente a
+> `OPENSEARCH_HOST`/`WAZUH_API_HOST`.
 
 ### O que verificar no diff
 

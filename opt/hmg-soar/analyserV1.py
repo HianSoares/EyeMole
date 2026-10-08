@@ -7704,9 +7704,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="meta-badge">Limiares: <strong>CVSS &gt;= <span id="cvss-limit"></span> | EPSS &gt;= <span id="epss-limit"></span>%</strong></div>
           <div class="meta-badge">API: <strong id="header-status-api">...</strong></div>
           <div class="meta-badge">Timer: <strong id="header-status-timer">...</strong></div>
+          <div class="meta-badge">Versão: <strong id="eyemole-installed-version">...</strong></div>
         </div>
       </header>
 
+      <section id="eyemole-update-notice" role="status" hidden style="padding: 1rem; margin-bottom: 1rem; border: 1px solid #eab308; border-radius: 8px; background: rgba(234,179,8,.08);">
+        <strong>Atualização do EyeMole disponível</strong>
+        <p>Nova revisão: <span id="eyemole-latest-version"></span>. No terminal do servidor, execute <code>sudo eyemole update</code>.</p>
+        <a href="https://github.com/HianSoares/EyeMole/commits/main/" target="_blank" rel="noopener noreferrer">Ver alterações no GitHub</a>
+      </section>
 
       <section class="global-filterbar" aria-label="Filtros visuais do dashboard">
         <div class="filter-field"><label for="filter-agent-ui">Fonte / Agente</label><select id="filter-agent-ui"><option value="ALL" selected>Todos os agentes</option></select></div>
@@ -10589,7 +10595,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       });
     }
 
+    async function refreshEyeMoleUpdateNotice() {
+      try {
+        const response = await fetch('/soar-api/update-status', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) return;
+        const status = await response.json();
+        const version = document.getElementById('eyemole-installed-version');
+        if (version) {
+          version.textContent = /^[0-9a-f]{40}$/.test(status.installed_commit || '') ? status.installed_commit.slice(0,7) : 'Não registrada';
+          version.title = status.state === 'check_failed' || status.state === 'stale' ? 'Verificação de atualização indisponível ou desatualizada' : 'Revisão instalada do EyeMole';
+        }
+        const notice = document.getElementById('eyemole-update-notice');
+        const available = status.state === 'available' && status.update_available === true && /^[0-9a-f]{40}$/.test(status.latest_commit || '');
+        if (notice) notice.hidden = !available;
+        const latest = document.getElementById('eyemole-latest-version');
+        if (latest && available) latest.textContent = status.latest_commit.slice(0,7);
+      } catch (error) {
+        // An unavailable local check never interrupts vulnerability views.
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
+      refreshEyeMoleUpdateNotice();
+      window.setInterval(refreshEyeMoleUpdateNotice, 60000);
       setupTabs();
       const hash = (window.location.hash || '#overview').replace('#', '');
       activateTab(hash, false);

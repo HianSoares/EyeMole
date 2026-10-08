@@ -151,6 +151,35 @@ REPORTS_DIR = WEB_DIR / "reports"
 # Auditoria
 AUDIT_DIR = Path("/var/www/wazuh-soar/data")
 AUDIT_LOG = AUDIT_DIR / "audit_actions.jsonl"
+UPDATE_STATUS_JSON = AUDIT_DIR / "update_status.json"
+
+
+def _read_update_status() -> dict:
+    """Read a bounded local result; HTTP requests never contact GitHub or install code."""
+    result = {"state": "unknown", "update_available": False,
+              "installed_commit": "", "latest_commit": "", "checked_at": ""}
+    try:
+        with UPDATE_STATUS_JSON.open("r", encoding="utf-8") as stream:
+            data = json.loads(stream.read(4097))
+        if not isinstance(data, dict):
+            return result
+        for key in ("installed_commit", "latest_commit"):
+            value = data.get(key, "")
+            if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value):
+                result[key] = value
+        state = data.get("state", "unknown")
+        if state not in {"available", "up_to_date", "check_failed", "different_history",
+                         "local_changes", "unmanaged", "install_failed", "custom_layout", "unknown"}:
+            return result
+        stamp = datetime.fromisoformat(data.get("checked_at", ""))
+        age = (datetime.now(timezone.utc) - stamp).total_seconds()
+        result["checked_at"] = stamp.isoformat()
+        result["state"] = state if 0 <= age <= 48 * 3600 else "stale"
+        result["update_available"] = (result["state"] == "available" and
+                                      bool(result["installed_commit"] and result["latest_commit"]))
+    except (OSError, ValueError, TypeError):
+        pass
+    return result
 
 # ==========================================
 # CLASSIFICAÇÃO DE ATIVOS VIA WEB (somente edição de JSON local)
@@ -663,6 +692,8 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             self._handle_health()
         elif path == "/status":
             self._handle_status()
+        elif path == "/update-status":
+            self._send_json(200, _read_update_status())
         elif path == "/audit-actions":
             self._handle_audit_actions(query_params)
         elif path == "/risk-summary":

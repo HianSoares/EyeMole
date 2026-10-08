@@ -18,7 +18,8 @@ SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TS="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="/opt/backup-eyemole-install-${TS}"
+BACKUP_DIR="${EYEMOLE_BACKUP_DIR:-/opt/backup-eyemole-install-${TS}}"
+EYEMOLE_CLI_BIN="${EYEMOLE_CLI_BIN:-/usr/local/bin/eyemole}"
 
 # ====================================================================
 # MODO DE OPERAÇÃO
@@ -137,6 +138,14 @@ mkdir -p "${BACKUP_DIR}"
 cp -a "${path}" "${BACKUP_DIR}/"
 log "Backup: ${path} -> ${BACKUP_DIR}/"
 fi
+}
+
+backup_credentials() {
+  # APP_DIR and ETC_DIR both end in hmg-soar: never merge their backups.
+  if [[ -d "${ETC_DIR}" ]]; then
+    mkdir -p "${BACKUP_DIR}/credentials"
+    cp -a "${ETC_DIR}/." "${BACKUP_DIR}/credentials/"
+  fi
 }
 
 create_user_and_dirs() {
@@ -507,7 +516,7 @@ install_systemd() {
   systemctl daemon-reload
 
   # Timer: enable e verificar
-  if [[ -f "${SYSTEMD_UNIT_DIR}/${TIMER_FILE}" ]]; then
+  if [[ -f "${SYSTEMD_UNIT_DIR}/${TIMER_FILE}" && "${EYEMOLE_DEFER_COLLECTION_TIMERS:-0}" != 1 ]]; then
     systemctl enable --now "${TIMER_FILE}"
     if ! systemctl is-active --quiet "${TIMER_FILE}"; then
       warn "Timer ${TIMER_FILE} não está ativo após enable."
@@ -520,7 +529,7 @@ install_systemd() {
   # Grype: requer instalação operacional prévia do binário em PATH do systemd
   # (preferencialmente /usr/local/bin/grype). O install.sh não instala binários
   # de terceiros.
-  if [[ -f "${SYSTEMD_UNIT_DIR}/${GRYPE_TIMER_FILE}" ]]; then
+  if [[ -f "${SYSTEMD_UNIT_DIR}/${GRYPE_TIMER_FILE}" && "${EYEMOLE_DEFER_COLLECTION_TIMERS:-0}" != 1 ]]; then
     if command -v grype >/dev/null 2>&1; then
       systemctl enable --now "${GRYPE_TIMER_FILE}"
       if ! systemctl is-active --quiet "${GRYPE_TIMER_FILE}"; then
@@ -1126,6 +1135,8 @@ final_message() {
   echo
   echo "============================================================"
   echo "EyeMole SOAR instalado."
+  echo "Versão  : eyemole version"
+  echo "Updates : eyemole check-update / sudo eyemole update"
   echo "App dir : ${APP_DIR}"
   echo "Web dir : ${WEB_DIR}"
   echo "URL     : https://<servidor>/soar/"
@@ -1160,17 +1171,44 @@ final_message() {
   echo "============================================================"
 }
 
+install_update_cli() {
+  # Keep privileged administration code root-owned, outside APP_DIR (service-owned).
+  install -o root -g root -m 0755 "${REPO_ROOT}/cli/eyemole.py" "${EYEMOLE_CLI_BIN}"
+  local unit
+  for unit in eyemole-update-check.service eyemole-update-check.timer; do
+    install -o root -g root -m 0644 "${REPO_ROOT}/systemd/${unit}" "${SYSTEMD_UNIT_DIR}/${unit}"
+  done
+  systemctl daemon-reload
+  systemctl enable --now eyemole-update-check.timer
+}
+
+record_installed_version() {
+  local -a args=(record-install "${REPO_ROOT}"
+    --state-file "${ETC_DIR}/installed-version.json"
+    --status-file "${WEB_DIR}/data/update_status.json")
+  if [[ "${APP_DIR}" != /opt/hmg-soar || "${WEB_DIR}" != /var/www/wazuh-soar ||
+        "${ETC_DIR}" != /etc/hmg-soar || "${APP_USER}" != hmg-soar ||
+        "${WEB_GROUP}" != www-data || "${SYSTEMD_UNIT_DIR}" != /etc/systemd/system ]]; then
+    args+=(--custom-layout)
+  fi
+  "${EYEMOLE_CLI_BIN}" "${args[@]}"
+  # A failed network check must not turn a successful installation into a failure.
+  systemctl start --no-block eyemole-update-check.service || warn "Verificação de updates pendente."
+}
+
 main() {
   parse_args "$@"
   need_root
 
   install_package_if_missing python3 python3
+  install_package_if_missing git git
   install_package_if_missing rsync rsync
   install_package_if_missing nginx nginx
 
   ensure_python_runtime_dependencies
 
   mkdir -p "${BACKUP_DIR}"
+  chmod 0700 "${BACKUP_DIR}"
 
   backup_path "${APP_DIR}"
   backup_path "${WEB_DIR}"
@@ -1178,6 +1216,12 @@ main() {
   backup_path "${SNIPPET_FILE}"
   backup_path "${SUDOERS_FILE}"
   backup_path "${POLKIT_RULE_FILE}"
+  backup_credentials
+  backup_path "${EYEMOLE_CLI_BIN}"
+  local unit
+  for unit in "${SERVICE_FILE}" "${TIMER_FILE}" "${GRYPE_SERVICE_FILE}" "${GRYPE_TIMER_FILE}" hmg-soar-api.service eyemole-update-check.service eyemole-update-check.timer; do
+    backup_path "${SYSTEMD_UNIT_DIR}/${unit}"
+  done
 
   create_user_and_dirs
   install_app_files
@@ -1188,12 +1232,14 @@ main() {
   configure_web_run_mode
   secure_credentials_env
   install_systemd
+  install_update_cli
   install_nginx_snippet
   inject_nginx_include
   reload_nginx
   run_report_once_if_possible
   validate_web_publication
   ensure_api_audit_dirs
+  record_installed_version
   final_message
 }
 

@@ -62,10 +62,11 @@ Garantias de consistência:
 ## Confiança TLS
 
 - **Serviços internos** (Indexer/OpenSearch e API Wazuh): validação de
-  certificado obrigatória. Configure `HMG_INTERNAL_CA_BUNDLE` em
+  certificado obrigatória. Se a CA não for confiável pelo sistema, configure `HMG_INTERNAL_CA_BUNDLE` em
   `/etc/hmg-soar/credentials.env` com a CA que assina os certificados internos.
   O arquivo precisa ser legível pelo usuário do serviço, e o certificado precisa
-  ter SAN igual a `OPENSEARCH_HOST`/`WAZUH_API_HOST`. Sem isso, a coleta falha.
+  ter SAN correspondente a `OPENSEARCH_HOST`/`WAZUH_API_HOST`. Falha de confiança
+  ou de correspondência do host impede a coleta.
 - **Fontes públicas** (CISA KEV, EPSS/FIRST): sempre validam TLS com o
   repositório de CAs padrão.
 - `HMG_INTERNAL_TLS_INSECURE=true` é um opt-in explícito de laboratório que

@@ -35,6 +35,7 @@ POLKIT_RULE_FILE="${POLKIT_RULE_FILE:-/etc/polkit-1/rules.d/49-hmg-soar.rules}"
 SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/hmg-soar-api}"
 WRAPPER_RUN_ANALYSIS="${WRAPPER_RUN_ANALYSIS:-/usr/local/sbin/hmg-soar-run-analysis}"
 WRAPPER_STATUS="${WRAPPER_STATUS:-/usr/local/sbin/hmg-soar-status}"
+EYEMOLE_CLI_BIN="${EYEMOLE_CLI_BIN:-/usr/local/bin/eyemole}"
 BACKUP_ROOT="${BACKUP_ROOT:-/opt}"
 NGINX_ROOT="${NGINX_ROOT:-/etc/nginx}"
 PRESERVE_ROOT="${PRESERVE_ROOT:-/var/lib/eyemole-preserved}"
@@ -183,6 +184,7 @@ preflight_validate() {
     assert_safe_managed_path "$SUDOERS_FILE"          "SUDOERS_FILE"
     assert_safe_managed_path "$WRAPPER_RUN_ANALYSIS"  "WRAPPER_RUN_ANALYSIS"
     assert_safe_managed_path "$WRAPPER_STATUS"        "WRAPPER_STATUS"
+    assert_safe_managed_path "$EYEMOLE_CLI_BIN"       "EYEMOLE_CLI_BIN"
     assert_safe_managed_path "$PRESERVE_ROOT"         "PRESERVE_ROOT"
     log "Preflight: all paths valid."
 }
@@ -206,6 +208,9 @@ inventory() {
         "$SUDOERS_FILE"
         "$WRAPPER_RUN_ANALYSIS"
         "$WRAPPER_STATUS"
+        "$EYEMOLE_CLI_BIN"
+        "${SYSTEMD_UNIT_DIR}/eyemole-update-check.service"
+        "${SYSTEMD_UNIT_DIR}/eyemole-update-check.timer"
     )
 
     for p in "${check_paths[@]}"; do
@@ -376,6 +381,8 @@ stop_services() {
     log "Stopping and disabling systemd services..."
 
     local -a units_ordered=(
+        "eyemole-update-check.timer"
+        "eyemole-update-check.service"
         "$REPORT_TIMER_FILE"
         "$REPORT_SERVICE_FILE"
         "$API_SERVICE_FILE"
@@ -729,6 +736,8 @@ remove_systemd_units() {
     log "Removing systemd unit files..."
 
     local -a unit_files=(
+        "${SYSTEMD_UNIT_DIR}/eyemole-update-check.service"
+        "${SYSTEMD_UNIT_DIR}/eyemole-update-check.timer"
         "${SYSTEMD_UNIT_DIR}/${API_SERVICE_FILE}"
         "${SYSTEMD_UNIT_DIR}/${REPORT_SERVICE_FILE}"
         "${SYSTEMD_UNIT_DIR}/${REPORT_TIMER_FILE}"
@@ -755,6 +764,10 @@ remove_systemd_units() {
 # Remove PolicyKit rules and legacy artifacts
 # =============================================================================
 remove_polkit_and_legacy() {
+    if [[ -f "$EYEMOLE_CLI_BIN" ]]; then
+        rm -f "$EYEMOLE_CLI_BIN"
+        ACTIONS_TAKEN+=("Removed: ${EYEMOLE_CLI_BIN}")
+    fi
     log "Removing PolicyKit rules and legacy artifacts..."
 
     # PolicyKit rule
@@ -990,7 +1003,7 @@ final_validations() {
     local issues=0
 
     # Check no stray systemd units
-    for unit in "$API_SERVICE_FILE" "$REPORT_SERVICE_FILE" "$REPORT_TIMER_FILE"; do
+    for unit in "$API_SERVICE_FILE" "$REPORT_SERVICE_FILE" "$REPORT_TIMER_FILE" eyemole-update-check.service eyemole-update-check.timer; do
         if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "$unit"; then
             warn "Systemd unit ${unit} still registered (may need reboot to clear)."
             issues=$((issues + 1))
