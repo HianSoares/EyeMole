@@ -1,0 +1,11 @@
+[Unit]
+Description=EyeMole - verificar atualizações duas vezes ao dia
+
+[Timer]
+OnCalendar=*-*-* 08,20:00:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=eyemole-update-check.service
+
+[Install]
+WantedBy=timers.target

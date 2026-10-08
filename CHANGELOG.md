@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Adicionado
+
+- CLI `eyemole version`, `eyemole check-update` e `sudo eyemole update`: revisão instalada registrada, atualização pelo SHA da main, preflight TLS, backup privado, bloqueio de concorrência e preservação do modo de operação.
+- Consulta de versão duas vezes ao dia, endpoint local somente leitura e aviso no painel. Primeira instalação continua pelo README; instalações anteriores precisam instalar a CLI uma vez.
+
 ### Corrigido
 
 - fix(installer): install default remediation configs on fresh install

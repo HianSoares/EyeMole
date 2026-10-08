@@ -531,6 +531,8 @@ class TestSystemd:
         _run_bash(script)
         order = log_file.read_text().strip().splitlines()
         assert order == [
+            "eyemole-update-check.timer",
+            "eyemole-update-check.service",
             "hmg-soar-report.timer",
             "hmg-soar-report.service",
             "hmg-soar-api.service",
