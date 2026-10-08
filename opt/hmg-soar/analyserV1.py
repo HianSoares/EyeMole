@@ -30,7 +30,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from remediation.models import VulnRecord, generate_vulnerability_key
+from remediation.models import VulnRecord, generate_vulnerability_key  # noqa: F401 (API pública legada)
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
@@ -43,8 +43,6 @@ try:
     import grp as _grp
 except ImportError:
     _grp = None  # type: ignore
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuração do Logging Estruturado
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -63,6 +61,83 @@ WAZUH_USER = os.getenv("WAZUH_API_USER", "wazuh-wui")
 
 USE_HTTPS = os.getenv("HMG_USE_HTTPS", "true").lower() != "false"
 SCHEME = "https" if USE_HTTPS else "http"
+
+# TLS dos serviços INTERNOS (Indexer/OpenSearch e API Wazuh).
+# - HMG_INTERNAL_CA_BUNDLE: caminho da CA que assina os certificados internos
+#   (ex.: /etc/wazuh-indexer/certs/root-ca.pem). O certificado precisa ter SAN
+#   correspondente ao host configurado.
+# - HMG_INTERNAL_TLS_INSECURE=true: opt-in EXPLÍCITO de laboratório que desliga a
+#   validação SOMENTE na sessão interna. Fontes públicas sempre validam TLS.
+INTERNAL_CA_BUNDLE = os.getenv("HMG_INTERNAL_CA_BUNDLE", "").strip()
+INTERNAL_TLS_INSECURE = os.getenv("HMG_INTERNAL_TLS_INSECURE", "false").strip().lower() == "true"
+
+
+def internal_tls_verify():
+    """Valor de `verify` da sessão interna: CA configurada, opt-in inseguro ou padrão."""
+    if INTERNAL_TLS_INSECURE:
+        return False
+    if INTERNAL_CA_BUNDLE:
+        if not Path(INTERNAL_CA_BUNDLE).is_file():
+            raise RuntimeError(
+                "HMG_INTERNAL_CA_BUNDLE aponta para um arquivo inexistente; "
+                "corrija a configuração de TLS interno."
+            )
+        return INTERNAL_CA_BUNDLE
+    return True
+
+
+_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
+def exposure_key_for_record(r: "VulnRecord") -> str:
+    """Chave de EXPOSIÇÃO (agente + CVE + pacote), sem versão/instalação.
+
+    Unidade de agregação de risco, SLA, delta e tendência — o mesmo formato do
+    campo "key" dos snapshots históricos, preservando a continuidade das séries.
+    Instâncias (finding_id v2: versão/tipo/arquitetura/caminho) pertencem a uma
+    exposição; a orientação de correção continua por instância.
+    """
+    return f"{r.agent_id or r.agent_name}|{r.cve}|{r.package_name or 'unknown_package'}"
+
+
+def exposure_key_for_snapshot_row(v: dict) -> str:
+    """Chave de exposição de uma linha de snapshot de risco (atual ou histórico)."""
+    return v.get("key") or (
+        f"{v.get('agent_id') or v.get('agent_name')}|{v.get('cve')}|"
+        f"{v.get('package_name') or 'unknown_package'}"
+    )
+
+
+def group_records_by_exposure(records: List["VulnRecord"]) -> Dict[str, List["VulnRecord"]]:
+    """Agrupa instâncias por exposição preservando a ordem de chegada."""
+    groups: Dict[str, List["VulnRecord"]] = {}
+    for r in records:
+        if not r.cve:
+            continue
+        groups.setdefault(exposure_key_for_record(r), []).append(r)
+    return groups
+
+
+def representative_record(group: List["VulnRecord"]) -> "VulnRecord":
+    """Instância mais severa da exposição (severidade, KEV, CVSS, EPSS) — conservador."""
+    return max(
+        group,
+        key=lambda r: (
+            _SEVERITY_RANK.get(str(r.severity or "").lower(), 0),
+            bool(r.is_kev),
+            r.cvss_score or 0.0,
+            r.epss_score or 0.0,
+        ),
+    )
+
+
+class IncompleteCollectionError(RuntimeError):
+    """Coleta paginada interrompida: o resultado parcial NÃO pode ser publicado."""
+
+    def __init__(self, message: str, expected: Optional[int], received: int) -> None:
+        super().__init__(message)
+        self.expected = expected
+        self.received = received
 
 # --- Intelligence Sources (Phase 3I.1 v2: Resilience & Cache) ---
 # KEV: primary CISA.gov official feed; fallback cisagov/kev-data (CISA-maintained GitHub mirror)
@@ -1050,22 +1125,34 @@ class AppContext:
     wazuh_token_obtained_at: Optional[float] = None
     cvss_threshold: float = DEFAULT_CVSS_THRESHOLD
     epss_threshold: float = DEFAULT_EPSS_THRESHOLD
+    # Sessão dos serviços internos (Indexer/API Wazuh)
     session: requests.Session = field(default_factory=lambda: requests.Session())
+    # Sessão das fontes públicas (CISA KEV, EPSS/FIRST): validação TLS padrão
+    public_session: requests.Session = field(default_factory=lambda: requests.Session())
     use_cache: bool = True
     timings: Dict[str, float] = field(default_factory=dict)
+    collection: Dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.session.verify = False
+        self.session.verify = internal_tls_verify()
+        if self.session.verify is False:
+            logger.warning(
+                "[TLS] HMG_INTERNAL_TLS_INSECURE=true: validação de certificado DESLIGADA "
+                "para Indexer/API Wazuh (uso restrito a laboratório)."
+            )
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        self.public_session.verify = True
         # Retry automático com backoff exponencial para resiliência em rede
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1.0,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST", "PUT"],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        self.session.mount("https://", adapter)
-        self.session.mount("http://", adapter)
+        for sess in (self.session, self.public_session):
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1.0,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["GET", "POST", "PUT"],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            sess.mount("https://", adapter)
+            sess.mount("http://", adapter)
 
     def record_timing(self, label: str, elapsed: float) -> None:
         self.timings[label] = elapsed
@@ -1253,6 +1340,7 @@ def _build_report_metadata(
         "total_unique_cves": len(unique_cves),
         "total_agents": len(unique_agents),
         "priority_counts": p_counts,
+        "collection": dict(ctx.collection) if ctx.collection else {"complete": None},
     }
 
 
@@ -1417,12 +1505,14 @@ def generate_risk_intelligence(
         latest_snapshot_path = snapshots_dir / "latest_snapshot.json"
         previous_snapshot_path = snapshots_dir / "previous_snapshot.json"
 
-        # Filtrar vulnerabilidades válidas para snapshot
+        # Filtrar vulnerabilidades válidas para snapshot.
+        # Uma linha por EXPOSIÇÃO (agente + CVE + pacote): múltiplas instalações
+        # do mesmo pacote não inflam risco, SLA, delta nem tendência. As
+        # instâncias ficam listadas em finding_ids/installed_versions.
         vulns_data = []
-        for r in records:
-            if not r.cve:
-                continue
-            key = f"{r.agent_id or r.agent_name}|{r.cve}|{r.package_name or 'unknown_package'}"
+        exposure_groups = group_records_by_exposure(records)
+        for key, group in exposure_groups.items():
+            r = representative_record(group)
             context = get_asset_context(assets_data, r.agent_id, r.agent_name)
             expo_ctx = get_exposure_context(exposure_data, r.agent_id, r.agent_name)
             open_svcs = expo_ctx.get("open_services", [])
@@ -1466,6 +1556,10 @@ def generate_risk_intelligence(
                 "risk_acceptance_expired": is_expired,
                 "risk_acceptance_valid_until": matched_rule.get("valid_until") if matched_rule else None,
                 "risk_acceptance_ticket": matched_rule.get("ticket") if matched_rule else None,
+                # Instâncias da exposição (identidade v2 usada pelo "Ver correção")
+                "instance_count": len(group),
+                "finding_ids": [g.finding_id for g in group],
+                "installed_versions": sorted({g.version for g in group if g.version}),
             })
 
         current_snapshot = {
@@ -1491,9 +1585,12 @@ def generate_risk_intelligence(
         occurrences_map = {}
         first_seen_estimated_map = {}
 
+        # Relógio de SLA por EXPOSIÇÃO (agente + CVE + pacote): instalações e
+        # versões novas da mesma exposição não reiniciam o prazo, e a mesma
+        # chave é usada pelo render_html.
         current_timestamp = current_snapshot["timestamp"]
         for v in current_snapshot["agent_vulnerabilities"]:
-            v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
+            v_key = exposure_key_for_snapshot_row(v)
             first_seen_map[v_key] = current_timestamp
             occurrences_map[v_key] = 1
             first_seen_estimated_map[v_key] = True
@@ -1511,14 +1608,13 @@ def generate_risk_intelligence(
                 if not ts:
                     continue
                 for v in data.get("agent_vulnerabilities", []):
-                    v_key = generate_vulnerability_key(v.get("cve"), v.get("agent_id"), v.get("package_name"), v.get("severity"))
-                    vuln_timestamps[v_key].append(ts)
+                    vuln_timestamps[exposure_key_for_snapshot_row(v)].append(ts)
             except Exception as e:
                 logger.warning(f"[AVISO] Falha ao ler snapshot histórico {f.name} para análise de SLA: {e}")
 
         # Atualizar mapas para as vulns correntes
         for v in current_snapshot["agent_vulnerabilities"]:
-            v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
+            v_key = exposure_key_for_snapshot_row(v)
             ts_list = vuln_timestamps.get(v_key, [])
             if ts_list:
                 ts_list.sort()
@@ -1535,7 +1631,7 @@ def generate_risk_intelligence(
 
         # Enriquecer vulnerabilidades do snapshot corrente
         for v in current_snapshot["agent_vulnerabilities"]:
-            v_key = generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"])
+            v_key = exposure_key_for_snapshot_row(v)
             f_seen = first_seen_map[v_key]
             occ_count = occurrences_map[v_key]
             est_flag = first_seen_estimated_map[v_key]
@@ -1735,10 +1831,9 @@ def generate_risk_intelligence(
             expo_counts[expo] = expo_counts.get(expo, 0) + 1
 
         # 3. Calcular Prioridades (Top 10) e Risco por Ativo
-        curr_vulns_dict = {
-            generate_vulnerability_key(v["cve"], v["agent_id"], v["package_name"], v["severity"]): v
-            for v in current_snapshot["agent_vulnerabilities"]
-        }
+        # Indexado pela chave de exposição: todas as instâncias de uma exposição
+        # compartilham o mesmo SLA/aceite (antes: chave legada com severidade).
+        curr_vulns_dict = {v["key"]: v for v in current_snapshot["agent_vulnerabilities"]}
 
         vuln_groups = defaultdict(list)
         for r in records:
@@ -1808,8 +1903,7 @@ def generate_risk_intelligence(
                     r.agent_id, r.agent_name, assets_data, exposure_data
                 )
 
-                v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
-                v_enriched = curr_vulns_dict.get(v_key, {})
+                v_enriched = curr_vulns_dict.get(exposure_key_for_record(r), {})
 
                 sla_status = v_enriched.get("sla_status", "within_sla")
                 persistent = bool(v_enriched.get("persistent", False))
@@ -1986,8 +2080,10 @@ def generate_risk_intelligence(
                 item_clean = {k: v for k, v in item_copy.items() if k != "_cvss"}
                 expired_acceptances_list.append(item_clean)
 
-        # Calcular risco cumulativo para os top ativos por risco (com SLA)
-        for r in records:
+        # Calcular risco cumulativo para os top ativos por risco (com SLA).
+        # Uma contribuição por exposição: instalações adicionais do mesmo
+        # pacote não somam o mesmo risco duas vezes.
+        for r in (representative_record(g) for g in exposure_groups.values()):
             if not r.agent_id or r.agent_id == "N/A":
                 continue
             agent_vuln_counts[r.agent_id] += 1
@@ -2015,8 +2111,7 @@ def generate_risk_intelligence(
                 r.agent_id, r.agent_name, assets_data, exposure_data
             )
 
-            v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
-            v_enriched = curr_vulns_dict.get(v_key, {})
+            v_enriched = curr_vulns_dict.get(exposure_key_for_record(r), {})
             sla_status = v_enriched.get("sla_status", "within_sla")
             persistent = bool(v_enriched.get("persistent", False))
             recurring = bool(v_enriched.get("recurring", False))
@@ -4201,7 +4296,7 @@ def get_cisa_kev(ctx: AppContext) -> Dict[str, dict]:
     # ── Nível 2: fonte primária — CISA.gov ────────────────────────────────────
     try:
         logger.info("[KEV][PRIMARY] Tentando fonte primária: CISA.gov...")
-        response = ctx.session.get(CISA_KEV_URL, timeout=REQUEST_TIMEOUT)
+        response = ctx.public_session.get(CISA_KEV_URL, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         kev_map = _parse_kev_json(response.json())
         source_used = "cisa_gov"
@@ -4218,7 +4313,7 @@ def get_cisa_kev(ctx: AppContext) -> Dict[str, dict]:
         # ── Nível 3: fallback — GitHub mirror ─────────────────────────────────
         try:
             t1 = time.time()
-            fb_response = ctx.session.get(CISA_KEV_FALLBACK_URL, timeout=REQUEST_TIMEOUT)
+            fb_response = ctx.public_session.get(CISA_KEV_FALLBACK_URL, timeout=REQUEST_TIMEOUT)
             fb_response.raise_for_status()
             kev_map = _parse_kev_json(fb_response.json())
             source_used = "github_mirror"
@@ -4299,7 +4394,7 @@ def _fetch_epss_from_api_first(ctx: AppContext, epss_threshold: float) -> Dict[s
 
     while True:
         try:
-            resp = ctx.session.get(
+            resp = ctx.public_session.get(
                 EPSS_API_URL,
                 params={"epss-gt": epss_threshold, "limit": page_size, "offset": offset},
                 timeout=REQUEST_TIMEOUT,
@@ -4388,7 +4483,7 @@ def get_epss_data(ctx: AppContext) -> Dict[str, float]:
         try:
             logger.info("[EPSS][LIVE CSV] Baixando CSV streaming do EPSS (epss.cyentia.com)...")
             t1 = time.time()
-            with ctx.session.get(EPSS_URL, stream=True, timeout=REQUEST_TIMEOUT) as response:
+            with ctx.public_session.get(EPSS_URL, stream=True, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 # Salvar o raw gz em disco para reuso futuro (nível 2)
                 if ctx.use_cache:
@@ -4609,12 +4704,29 @@ def discover_agent_ids(ctx: AppContext) -> List[str]:
     return sorted(agent_ids)
 
 
+def _hits_total(result: dict) -> Optional[int]:
+    total = (result.get("hits") or {}).get("total")
+    if isinstance(total, dict):
+        try:
+            return int(total.get("value"))
+        except (TypeError, ValueError):
+            return None
+    if isinstance(total, int):
+        return total
+    return None
+
+
 def query_indexer_vulnerabilities(ctx: AppContext, agent_ids: List[str]) -> List[dict]:
-    """Consulta vulnerabilidades no OpenSearch usando Scroll API para paginação completa."""
+    """Consulta vulnerabilidades no OpenSearch usando Scroll API para paginação completa.
+
+    Falha em qualquer página levanta IncompleteCollectionError: um resultado
+    parcial nunca é devolvido como se estivesse completo.
+    """
     t0 = time.time()
     url = f"{SCHEME}://{INDEXER_IP}:{INDEXER_PORT}/{VULN_INDEX_PATTERN}/_search?scroll={SCROLL_TIMEOUT}"
     query = {
         "size": SCROLL_PAGE_SIZE,
+        "track_total_hits": True,
         "query": {
             "terms": {
                 "agent.id": agent_ids,
@@ -4641,44 +4753,66 @@ def query_indexer_vulnerabilities(ctx: AppContext, agent_ids: List[str]) -> List
 
     result = response.json()
     scroll_id = result.get("_scroll_id")
+    expected_total = _hits_total(result)
     hits = result.get("hits", {}).get("hits", [])
     all_hits = list(hits)
 
     # Paginação via Scroll API — buscar todas as páginas
     scroll_url = f"{SCHEME}://{INDEXER_IP}:{INDEXER_PORT}/_search/scroll"
-    while len(hits) == SCROLL_PAGE_SIZE:
-        try:
-            scroll_response = ctx.session.post(
-                scroll_url,
-                json={"scroll": SCROLL_TIMEOUT, "scroll_id": scroll_id},
-                auth=(INDEXER_USER, ctx.indexer_pass),
-                timeout=REQUEST_TIMEOUT,
-            )
+    try:
+        while len(hits) == SCROLL_PAGE_SIZE:
+            try:
+                scroll_response = ctx.session.post(
+                    scroll_url,
+                    json={"scroll": SCROLL_TIMEOUT, "scroll_id": scroll_id},
+                    auth=(INDEXER_USER, ctx.indexer_pass),
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except requests.exceptions.RequestException as e:
+                raise IncompleteCollectionError(
+                    f"Erro durante paginação scroll ({type(e).__name__}).",
+                    expected_total, len(all_hits),
+                ) from e
             if scroll_response.status_code != 200:
-                logger.warning(f"Erro durante scroll: HTTP {scroll_response.status_code}. Usando resultados parciais.")
-                break
-            scroll_result = scroll_response.json()
-            scroll_id = scroll_result.get("_scroll_id")
+                raise IncompleteCollectionError(
+                    f"Erro durante scroll: HTTP {scroll_response.status_code}.",
+                    expected_total, len(all_hits),
+                )
+            try:
+                scroll_result = scroll_response.json()
+            except ValueError as e:
+                raise IncompleteCollectionError(
+                    "Resposta de scroll com JSON inválido.", expected_total, len(all_hits),
+                ) from e
+            scroll_id = scroll_result.get("_scroll_id") or scroll_id
             hits = scroll_result.get("hits", {}).get("hits", [])
             all_hits.extend(hits)
-        except (requests.exceptions.RequestException, KeyError) as e:
-            logger.warning(f"Erro durante paginação scroll: {e}. Usando resultados parciais ({len(all_hits)} registros).")
-            break
+    finally:
+        # Limpar o scroll context no servidor (também em caso de falha)
+        if scroll_id:
+            try:
+                ctx.session.delete(
+                    scroll_url,
+                    json={"scroll_id": scroll_id},
+                    auth=(INDEXER_USER, ctx.indexer_pass),
+                    timeout=10,
+                )
+            except requests.exceptions.RequestException:
+                pass  # Não-crítico: o scroll expira automaticamente
 
-    # Limpar o scroll context no servidor
-    if scroll_id:
-        try:
-            ctx.session.delete(
-                scroll_url,
-                json={"scroll_id": scroll_id},
-                auth=(INDEXER_USER, ctx.indexer_pass),
-                timeout=10,
-            )
-        except requests.exceptions.RequestException:
-            pass  # Não-crítico: o scroll expira automaticamente
+    if expected_total is not None and len(all_hits) < expected_total:
+        raise IncompleteCollectionError(
+            f"Coleta incompleta: {len(all_hits)} de {expected_total} registros recebidos.",
+            expected_total, len(all_hits),
+        )
 
     elapsed = time.time() - t0
     ctx.record_timing("indexer_query", elapsed)
+    ctx.collection = {
+        "complete": True,
+        "expected": expected_total if expected_total is not None else len(all_hits),
+        "received": len(all_hits),
+    }
 
     if len(all_hits) >= 50000:
         logger.warning(f"{YELLOW}[AVISO] Consulta retornou {len(all_hits)} registros. Considere filtrar por agentes específicos.{RESET}")
@@ -4704,6 +4838,8 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
     package_name = str(pkg.get("name") or vuln.get("category") or "Sistema Operacional").strip()
     version = str(pkg.get("version") or "N/A").strip()
     package_type = str(pkg.get("type") or "").strip().lower()
+    package_architecture = str(pkg.get("architecture") or "").strip()
+    package_path = str(pkg.get("path") or "").strip()
     severity = str(vuln.get("severity") or "N/A").strip()
     scanner = vuln.get("scanner", {}) or {}
     scanner_condition = ""
@@ -4768,6 +4904,8 @@ def extract_record(hit: dict, cisa_kev: Dict[str, dict], epss_data: Dict[str, fl
         os_version=os_version,
         package_type=package_type,
         scanner_condition=scanner_condition,
+        package_architecture=package_architecture,
+        package_path=package_path,
     )
 
 
@@ -4795,7 +4933,7 @@ def analyze_vulnerabilities(
     epss_data: Dict[str, float],
 ) -> List[VulnRecord]:
     records: List[VulnRecord] = []
-    seen_cves: Dict[Tuple[str, str], Set[str]] = {}  # (agent_id, package) -> set of CVEs já vistos
+    seen_instances: Set[str] = set()  # identidade da instância (finding_id v2)
     duplicates_skipped = 0
 
     for hit in hits:
@@ -4803,14 +4941,14 @@ def analyze_vulnerabilities(
         if not record:
             continue
 
-        # Deduplicação: mesmo CVE + agente + pacote = duplicado
-        dedup_key = (record.agent_id, record.package_name)
-        if dedup_key not in seen_cves:
-            seen_cves[dedup_key] = set()
-        if record.cve in seen_cves[dedup_key]:
+        # Deduplicação por instância: mesmo CVE + agente + pacote + versão +
+        # tipo + arquitetura + caminho. Versões/instalações diferentes do mesmo
+        # pacote são achados distintos e não podem ser descartadas.
+        instance_id = record.finding_id
+        if instance_id in seen_instances:
             duplicates_skipped += 1
             continue
-        seen_cves[dedup_key].add(record.cve)
+        seen_instances.add(instance_id)
 
         record.priority = classify_priority(record, ctx.cvss_threshold, ctx.epss_threshold)
         records.append(record)
@@ -5223,18 +5361,18 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
 
     current_timestamp = metadata["generated_at"]
 
-    # Mapear first_seen e occurrences por chave única
+    # Mapear first_seen e occurrences por EXPOSIÇÃO (mesma unidade do snapshot
+    # de risco): todas as instâncias de uma exposição compartilham o relógio de
+    # SLA. Snapshots históricos têm o campo "key" no mesmo formato.
     first_seen_map = {}
     occurrences_map = {}
     first_seen_estimated_map = {}
+    exposure_groups = group_records_by_exposure(records)
 
-    for r in records:
-        if not r.cve:
-            continue
-        v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
-        first_seen_map[v_key] = current_timestamp
-        occurrences_map[v_key] = 1
-        first_seen_estimated_map[v_key] = True
+    for e_key in exposure_groups:
+        first_seen_map[e_key] = current_timestamp
+        occurrences_map[e_key] = 1
+        first_seen_estimated_map[e_key] = True
 
     if snapshots_dir.exists():
         snapshot_files = sorted(snapshots_dir.glob("snapshot_*.json"))
@@ -5249,23 +5387,19 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
                 if not ts:
                     continue
                 for v in data.get("agent_vulnerabilities", []):
-                    v_key = generate_vulnerability_key(v.get("cve"), v.get("agent_id"), v.get("package_name"), v.get("severity"))
-                    vuln_timestamps[v_key].append(ts)
+                    vuln_timestamps[exposure_key_for_snapshot_row(v)].append(ts)
             except Exception:
                 pass
 
-        for r in records:
-            if not r.cve:
-                continue
-            v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
-            ts_list = vuln_timestamps.get(v_key, [])
+        for e_key in exposure_groups:
+            ts_list = vuln_timestamps.get(e_key, [])
             if ts_list:
                 ts_list.sort()
-                first_seen_map[v_key] = ts_list[0]
-                first_seen_estimated_map[v_key] = (ts_list[0] == current_timestamp)
+                first_seen_map[e_key] = ts_list[0]
+                first_seen_estimated_map[e_key] = (ts_list[0] == current_timestamp)
                 unique_ts = set(ts_list)
                 unique_ts.add(current_timestamp)
-                occurrences_map[v_key] = len(unique_ts)
+                occurrences_map[e_key] = len(unique_ts)
 
     near_due_threshold = sla_policy.get("near_due_threshold_days", 5)
     persistent_threshold = sla_policy.get("persistent_threshold_days", 30)
@@ -5279,10 +5413,10 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
         open_svcs = expo_context.get("open_services", [])
         top_svcs = [f"{s.get('service')}/{s.get('exposure')}" for s in open_svcs if s.get('service') and s.get('exposure')]
 
-        v_key = generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity)
-        f_seen = first_seen_map.get(v_key, current_timestamp)
-        occ_count = occurrences_map.get(v_key, 1)
-        est_flag = first_seen_estimated_map.get(v_key, True)
+        e_key = exposure_key_for_record(r)
+        f_seen = first_seen_map.get(e_key, current_timestamp)
+        occ_count = occurrences_map.get(e_key, 1)
+        est_flag = first_seen_estimated_map.get(e_key, True)
 
         age_days = calculate_days_difference(f_seen, current_timestamp, business_days)
         if age_days < 0:
@@ -5303,7 +5437,9 @@ def render_html(ctx: AppContext, records: List[VulnRecord], agent_ids: List[str]
         recurring = (occ_count >= recurring_threshold)
 
         vuln_list.append({
-            "finding_id": generate_vulnerability_key(r.cve, r.agent_id, r.package_name, r.severity),
+            "finding_id": r.finding_id,
+            "exposure_key": e_key,
+            "exposure_instance_count": len(exposure_groups.get(e_key, [r])),
             "agent_id": r.agent_id,
             "agent_name": r.agent_name,
             "cve": r.cve,
@@ -5515,7 +5651,15 @@ def main() -> int:
     print(f"[+] EPSS filtrado carregado: {len(epss_dict)} CVEs ativos.")
 
     print("[*] Consultando OpenSearch/Wazuh Indexer (com paginação scroll)...")
-    hits = query_indexer_vulnerabilities(ctx, agent_ids)
+    try:
+        hits = query_indexer_vulnerabilities(ctx, agent_ids)
+    except IncompleteCollectionError as e:
+        # Preserva o último snapshot completo: nada é gerado nem publicado.
+        logger.error(
+            f"[ERRO] {e} Recebidos={e.received} Esperados={e.expected if e.expected is not None else 'desconhecido'}. "
+            "Relatórios e snapshot web NÃO foram atualizados; o último resultado completo foi preservado."
+        )
+        return 2
     print(f"[+] Consulta concluída. Registros brutos processados: {len(hits)}")
 
     records = analyze_vulnerabilities(ctx, hits, cisa_kev_data, epss_dict)
@@ -7433,6 +7577,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       white-space: pre;
     }
+    .guidance-block-text {
+      font-size: 0.82rem; line-height: 1.45; color: var(--text-muted);
+      background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+      padding: 0.75rem; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .guidance-list { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); }
+    .guidance-list li { margin: 0.15rem 0; overflow-wrap: anywhere; }
+    .guidance-list a { color: var(--eyemole-cyan); }
+    .guidance-section-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .guidance-diag-item { display: flex; flex-direction: column; gap: 0.3rem; }
+    .guidance-diag-row { position: relative; }
+    .guidance-diag-code {
+      background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
+      padding: 0.6rem 5rem 0.6rem 0.75rem; margin: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.76rem; color: #c4b5fd; white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .guidance-diag-copy { position: absolute; right: 0.4rem; top: 0.4rem; padding: 0.25rem 0.55rem; font-size: 0.7rem; }
     #guidance-copy-remediation-btn,
     #guidance-copy-verification-btn {
       border-radius: 8px !important;
@@ -9468,6 +9629,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     const rawData = {{VULN_DATA}};
+
+    // rawData tem uma linha por INSTÂNCIA (versão/instalação) — é a unidade da
+    // tabela e do "Ver correção". Indicadores agregados (risco, contagens,
+    // ativos, comparação com a API) usam EXPOSIÇÕES (agente + CVE + pacote),
+    // a mesma unidade dos snapshots de risco, SLA e tendência.
+    function exposureKeyOf(v) {
+      if (v && typeof v.exposure_key === 'string' && v.exposure_key) return v.exposure_key;
+      const agent = String((v && (v.agent_id || v.agent_name)) || '');
+      return agent + '|' + String((v && v.cve) || '') + '|' + String((v && v.package) || 'unknown_package');
+    }
+    function dedupeExposures(rows) {
+      const seen = new Set();
+      const out = [];
+      (Array.isArray(rows) ? rows : []).forEach(v => {
+        if (!v) return;
+        const k = exposureKeyOf(v);
+        if (seen.has(k)) return;
+        seen.add(k);
+        out.push(v);
+      });
+      return out;
+    }
+    const exposureData = dedupeExposures(rawData);
     const scanMeta = { genTime: "{{GEN_TIME}}", cvssThresh: {{CVSS_THRESH}}, epssThresh: {{EPSS_THRESH}} };
 
     // ======================================================================
@@ -9477,8 +9661,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // ======================================================================
     function renderCommandCenter() {
       try {
-        const data = Array.isArray(rawData) ? rawData : [];
-        // "findings" = ocorrências (CVE x agente x pacote x severidade).
+        const data = exposureData;
+        // "findings" = exposições (CVE x agente x pacote); instalações extras do
+        // mesmo pacote não inflam o score.
         const findings = data.length;
         const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
         let crit = 0, high = 0, kev = 0, epss = 0, exposedFindings = 0, critAssetFindings = 0, slaRisk = 0;
@@ -9593,7 +9778,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const map = {};
       const critRank = { unknown: 0, low: 1, medium: 2, high: 3, critical: 4 };
       const expoRank = { unknown: 0, internal: 1, dmz: 2, internet: 3 };
-      (Array.isArray(rawData) ? rawData : []).forEach(v => {
+      exposureData.forEach(v => {
         if (!v) return;
         const id = v.agent_id || v.agent_name || 'unknown';
         if (!map[id]) map[id] = { id, host: v.agent_name || id, crit: 'unknown', expo: 'unknown', env: (v.environment || 'unknown'), tech: (v.technical_owner || ''), biz: (v.business_owner || ''), critsvc: !!v.is_critical_service, cls: (v.classification_status || ''), vulns: 0, score: 0 };
@@ -9618,7 +9803,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // Popula todos os novos componentes das abas internas (somente leitura de rawData).
     function renderTabsExtras() {
       try {
-        const data = Array.isArray(rawData) ? rawData : [];
+        const data = exposureData;
         const total = data.length;
         const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
         const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -9913,7 +10098,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const el = safeGetEl('source-divergence');
       if (!el) return;
 
-      const localTotal = Array.isArray(rawData) ? rawData.length : null;
+      // A API conta exposições; compara na mesma unidade.
+      const localTotal = Array.isArray(rawData) ? exposureData.length : null;
       const apiNum = Number(apiTotal);
 
       if (localTotal == null || !Number.isFinite(apiNum)) {
@@ -10523,13 +10709,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (el) el.textContent = val;
       };
 
-      const total = filteredRows.length;
+      // Métricas por exposição; a tabela continua listando cada instalação.
+      const exposureRows = dedupeExposures(filteredRows);
+      const total = exposureRows.length;
       const th = (scanMeta && scanMeta.epssThresh != null) ? Number(scanMeta.epssThresh) : 0.2;
 
       let crit = 0, high = 0, kev = 0, epss = 0;
       let p1plus = 0, p1 = 0, p2 = 0, p3 = 0, p4 = 0;
 
-      filteredRows.forEach(v => {
+      exposureRows.forEach(v => {
         const sev = String(v.severity || '').toLowerCase();
         if (sev === 'critical') crit++;
         else if (sev === 'high') high++;
@@ -14470,6 +14658,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById('guidance-remediation-section').style.display = 'none';
         document.getElementById('guidance-verification-section').style.display = 'none';
         document.getElementById('guidance-content').style.display = 'none';
+        resetGuidanceExtras();
 
         const msgBox = document.getElementById('guidance-message-box');
         msgBox.style.display = 'none';
@@ -14502,6 +14691,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         if (resp.status === 404) {
           showGuidanceError('Orientação expirada ou achado indisponível.', 'error');
+          return;
+        }
+        if (resp.status === 409) {
+          let detail = '';
+          try {
+            const body = await resp.json();
+            if (thisRequestId !== activeGuidanceRequestId) return;
+            detail = [body && body.reason, body && body.recommendation].filter(v => typeof v === 'string' && v).join(' ');
+          } catch (e) {}
+          showGuidanceError(detail || 'Identificador ambíguo: mais de uma instância corresponde a este achado.', 'warning');
           return;
         }
         if (resp.status === 429) {
@@ -14608,8 +14807,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const isStatusSuccess = record.status === 'success';
       const isConfidenceSufficient = conf === 'high' || conf === 'medium';
       const hasCommand = typeof record.command === 'string' && record.command.trim().length > 0;
+      // Contrato v2: guidance_kind separa texto de comando. Registro v1 (sem o
+      // campo) é tratado como comando apenas quando status/command o permitem.
+      const guidanceKind = typeof record.guidance_kind === 'string'
+        ? record.guidance_kind
+        : (isStatusSuccess && hasCommand ? 'command' : 'textual');
+      renderGuidanceExtras(record, guidanceKind);
 
-      if (isStatusSuccess && isConfidenceSufficient && hasCommand) {
+      if (isStatusSuccess && isConfidenceSufficient && hasCommand && guidanceKind === 'command') {
         document.getElementById('guidance-remediation-code').textContent = record.command.trim();
         document.getElementById('guidance-remediation-section').style.display = 'flex';
 
@@ -14626,6 +14831,153 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         const reason = record.reason || 'Orientação textual disponível. Consulte o canal oficial do fornecedor.';
         showGuidanceError(reason, 'info');
+      }
+    }
+
+    const GUIDANCE_KIND_LABELS = {
+      command: 'Comando validado',
+      textual: 'Orientação textual (sem comando de instalação)',
+      none: 'Sem orientação aplicável'
+    };
+    const GUIDANCE_REBOOT_LABELS = {
+      yes: 'Necessário', no: 'Não necessário', maybe: 'Possível (confirmar)', unknown: 'Desconhecido'
+    };
+    const GUIDANCE_MISSING_LABELS = {
+      architecture: 'Arquitetura do sistema',
+      approved_update_channel: 'Canal de atualização aprovado',
+      pending_reboot_state: 'Estado de reinício pendente',
+      installed_updates_inventory: 'Inventário de atualizações instaladas',
+      affected_component_state: 'Estado do componente afetado (ex.: papel WSUS)',
+      vendor_fix_evidence: 'Evidência oficial do fabricante para a correção'
+    };
+    const GUIDANCE_EXTRA_SECTIONS = [
+      'guidance-text-section', 'guidance-recommendation-section', 'guidance-steps-section',
+      'guidance-diagnostics-section', 'guidance-prerequisites-section', 'guidance-warnings-section',
+      'guidance-assumptions-section', 'guidance-missing-section', 'guidance-sources-section'
+    ];
+    const GUIDANCE_EXTRA_CONTAINERS = [
+      'guidance-text', 'guidance-recommendation', 'guidance-verification-steps', 'guidance-expected-result',
+      'guidance-diagnostics-list', 'guidance-prerequisites', 'guidance-warnings', 'guidance-assumptions',
+      'guidance-missing', 'guidance-sources', 'guidance-meta-kind', 'guidance-meta-reboot'
+    ];
+
+    function resetGuidanceExtras() {
+      GUIDANCE_EXTRA_SECTIONS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      GUIDANCE_EXTRA_CONTAINERS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.replaceChildren();
+      });
+    }
+
+    function guidanceStringList(value) {
+      if (!Array.isArray(value)) return [];
+      return value.filter(v => typeof v === 'string' && v.trim().length > 0);
+    }
+
+    function fillGuidanceList(sectionId, listId, items, display) {
+      const section = document.getElementById(sectionId);
+      const list = document.getElementById(listId);
+      if (!section || !list) return;
+      list.replaceChildren();
+      if (!items.length) {
+        section.style.display = 'none';
+        return;
+      }
+      items.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+      });
+      section.style.display = display || 'block';
+    }
+
+    function renderGuidanceExtras(record, guidanceKind) {
+      resetGuidanceExtras();
+      document.getElementById('guidance-meta-kind').textContent = GUIDANCE_KIND_LABELS[guidanceKind] || guidanceKind || 'N/D';
+      const reboot = typeof record.reboot_required === 'string' ? record.reboot_required : 'unknown';
+      document.getElementById('guidance-meta-reboot').textContent = GUIDANCE_REBOOT_LABELS[reboot] || 'Desconhecido';
+
+      if (typeof record.guidance_text === 'string' && record.guidance_text.trim()) {
+        document.getElementById('guidance-text').textContent = record.guidance_text.trim();
+        document.getElementById('guidance-text-section').style.display = 'block';
+      }
+      if (typeof record.recommendation === 'string' && record.recommendation.trim()) {
+        document.getElementById('guidance-recommendation').textContent = record.recommendation.trim();
+        document.getElementById('guidance-recommendation-section').style.display = 'block';
+      }
+
+      const steps = guidanceStringList(record.verification_steps);
+      fillGuidanceList('guidance-steps-section', 'guidance-verification-steps', steps);
+      if (typeof record.expected_result === 'string' && record.expected_result.trim()) {
+        document.getElementById('guidance-expected-result').textContent = 'Resultado esperado: ' + record.expected_result.trim();
+        document.getElementById('guidance-steps-section').style.display = 'block';
+      }
+
+      const diagnostics = Array.isArray(record.diagnostics) ? record.diagnostics : [];
+      const diagList = document.getElementById('guidance-diagnostics-list');
+      diagnostics.forEach((diag, index) => {
+        if (!diag || typeof diag.script !== 'string' || !diag.script.trim()) return;
+        const item = document.createElement('div');
+        item.className = 'guidance-diag-item';
+        const label = document.createElement('div');
+        label.style.fontSize = '0.76rem';
+        label.style.color = 'var(--text-muted)';
+        label.textContent = (typeof diag.label === 'string' && diag.label ? diag.label : 'Diagnóstico') +
+          (typeof diag.shell === 'string' && diag.shell ? ' (' + diag.shell + ')' : '');
+        const row = document.createElement('div');
+        row.className = 'guidance-diag-row';
+        const pre = document.createElement('pre');
+        pre.className = 'guidance-diag-code';
+        const code = document.createElement('code');
+        code.textContent = diag.script.trim();
+        pre.appendChild(code);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn guidance-diag-copy';
+        btn.textContent = '📋 Copiar';
+        btn.setAttribute('aria-label', 'Copiar diagnóstico somente leitura');
+        btn.addEventListener('click', () => copyGuidanceCommand('diagnostic', btn, index));
+        row.appendChild(pre);
+        row.appendChild(btn);
+        item.appendChild(label);
+        item.appendChild(row);
+        diagList.appendChild(item);
+      });
+      if (diagList.childElementCount > 0) {
+        document.getElementById('guidance-diagnostics-section').style.display = 'flex';
+      }
+
+      fillGuidanceList('guidance-prerequisites-section', 'guidance-prerequisites', guidanceStringList(record.prerequisites));
+      fillGuidanceList('guidance-warnings-section', 'guidance-warnings', guidanceStringList(record.warnings));
+      fillGuidanceList('guidance-assumptions-section', 'guidance-assumptions', guidanceStringList(record.assumptions));
+      fillGuidanceList(
+        'guidance-missing-section', 'guidance-missing',
+        guidanceStringList(record.missing_context).map(key => GUIDANCE_MISSING_LABELS[key] || key)
+      );
+
+      const sources = Array.isArray(record.sources) ? record.sources : [];
+      const sourceList = document.getElementById('guidance-sources');
+      sources.forEach(src => {
+        if (!src || typeof src.label !== 'string' || !src.label) return;
+        const li = document.createElement('li');
+        const url = typeof src.url === 'string' ? src.url : '';
+        if (url.startsWith('https://')) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.textContent = src.label;
+          li.appendChild(a);
+        } else {
+          li.textContent = src.label + (src.kind === 'lookup_required' ? ' (consulta necessária)' : '');
+        }
+        sourceList.appendChild(li);
+      });
+      if (sourceList.childElementCount > 0) {
+        document.getElementById('guidance-sources-section').style.display = 'block';
       }
     }
 
@@ -14672,7 +15024,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       guidanceModalTriggerBtn = null;
     }
 
-    async function copyGuidanceCommand(type, btn) {
+    async function copyGuidanceCommand(type, btn, index) {
       if (!activeGuidanceRecord || !activeGuidanceRecord.guidance_id) {
         return;
       }
@@ -14682,6 +15034,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         textToCopy = activeGuidanceRecord.command;
       } else if (type === 'verification') {
         textToCopy = activeGuidanceRecord.verification_command;
+      } else if (type === 'diagnostic') {
+        const diags = Array.isArray(activeGuidanceRecord.diagnostics) ? activeGuidanceRecord.diagnostics : [];
+        const diag = Number.isInteger(index) ? diags[index] : null;
+        textToCopy = diag && typeof diag.script === 'string' ? diag.script : '';
       }
 
       if (!textToCopy || textToCopy.trim().length === 0) {
@@ -14811,12 +15167,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <label>Versão Corrigida</label>
               <div id="guidance-meta-fixed" style="font-size: 0.85rem; color: var(--text-muted);">N/D</div>
             </div>
+            <div class="classify-field">
+              <label>Tipo de Orientação</label>
+              <div id="guidance-meta-kind" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+            </div>
+            <div class="classify-field">
+              <label>Reinício</label>
+              <div id="guidance-meta-reboot" style="font-size: 0.85rem; color: var(--text-muted);"></div>
+            </div>
           </div>
 
-          <!-- Rationale -->
+          <!-- Orientação textual (nunca copiada como comando) -->
+          <div id="guidance-text-section" class="classify-field" style="display: none;">
+            <label>Orientação</label>
+            <div id="guidance-text" class="guidance-block-text"></div>
+          </div>
+
+          <!-- Justificativa -->
           <div class="classify-field" style="margin-top: 0.5rem;">
-            <label>Análise / Rationale</label>
-            <div id="guidance-meta-rationale" style="font-size: 0.82rem; line-height: 1.4; color: var(--text-muted); background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; max-height: 150px; overflow-y: auto;"></div>
+            <label>Justificativa</label>
+            <div id="guidance-meta-rationale" class="guidance-block-text" style="max-height: 220px; overflow-y: auto;"></div>
+          </div>
+
+          <div id="guidance-recommendation-section" class="classify-field" style="display: none;">
+            <label>Recomendação</label>
+            <div id="guidance-recommendation" class="guidance-block-text"></div>
           </div>
 
           <!-- Permanent Disclaimer -->
@@ -14827,7 +15202,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
           <!-- Remediation Command Section -->
           <div id="guidance-remediation-section" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
-            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;">Comando de Correção</label>
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em;">Comando de Instalação Validado</label>
             <div style="position: relative;">
               <pre style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem 5rem 0.75rem 0.75rem; overflow-x: auto; margin: 0; font-family: monospace; font-size: 0.8rem; color: #38bdf8; min-height: 38px; display: flex; align-items: center;"><code id="guidance-remediation-code"></code></pre>
               <button type="button" class="btn" id="guidance-copy-remediation-btn" style="position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); padding: 0.3rem 0.6rem; font-size: 0.72rem; display: flex; align-items: center; gap: 0.25rem;" aria-label="Copiar comando de remediação">📋 Copiar</button>
@@ -14841,6 +15216,40 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <pre style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem 5rem 0.75rem 0.75rem; overflow-x: auto; margin: 0; font-family: monospace; font-size: 0.8rem; color: #34d399; min-height: 38px; display: flex; align-items: center;"><code id="guidance-verification-code"></code></pre>
               <button type="button" class="btn" id="guidance-copy-verification-btn" style="position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); padding: 0.3rem 0.6rem; font-size: 0.72rem; display: flex; align-items: center; gap: 0.25rem;" aria-label="Copiar comando de verificação">📋 Copiar</button>
             </div>
+          </div>
+
+          <!-- Verificação pós-aplicação -->
+          <div id="guidance-steps-section" class="classify-field" style="display: none;">
+            <label>Como verificar</label>
+            <ol id="guidance-verification-steps" class="guidance-list"></ol>
+            <div id="guidance-expected-result" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.3rem;"></div>
+          </div>
+
+          <!-- Diagnósticos somente leitura -->
+          <div id="guidance-diagnostics-section" style="display: none; flex-direction: column; gap: 0.5rem;">
+            <label class="guidance-section-label">Diagnósticos (somente leitura)</label>
+            <div id="guidance-diagnostics-list" style="display: flex; flex-direction: column; gap: 0.6rem;"></div>
+          </div>
+
+          <div id="guidance-prerequisites-section" class="classify-field" style="display: none;">
+            <label>Pré-requisitos</label>
+            <ul id="guidance-prerequisites" class="guidance-list"></ul>
+          </div>
+          <div id="guidance-warnings-section" class="classify-field" style="display: none;">
+            <label>Avisos</label>
+            <ul id="guidance-warnings" class="guidance-list"></ul>
+          </div>
+          <div id="guidance-assumptions-section" class="classify-field" style="display: none;">
+            <label>Premissas</label>
+            <ul id="guidance-assumptions" class="guidance-list"></ul>
+          </div>
+          <div id="guidance-missing-section" class="classify-field" style="display: none;">
+            <label>Dados faltantes</label>
+            <ul id="guidance-missing" class="guidance-list"></ul>
+          </div>
+          <div id="guidance-sources-section" class="classify-field" style="display: none;">
+            <label>Fontes</label>
+            <ul id="guidance-sources" class="guidance-list"></ul>
           </div>
         </div>
       </div>

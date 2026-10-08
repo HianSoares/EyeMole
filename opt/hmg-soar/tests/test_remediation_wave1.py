@@ -708,7 +708,8 @@ class TestInvalidSnapshot:
         )
         record = eng.generate_guidance("a" * 64)
         assert record.command is None
-        assert record.status in ("not_found", "internal_error")
+        # Snapshot inválido = fonte indisponível (HTTP 503), não "achado inexistente".
+        assert record.status == "provider_unavailable"
 
 
 # ==========================================================================

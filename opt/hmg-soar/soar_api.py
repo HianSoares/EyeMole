@@ -37,10 +37,21 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse, parse_qs, unquote
 
+# Logging — configurado ANTES de qualquer import opcional, para que o fallback
+# de import possa registrar a falha sem derrubar o módulo inteiro.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger("hmg-soar-api")
+
 # Remediation Guidance (Wave 2) — importações lazy para isolamento de erros
 _remediation_engine = None
 _guidance_cache = None
 
+# Sem rate limiter, os endpoints que dependem dele respondem 503 (indisponibilidade
+# controlada) em vez de operar sem limite. Os demais endpoints não são afetados.
 try:
     from remediation.rate_limiter import SlidingWindowLog
     _guidance_rate_limiter = SlidingWindowLog(max_tokens=60, window_seconds=60)
@@ -94,6 +105,8 @@ def _init_remediation_module() -> bool:
                 snapshot_path=LATEST_JSON,
                 ttl_seconds=21600,  # 6 hours
                 max_entries=10000,
+                # Grype, contexto, políticas, templates e evidências também invalidam
+                dependency_paths=_remediation_engine.dependency_paths,
             )
             _init_state = "ready"
             logger.info("Módulo de remediação inicializado com sucesso.")
@@ -182,14 +195,6 @@ PUBLIC_AGENT_FIELDS = (
 
 # Lock para evitar execuções concorrentes via API
 _run_lock = Lock()
-
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger("hmg-soar-api")
 
 
 # ==========================================
@@ -1252,7 +1257,10 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             return
 
         rate_key = f"sbom:{agent_id}:{client_ip}"
-        if _sbom_rate_limiter is not None and not _sbom_rate_limiter.is_allowed(rate_key):
+        if _sbom_rate_limiter is None:
+            fail(503, "Serviço temporariamente indisponível.")
+            return
+        if not _sbom_rate_limiter.is_allowed(rate_key):
             retry_after = _sbom_rate_limiter.get_retry_after(rate_key)
             self._send_json(429, {
                 "status": "error",
@@ -1476,15 +1484,20 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # 4. Rate limit
-        if _guidance_rate_limiter is not None:
-            if not _guidance_rate_limiter.is_allowed(remote_user):
-                retry_after = _guidance_rate_limiter.get_retry_after(remote_user)
-                self._send_guidance_json(429, {
-                    "error": "Limite de requisições excedido",
-                    "retry_after": retry_after,
-                }, extra_headers={"Retry-After": str(retry_after)})
-                return
+        # 4. Rate limit (sem limiter → indisponibilidade controlada)
+        if _guidance_rate_limiter is None:
+            self._send_guidance_json(503, {
+                "error": "Serviço temporariamente indisponível",
+                "retry_after": 30,
+            })
+            return
+        if not _guidance_rate_limiter.is_allowed(remote_user):
+            retry_after = _guidance_rate_limiter.get_retry_after(remote_user)
+            self._send_guidance_json(429, {
+                "error": "Limite de requisições excedido",
+                "retry_after": retry_after,
+            }, extra_headers={"Retry-After": str(retry_after)})
+            return
 
         # 5. Rejeição de query string
         if parsed_url.query:
@@ -1526,6 +1539,9 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         # 9. Cache ou engine
         record = _guidance_cache.get_by_finding_id(finding_id)
         if record is None:
+            # Assinatura capturada ANTES da geração: se alguma fonte mudar no
+            # meio, o resultado é entregue mas não fica preso no cache.
+            dependency_sig = _guidance_cache.dependency_signature()
             try:
                 record = _remediation_engine.generate_guidance(finding_id)
             except Exception:
@@ -1546,7 +1562,15 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
                 })
                 return
 
-            _guidance_cache.put(finding_id, record)
+            if record.status == "ambiguous_finding":
+                self._send_guidance_json(409, {
+                    "error": "Identificador ambíguo",
+                    "reason": record.reason or "",
+                    "recommendation": record.recommendation or "",
+                })
+                return
+
+            _guidance_cache.put(finding_id, record, expected_signature=dependency_sig)
 
         # 10. Auditoria view (falha silenciada, apenas log sanitizado)
         try:
@@ -1591,14 +1615,19 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
 
         # 3. Rate limit por usuário (copy:user:<remote_user>)
         rate_key = f"copy:user:{remote_user}"
-        if _audit_rate_limiter is not None:
-            if not _audit_rate_limiter.is_allowed(rate_key):
-                retry_after = _audit_rate_limiter.get_retry_after(rate_key)
-                self._send_guidance_json(429, {
-                    "error": "Limite excedido",
-                    "retry_after": retry_after,
-                }, extra_headers={"Retry-After": str(retry_after)})
-                return
+        if _audit_rate_limiter is None:
+            self._send_guidance_json(503, {
+                "error": "Serviço temporariamente indisponível",
+                "retry_after": 30,
+            })
+            return
+        if not _audit_rate_limiter.is_allowed(rate_key):
+            retry_after = _audit_rate_limiter.get_retry_after(rate_key)
+            self._send_guidance_json(429, {
+                "error": "Limite excedido",
+                "retry_after": retry_after,
+            }, extra_headers={"Retry-After": str(retry_after)})
+            return
 
         # 4. Rejeição de query string
         if parsed_url.query:
@@ -1763,6 +1792,8 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             entry["confidence"] = record.confidence or ""
             entry["agent_id"] = record.agent_id or ""
             entry["cve"] = record.cve or ""
+            entry["guidance_kind"] = getattr(record, "guidance_kind", "") or ""
+            entry["snapshot_revision"] = getattr(record, "snapshot_revision", "") or ""
 
         entry["result"] = "ok"
 

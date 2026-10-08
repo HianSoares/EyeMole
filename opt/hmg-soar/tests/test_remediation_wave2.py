@@ -1865,7 +1865,12 @@ class TestSnapshotSignature:
         result = cache.get_by_finding_id("b"*64)
         assert result is not None
 
-    def test_stat_failure_preserves_cache(self, tmp_path):
+    def test_removed_snapshot_invalidates_cache(self, tmp_path):
+        """Snapshot removido invalida o cache.
+
+        Antes esperava-se que o cache fosse preservado quando o stat falhava,
+        o que servia orientação de uma fonte que deixou de existir como atual.
+        """
         snapshot = tmp_path / "latest.json"
         snapshot.write_text('{"vulnerabilities": []}', encoding="utf-8")
         cache = GuidanceCache(snapshot_path=snapshot, ttl_seconds=3600)
@@ -1873,9 +1878,8 @@ class TestSnapshotSignature:
         cache.put("c"*64, record)
         # Delete file (stat will fail)
         snapshot.unlink()
-        # Cache should be preserved (fail-safe)
         result = cache.get_by_finding_id("c"*64)
-        assert result is not None
+        assert result is None
 
     def test_invalidation_removes_both_indices(self, tmp_path):
         snapshot = tmp_path / "latest.json"
