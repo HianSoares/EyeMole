@@ -21,16 +21,22 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .models import RenderedCommand
+from .snapshot import FileSignature, file_signature
 from .validation import ParameterValidator, ValidationError
+from .versioning import ecosystem_for_package_manager, is_upgrade
 
 logger = logging.getLogger("hmg-soar-remediation.templates")
 
 # Diretório de dados de templates
 _DEFAULT_TEMPLATES_PATH = Path(__file__).parent / "data" / "remediation_templates.json"
+
+# Placeholders aceitos em textos/diagnósticos (valores pré-validados pelo backend)
+_PLACEHOLDER_RE = re.compile(r"\{[a-z_]+\}")
 
 
 class TemplateRepository:
@@ -45,10 +51,25 @@ class TemplateRepository:
         self._templates: dict = {}
         self._allowlist: dict = {}
         self._loaded = False
+        self._sig: FileSignature = None
         self._load_templates()
+
+    @property
+    def path(self) -> Path:
+        return self._templates_path
+
+    @property
+    def loaded_signature(self) -> FileSignature:
+        return self._sig
+
+    def refresh(self) -> None:
+        """Recarrega os templates se o arquivo mudou (assinatura)."""
+        if file_signature(self._templates_path) != self._sig:
+            self._load_templates()
 
     def _load_templates(self) -> None:
         """Carrega templates do arquivo JSON local."""
+        self._sig = file_signature(self._templates_path)
         try:
             if not self._templates_path.is_file():
                 logger.error(
@@ -139,8 +160,12 @@ class TemplateRepository:
         if not self._loaded:
             return None
 
-        # Validar parâmetros antes de qualquer operação (fail-fast)
+        # Perfis somente textuais (ex.: Windows) nunca produzem comando
         pm_lower = package_manager.lower().strip()
+        if self.is_textual_only(pm_lower):
+            return None
+
+        # Validar parâmetros antes de qualquer operação (fail-fast)
         if pm_lower == "windows":
             validation_err = self._validate_windows_template_rendering(
                 installed_version, fixed_version, package_manager
@@ -177,8 +202,10 @@ class TemplateRepository:
 
         # Decidir qual template de remediação usar
         if fixed_version is not None and fixed_version.strip():
-            # Versões iguais: não gerar comando (não é upgrade)
-            if fixed_version.strip() == installed_version.strip():
+            # Somente atualização comprovada pelas regras do ecossistema.
+            # Igualdade, downgrade ou ausência de comparador → sem comando.
+            ecosystem = ecosystem_for_package_manager(pm_lower)
+            if is_upgrade(ecosystem, installed_version.strip(), fixed_version.strip()) is not True:
                 return None
 
             template_key = "with_version"
@@ -225,6 +252,96 @@ class TemplateRepository:
             remediation=rendered_remediation,
             verification=rendered_verification or "",
         )
+
+    # ------------------------------------------------------------------
+    # Perfil: orientação textual, diagnósticos e verificação
+    # ------------------------------------------------------------------
+
+    def get_profile(self, package_manager: str) -> dict:
+        if not self._loaded:
+            return {}
+        profile = self._templates.get(str(package_manager or "").lower().strip())
+        return profile if isinstance(profile, dict) else {}
+
+    def is_textual_only(self, package_manager: str) -> bool:
+        return self.get_profile(package_manager).get("guidance_kind") == "textual"
+
+    def shell_for(self, package_manager: str) -> Optional[str]:
+        shell = self.get_profile(package_manager).get("shell")
+        return str(shell) if shell else None
+
+    def render_diagnostics(
+        self,
+        package_manager: str,
+        package_name: str,
+        package_names: Optional[List[str]] = None,
+    ) -> List[Dict[str, str]]:
+        """Renderiza comandos de diagnóstico SOMENTE LEITURA do perfil.
+
+        Entradas cujo placeholder não pode ser preenchido com valor validado
+        são omitidas (fail-closed por entrada).
+        """
+        profile = self.get_profile(package_manager)
+        entries = profile.get("diagnostics")
+        if not isinstance(entries, list):
+            return []
+        shell = self.shell_for(package_manager) or ""
+        names = self._normalize_package_names(package_name, package_names)
+        values: Dict[str, str] = {}
+        if ParameterValidator.validate_package_name(package_name) is None:
+            values["package_name"] = package_name
+        if names:
+            values["package_names"] = " ".join(names)
+
+        rendered: List[Dict[str, str]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            script = self.render_text(str(entry.get("script") or ""), values)
+            if not script:
+                continue
+            rendered.append({
+                "label": str(entry.get("label") or ""),
+                "script": script,
+                "shell": shell,
+            })
+        return rendered
+
+    def render_profile_text(self, package_manager: str, key: str, values: Dict[str, str]) -> Optional[str]:
+        """Renderiza um texto do perfil (ex.: expected_result, guidance.<chave>)."""
+        profile = self.get_profile(package_manager)
+        node: object = profile
+        for part in key.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if not isinstance(node, str):
+            return None
+        return self.render_text(node, values)
+
+    def render_profile_list(self, package_manager: str, key: str, values: Dict[str, str]) -> List[str]:
+        items = self.get_profile(package_manager).get(key)
+        if not isinstance(items, list):
+            return []
+        rendered = []
+        for item in items:
+            text = self.render_text(str(item), values)
+            if text:
+                rendered.append(text)
+        return rendered
+
+    @staticmethod
+    def render_text(template: str, values: Dict[str, str]) -> Optional[str]:
+        """Substitui placeholders por valores pré-validados.
+
+        Retorna None se sobrar placeholder sem valor (nunca exibe '{campo}').
+        """
+        if not template:
+            return None
+        result = template
+        for key, value in values.items():
+            result = result.replace("{" + key + "}", value)
+        if _PLACEHOLDER_RE.search(result):
+            return None
+        return result
 
     @staticmethod
     def _validate_windows_template_rendering(

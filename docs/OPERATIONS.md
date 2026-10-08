@@ -300,7 +300,26 @@ git diff
 
 # 6. Preview local (se disponível)
 python3 opt/hmg-soar/preview_server.py
+
+# 7. Testes automatizados (Python + JavaScript embutido via node --check)
+cd opt/hmg-soar && python3 -m pytest -q tests --ignore=tests/test_installation.py --ignore=tests/test_uninstallation.py
+
+# 8. Suítes de instalação/desinstalação (Bash) — EXECUTAR EM LINUX
+cd opt/hmg-soar && python3 -m pytest -q tests/test_installation.py tests/test_uninstallation.py
 ```
+
+> **Validação pendente antes da implantação:** as suítes
+> `test_installation.py` e `test_uninstallation.py` exercitam `install.sh` e
+> `uninstall.sh` (usuários/grupos, `chown`, symlinks, nginx). No ambiente de
+> desenvolvimento Windows (Git Bash) parte delas falha por limitações do
+> ambiente (detalhes por teste em [TEST_ENVIRONMENT_NOTES.md](TEST_ENVIRONMENT_NOTES.md)).
+> Elas devem passar em um host Linux de homologação antes de qualquer
+> implantação no servidor Wazuh.
+
+> **TLS interno:** a validação de certificado do Indexer/API Wazuh é obrigatória.
+> Configure `HMG_INTERNAL_CA_BUNDLE` em `/etc/hmg-soar/credentials.env` (CA legível
+> pelo usuário do serviço e certificado com SAN igual a `OPENSEARCH_HOST`/
+> `WAZUH_API_HOST`) antes de atualizar o código.
 
 ### O que verificar no diff
 

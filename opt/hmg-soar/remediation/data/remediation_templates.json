@@ -1,9 +1,10 @@
 {
   "metadata": {
-    "version": "1.0",
+    "version": "2.0",
     "description": "Templates de comandos de remediação por gerenciador de pacotes",
-    "updated_at": "2026-07-28T00:00:00Z",
-    "source": "controlled_local_file"
+    "updated_at": "2026-10-08T00:00:00Z",
+    "source": "controlled_local_file",
+    "contract": "remediation: comandos de instalação; diagnostics: comandos SOMENTE LEITURA; guidance: texto (nunca copiado como comando)"
   },
   "allowlist": {
     "os_to_package_manager": {
@@ -29,19 +30,52 @@
   "templates": {
     "windows": {
       "package_manager": "windows",
-      "os_families": ["windows"],
-      "remediation": {
-        "with_version": "Aplique as atualizações do Windows Update, WSUS, SCCM ou Intune até atingir a build {fixed_version} ou superior. Consulte o Windows Update/MSRC para os KBs disponíveis no seu canal de atualização.",
-        "generic_update": "Aplique as atualizações do Windows Update, WSUS, SCCM ou Intune disponíveis para este servidor."
+      "os_families": [
+        "windows"
+      ],
+      "guidance_kind": "textual",
+      "shell": "powershell",
+      "guidance": {
+        "with_version": "Aplique, pelo canal de atualização aprovado no ambiente (Windows Update, WSUS, Configuration Manager ou Intune), a atualização cumulativa aplicável a este produto que leve a build {fixed_build} a UBR {fixed_ubr} ou superior (alvo {fixed_version} ou posterior). O scanner não informa o KB: confirme no Microsoft Security Update Guide a atualização que corrige {cve} para esta edição e arquitetura, considerando atualizações cumulativas mais recentes que a substituam.",
+        "generic": "Consulte o Microsoft Security Update Guide para {cve} e aplique, pelo canal de atualização aprovado no ambiente, a atualização aplicável a esta edição e arquitetura."
       },
-      "verification": {
-        "check_version": "(Get-CimInstance Win32_OperatingSystem).Version"
-      },
-      "notes": "Windows não expõe KB estruturado no snapshot Wazuh; não gerar comando de instalação específico."
+      "diagnostics": [
+        {
+          "label": "Produto, edição, build e UBR",
+          "script": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' | Select-Object ProductName, EditionID, CurrentBuild, UBR"
+        },
+        {
+          "label": "Arquitetura do sistema",
+          "script": "(Get-CimInstance Win32_OperatingSystem).OSArchitecture"
+        },
+        {
+          "label": "Reinício pendente (Component Based Servicing)",
+          "script": "Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending'"
+        },
+        {
+          "label": "Atualizações instaladas mais recentes",
+          "script": "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn"
+        }
+      ],
+      "verification_steps": [
+        "Confirmar CurrentBuild {fixed_build} com UBR {fixed_ubr} ou superior.",
+        "Se houver reinício pendente, reiniciar dentro da janela de mudança aprovada.",
+        "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."
+      ],
+      "expected_result": "CurrentBuild {fixed_build} com UBR {fixed_ubr} ou superior.",
+      "prerequisites": [
+        "Confirmar edição, arquitetura e canal de atualização aprovado do servidor.",
+        "Confirmar pré-requisitos de servicing (SSU) indicados pela Microsoft para a atualização escolhida."
+      ],
+      "notes": "Windows não expõe KB estruturado no snapshot Wazuh; não gerar comando de instalação. Diagnósticos são somente leitura."
     },
     "apt": {
       "package_manager": "apt",
-      "os_families": ["ubuntu", "debian", "raspbian"],
+      "os_families": [
+        "ubuntu",
+        "debian",
+        "raspbian"
+      ],
       "remediation": {
         "with_version": "sudo apt-get install --only-upgrade {package_names}",
         "generic_update": "sudo apt-get install --only-upgrade {package_names}"
@@ -49,11 +83,38 @@
       "verification": {
         "check_version": "dpkg-query -W {package_name}"
       },
-      "notes": "Requer apt-get update prévio para atualizar índices. O comando não fixa versão exata: apt resolve a Candidate disponível no repositório, evitando pins obsoletos e conflitos de dependências co-versionadas."
+      "notes": "Requer apt-get update prévio para atualizar índices. O comando não fixa versão exata: apt resolve a Candidate disponível no repositório, evitando pins obsoletos e conflitos de dependências co-versionadas.",
+      "shell": "bash",
+      "diagnostics": [
+        {
+          "label": "Versão instalada",
+          "script": "dpkg-query -W {package_name}"
+        },
+        {
+          "label": "Candidate disponível no repositório",
+          "script": "apt-cache policy {package_names}"
+        }
+      ],
+      "verification_steps": [
+        "Confirmar que a versão instalada é {fixed_version} ou posterior.",
+        "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."
+      ],
+      "expected_result": "Versão instalada {fixed_version} ou posterior.",
+      "prerequisites": [
+        "Executar 'sudo apt-get update' para atualizar os índices.",
+        "Confirmar com 'apt-cache policy' que a Candidate é {fixed_version} ou posterior: o comando instala a Candidate do repositório e não fixa versão."
+      ]
     },
     "dnf": {
       "package_manager": "dnf",
-      "os_families": ["rhel8", "rhel9", "rocky", "alma", "almalinux", "fedora"],
+      "os_families": [
+        "rhel8",
+        "rhel9",
+        "rocky",
+        "alma",
+        "almalinux",
+        "fedora"
+      ],
       "remediation": {
         "with_version": "sudo dnf update {package_name}-{fixed_version}",
         "generic_update": "sudo dnf update {package_name}"
@@ -61,11 +122,31 @@
       "verification": {
         "check_version": "rpm -q {package_name}"
       },
-      "notes": "Para RHEL 8+, Fedora, Rocky Linux, AlmaLinux."
+      "notes": "Para RHEL 8+, Fedora, Rocky Linux, AlmaLinux.",
+      "shell": "bash",
+      "diagnostics": [
+        {
+          "label": "Versão instalada",
+          "script": "rpm -q {package_name}"
+        }
+      ],
+      "verification_steps": [
+        "Confirmar que a versão instalada é {fixed_version} ou posterior.",
+        "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."
+      ],
+      "expected_result": "Versão instalada {fixed_version} ou posterior.",
+      "prerequisites": [
+        "Confirmar que a versão {fixed_version} está disponível nos repositórios habilitados do servidor."
+      ]
     },
     "yum": {
       "package_manager": "yum",
-      "os_families": ["rhel7", "centos7", "centos", "amazon_linux_2"],
+      "os_families": [
+        "rhel7",
+        "centos7",
+        "centos",
+        "amazon_linux_2"
+      ],
       "remediation": {
         "with_version": "sudo yum update {package_name}-{fixed_version}",
         "generic_update": "sudo yum update {package_name}"
@@ -73,23 +154,58 @@
       "verification": {
         "check_version": "rpm -q {package_name}"
       },
-      "notes": "Para RHEL 7, CentOS 7, Amazon Linux 2."
+      "notes": "Para RHEL 7, CentOS 7, Amazon Linux 2.",
+      "shell": "bash",
+      "diagnostics": [
+        {
+          "label": "Versão instalada",
+          "script": "rpm -q {package_name}"
+        }
+      ],
+      "verification_steps": [
+        "Confirmar que a versão instalada é {fixed_version} ou posterior.",
+        "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."
+      ],
+      "expected_result": "Versão instalada {fixed_version} ou posterior.",
+      "prerequisites": [
+        "Confirmar que a versão {fixed_version} está disponível nos repositórios habilitados do servidor."
+      ]
     },
     "zypper": {
       "package_manager": "zypper",
-      "os_families": ["sles", "opensuse"],
+      "os_families": [
+        "sles",
+        "opensuse"
+      ],
       "remediation": {
-        "with_version": "sudo zypper install --oldpackage {package_name}={fixed_version}",
+        "with_version": "sudo zypper install {package_name}={fixed_version}",
         "generic_update": "sudo zypper update {package_name}"
       },
       "verification": {
         "check_version": "rpm -q {package_name}"
       },
-      "notes": "Para SLES e openSUSE."
+      "notes": "Para SLES e openSUSE. Sem --oldpackage: downgrade não é autorizado no fluxo comum.",
+      "shell": "bash",
+      "diagnostics": [
+        {
+          "label": "Versão instalada",
+          "script": "rpm -q {package_name}"
+        }
+      ],
+      "verification_steps": [
+        "Confirmar que a versão instalada é {fixed_version} ou posterior.",
+        "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."
+      ],
+      "expected_result": "Versão instalada {fixed_version} ou posterior.",
+      "prerequisites": [
+        "Confirmar que a versão {fixed_version} está disponível nos repositórios habilitados do servidor."
+      ]
     },
     "apk": {
       "package_manager": "apk",
-      "os_families": ["alpine"],
+      "os_families": [
+        "alpine"
+      ],
       "remediation": {
         "with_version": "apk add {package_name}={fixed_version}",
         "generic_update": "apk upgrade {package_name}"
@@ -97,7 +213,14 @@
       "verification": {
         "check_version": "apk info {package_name}"
       },
-      "notes": "Para Alpine Linux (containers)."
+      "notes": "Para Alpine Linux (containers). Sem comparador de versões apk implementado: o pin com fixed_version é bloqueado (orientação textual).",
+      "shell": "sh",
+      "diagnostics": [
+        {
+          "label": "Versão instalada",
+          "script": "apk info -v {package_name}"
+        }
+      ]
     }
   }
 }

@@ -223,7 +223,7 @@ Este score é exibido no card `ccv-score` da aba "Dashboard" (Visão Geral) e re
 
 | Conceito | Variável JS | Descrição |
 |---|---|---|
-| **Achados (findings)** | `data.length` | Total de ocorrências = combinações únicas de (CVE × agente × pacote × severidade) |
+| **Achados (findings)** | `exposureData.length` | Total de exposições = combinações únicas de (CVE × agente × pacote); instalações extras não contam duas vezes |
 | **CVEs únicos** | `uniqueCves.size` | Número de identificadores CVE distintos (sem considerar quantos agentes afeta) |
 
 O score do Dashboard utiliza **achados** como denominador, não CVEs únicos. O card "Total de Vulnerabilidades" (`ccv-total`) exibe CVEs únicos; já o denominador do score usa achados.
@@ -462,6 +462,14 @@ Candidatos avaliados (em ordem):
 | `recurring_threshold_count` | 3 | Ocorrências em snapshots para marcar como "recorrente" |
 | `business_days_only` | `false` | Se `true`, contagens usam apenas dias úteis |
 
+### Início do relógio de SLA
+
+O `first_seen` é calculado por **exposição** (`agente|CVE|pacote`) a partir dos
+snapshots históricos. Atualizações parciais (nova versão ainda vulnerável), novas
+instalações do mesmo pacote e reavaliações de severidade **não** reiniciam o
+prazo. Até esta versão, a chave incluía a severidade e uma reavaliação reiniciava
+o relógio.
+
 ### Status de SLA
 
 | Status | Condição |
@@ -607,27 +615,28 @@ Esta normalização **não altera** o campo `severity` original do registro — 
 
 ## Deduplicação
 
-**Fonte:** função `analyze_vulnerabilities` em `analyserV1.py` (linha 4797).
+**Fonte:** `analyze_vulnerabilities`, `group_records_by_exposure` e `exposure_key_for_record` em `analyserV1.py`.
+
+O EyeMole distingue duas unidades:
+
+| Unidade | Chave | Usada em |
+|---|---|---|
+| **Instância** | `finding_id` v2 = SHA-256 de (CVE, agente, pacote, versão, tipo, arquitetura, caminho) | Linhas da tabela de vulnerabilidades e fluxo "Ver correção" |
+| **Exposição** | `agente\|CVE\|pacote` (campo `key` dos snapshots) | Risk Score, sinais do Command Center, delta, tendência, SLA, score por ativo |
 
 ### Regra de Deduplicação
 
-Chave de deduplicação: `(agent_id, package_name, cve)`.
-
-Se a mesma combinação (agente + pacote + CVE) aparece mais de uma vez nos resultados do indexador, apenas a **primeira ocorrência** é mantida. As demais são descartadas silenciosamente.
-
-```python
-dedup_key = (record.agent_id, record.package_name)
-if record.cve in seen_cves[dedup_key]:
-    duplicates_skipped += 1
-    continue
-seen_cves[dedup_key].add(record.cve)
-```
+Registros idênticos do indexador (mesma instância) são descartados. Versões ou
+instalações diferentes do mesmo pacote no mesmo agente são **instâncias
+distintas** e permanecem na tabela, cada uma com seu `finding_id`.
 
 ### Implicação para Contagens
 
-- **Achados (findings):** total de registros após deduplicação = combinações únicas de (agente × pacote × CVE).
-- **CVEs únicos:** derivado no JavaScript com `new Set()` sobre todos os `cve` dos achados.
-- Um mesmo CVE pode aparecer múltiplas vezes nos achados (em agentes ou pacotes diferentes).
+- **Achados (findings):** exposições = combinações únicas de (agente × pacote × CVE). Instalações adicionais do mesmo pacote não inflam score nem contagens.
+- **Snapshot de risco:** uma linha por exposição, com `instance_count`, `finding_ids` e `installed_versions`. A instância mais severa é a representante (severidade, KEV, CVSS, EPSS).
+- **Tabela:** uma linha por instância, com `exposure_key` e `exposure_instance_count`.
+- **CVEs únicos:** derivado no JavaScript com `new Set()` sobre os `cve` das exposições.
+- Snapshots históricos anteriores à identidade de instância já estavam na granularidade de exposição (campo `key`), portanto delta e tendência permanecem contínuos.
 
 ---
 

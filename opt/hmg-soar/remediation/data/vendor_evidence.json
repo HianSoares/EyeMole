@@ -1,0 +1,47 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Evidências oficiais de fabricante verificadas manualmente. Usadas apenas como fontes e justificativa; NUNCA para montar comandos.",
+    "updated_at": "2026-10-08T00:00:00Z",
+    "source": "controlled_local_file"
+  },
+  "entries": [
+    {
+      "id": "msrc-CVE-2025-59287-ws2019",
+      "cve": "CVE-2025-59287",
+      "vendor": "microsoft",
+      "product_match": [
+        "windows server 2019"
+      ],
+      "os_build": "17763",
+      "fixed_build": "10.0.17763.7922",
+      "kb": "KB5070883",
+      "release_date": "2025-10-23",
+      "release_type": "Atualização cumulativa fora de banda (OOB)",
+      "affected_component": "Windows Server Update Services (WSUS)",
+      "applicability": "O MSRC declara que servidores sem o papel WSUS habilitado não são vulneráveis. Ausência do papel só deve ser considerada após coleta confiável (distinguir ausência de falha de coleta).",
+      "component_diagnostic": {
+        "label": "Papel WSUS (UpdateServices) instalado",
+        "script": "Get-WindowsFeature -Name UpdateServices*"
+      },
+      "prerequisites": [
+        "SSU de 10/08/2021 (KB5005112) instalado antes da atualização cumulativa, conforme a Microsoft."
+      ],
+      "reboot_required": "maybe",
+      "historical_note": "Referência histórica de correção. Atualizações cumulativas posteriores do Windows Server 2019 substituem o KB5070883: escolha a atualização aplicável mais recente aprovada no canal do ambiente.",
+      "sources": [
+        {
+          "label": "Microsoft Support — KB5070883 (OS Build 17763.7922), 23/10/2025",
+          "url": "https://support.microsoft.com/en-us/servicing/os/windows/2025/10/october-23-2025-kb5070883-os-build-17763-7922-out-of-band",
+          "kind": "vendor_advisory"
+        },
+        {
+          "label": "Microsoft Security Update Guide — CVE-2025-59287",
+          "url": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2025-59287",
+          "kind": "vendor_advisory"
+        }
+      ],
+      "verified_at": "2026-10-08"
+    }
+  ]
+}

@@ -12,14 +12,21 @@ import uuid
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+
+# Versão do contrato público de GuidanceRecord.
+# v2: separa orientação textual, comando validado, diagnósticos, justificativa,
+# fontes, pré-requisitos e dados faltantes. Campos v1 continuam presentes.
+GUIDANCE_CONTRACT_VERSION = "2"
 
 # Status válidos para GuidanceRecord
 VALID_STATUSES = frozenset({
     "success",
+    "textual_guidance",
     "no_guidance",
     "not_found",
+    "ambiguous_finding",
     "validation_error",
     "insufficient_confidence",
     "internal_error",
@@ -28,6 +35,12 @@ VALID_STATUSES = frozenset({
 
 # Níveis de confiança válidos
 VALID_CONFIDENCE_LEVELS = frozenset({"high", "medium", "low", "none"})
+
+# Tipos de orientação
+VALID_GUIDANCE_KINDS = frozenset({"command", "textual", "none"})
+
+# Estados de reinício
+VALID_REBOOT_STATES = frozenset({"yes", "no", "maybe", "unknown"})
 
 
 @dataclass
@@ -56,12 +69,33 @@ class GuidanceRecord:
     agent_name: str = ""
     severity: str = ""
 
+    # Contexto do ativo/pacote propagado do snapshot (vazio = desconhecido)
+    os_version: str = ""
+    package_type: str = ""
+    architecture: str = ""
+
     # Guidance output
     status: str = "no_guidance"
     command: Optional[str] = None
     verification_command: Optional[str] = None
     reason: Optional[str] = None
     recommendation: Optional[str] = None
+
+    # Contrato v2: orientação separada de comando
+    guidance_kind: str = ""
+    guidance_text: Optional[str] = None
+    rationale: Optional[str] = None
+    shell: Optional[str] = None
+    # Diagnósticos SOMENTE LEITURA: [{"label", "script", "shell"}]
+    diagnostics: List[Dict[str, str]] = field(default_factory=list)
+    verification_steps: List[str] = field(default_factory=list)
+    expected_result: Optional[str] = None
+    prerequisites: List[str] = field(default_factory=list)
+    missing_context: List[str] = field(default_factory=list)
+    # Fontes: [{"label", "url"?, "kind"}]
+    sources: List[Dict[str, str]] = field(default_factory=list)
+    reboot_required: str = "unknown"
+    snapshot_revision: str = ""
 
     # Metadata
     source: str = ""
@@ -77,6 +111,10 @@ class GuidanceRecord:
         """Constante False — não pode ser alterada."""
         return False
 
+    @property
+    def contract_version(self) -> str:
+        return GUIDANCE_CONTRACT_VERSION
+
     def __post_init__(self) -> None:
         """Valida invariantes no momento da criação."""
         # Garantir que status é válido
@@ -86,6 +124,9 @@ class GuidanceRecord:
         # Garantir que confidence é válido
         if self.confidence not in VALID_CONFIDENCE_LEVELS:
             self.confidence = "none"
+
+        if self.reboot_required not in VALID_REBOOT_STATES:
+            self.reboot_required = "unknown"
 
         # Em estados sem sucesso, comandos DEVEM ser None
         if self.status != "success":
@@ -103,6 +144,28 @@ class GuidanceRecord:
 
         if self.verification_command is not None and not self.verification_command.strip():
             self.verification_command = None
+
+        if self.guidance_text is not None and not self.guidance_text.strip():
+            self.guidance_text = None
+
+        # Diagnósticos: somente entradas bem formadas
+        self.diagnostics = [
+            {
+                "label": str(d.get("label") or "").strip(),
+                "script": str(d.get("script") or "").strip(),
+                "shell": str(d.get("shell") or "").strip(),
+            }
+            for d in self.diagnostics
+            if isinstance(d, dict) and str(d.get("script") or "").strip()
+        ]
+
+        # guidance_kind é derivado dos dados, nunca aceito de fora em contradição
+        if self.command is not None:
+            self.guidance_kind = "command"
+        elif self.guidance_text or self.diagnostics:
+            self.guidance_kind = "textual"
+        else:
+            self.guidance_kind = "none"
 
     def to_dict(self) -> dict:
         """Serializa para dicionário JSON-compatível.
@@ -152,6 +215,29 @@ class GuidanceRecord:
         if self.warnings:
             result["warnings"] = list(self.warnings)
 
+        # Contrato v2 (aditivo; consumidores v1 ignoram)
+        result["contract_version"] = GUIDANCE_CONTRACT_VERSION
+        result["guidance_kind"] = self.guidance_kind
+        result["reboot_required"] = self.reboot_required
+        for key in ("os_version", "package_type", "architecture", "snapshot_revision"):
+            value = getattr(self, key)
+            if value:
+                result[key] = value
+        for key in ("guidance_text", "rationale", "expected_result"):
+            value = getattr(self, key)
+            if value:
+                result[key] = value
+        if self.shell and (self.command is not None or self.diagnostics):
+            result["shell"] = self.shell
+        for key in ("diagnostics", "sources"):
+            value = getattr(self, key)
+            if value:
+                result[key] = [dict(item) for item in value]
+        for key in ("verification_steps", "prerequisites", "missing_context"):
+            value = getattr(self, key)
+            if value:
+                result[key] = list(value)
+
         return result
 
 
@@ -173,10 +259,21 @@ class ProviderResult:
     warnings: List[str] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)
     status: str = "unknown"
+    # Contexto propagado (vazio = desconhecido)
+    package_type: str = ""
+    os_version: str = ""
+    architecture: str = ""
+    purl: str = ""
+    # Confiança na existência da vulnerabilidade vs. na versão de correção
+    fix_confidence: str = "none"
+    # Divergência não resolvida entre fontes: bloqueia o comando específico
+    blocking_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.confidence not in VALID_CONFIDENCE_LEVELS:
             self.confidence = "none"
+        if self.fix_confidence not in VALID_CONFIDENCE_LEVELS:
+            self.fix_confidence = "none"
 
 
 @dataclass
@@ -216,10 +313,21 @@ class VulnRecord:
     os_version: str = ""
     package_type: str = ""
     scanner_condition: str = ""
+    package_architecture: str = ""
+    package_path: str = ""
+
+    @property
+    def finding_id(self) -> str:
+        """Identidade da instância (v2) — distingue versões/instalações."""
+        return generate_finding_id(
+            self.cve, self.agent_id, self.package_name, self.version,
+            self.package_type, self.package_architecture, self.package_path,
+        )
 
     def to_dict(self) -> dict:
         """Ponto único de serialização do VulnRecord para JSON/Snapshot."""
         return {
+            "finding_id": self.finding_id,
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
             "cve": self.cve,
@@ -234,6 +342,8 @@ class VulnRecord:
             "operating_system": self.agent_os,
             "os_version": self.os_version,
             "package_type": self.package_type,
+            "package_architecture": self.package_architecture,
+            "package_path": self.package_path,
             "scanner_condition": self.scanner_condition,
         }
 
@@ -281,6 +391,61 @@ def generate_vulnerability_key(
     """Gera chave SHA-256 estável para identificação de achados (finding_id).
 
     Mantém compatibilidade com os snapshots legados do Wazuh.
+
+    ATENÇÃO: não distingue versões/instalações do mesmo pacote. Continua sendo
+    a chave de agregação de risco/tendência; a identidade de instância usada
+    pelo fluxo "Ver correção" é generate_finding_id().
     """
     raw_str = f"{cve or ''}|{agent_id or ''}|{package or ''}|{severity or ''}"
     return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
+
+
+def generate_finding_id(
+    cve: str,
+    agent_id: str,
+    package: str,
+    version: str,
+    package_type: str = "",
+    architecture: str = "",
+    package_path: str = "",
+) -> str:
+    """Identidade de instância do achado (v2), SHA-256 hex.
+
+    Inclui versão, ecossistema, arquitetura e caminho de instalação para que
+    múltiplas versões/instalações do mesmo pacote não colidam. Não inclui
+    severidade (mudança de score não muda a instância). O prefixo separa o
+    espaço de chaves do legado.
+    """
+    parts = [
+        "finding:v2",
+        str(cve or "").strip().upper(),
+        str(agent_id or "").strip(),
+        str(package or "").strip(),
+        str(version or "").strip(),
+        str(package_type or "").strip().lower(),
+        str(architecture or "").strip().lower(),
+        str(package_path or "").strip(),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def finding_id_for_snapshot_record(record: Dict[str, Any]) -> str:
+    """Calcula a identidade v2 a partir de um registro do snapshot (latest.json)."""
+    return generate_finding_id(
+        str(record.get("cve") or ""),
+        str(record.get("agent_id") or ""),
+        str(record.get("package") or ""),
+        str(record.get("version") or ""),
+        str(record.get("package_type") or ""),
+        str(record.get("package_architecture") or ""),
+        str(record.get("package_path") or ""),
+    )
+
+
+def legacy_key_for_snapshot_record(record: Dict[str, Any]) -> str:
+    return generate_vulnerability_key(
+        str(record.get("cve") or ""),
+        str(record.get("agent_id") or ""),
+        str(record.get("package") or ""),
+        str(record.get("severity") or ""),
+    )

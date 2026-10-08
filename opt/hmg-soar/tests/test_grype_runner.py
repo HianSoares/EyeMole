@@ -122,8 +122,15 @@ def test_corrupted_sbom_does_not_interrupt_batch():
         assert snapshot["vulnerabilities"][0]["cve"] == "CVE-2021-23337"
 
 
-def test_empty_pending_dir_writes_empty_snapshot():
+def test_empty_pending_dir_without_previous_snapshot_writes_empty_snapshot():
+    """Primeira execução sem pendências: publica um consolidado vazio válido.
+
+    Revisado: antes este teste também cobria (implicitamente) o caso com
+    consolidado existente, que era APAGADO. Esse caso agora preserva os
+    resultados — ver test_empty_pending_dir_preserves_previous_snapshot.
+    """
     with runner_dirs() as (pending, processed, failed, output):
+        assert not output.exists()
         metadata = grype_runner.process_pending(
             pending_dir=pending,
             processed_dir=processed,
@@ -138,6 +145,20 @@ def test_empty_pending_dir_writes_empty_snapshot():
         snapshot = read_snapshot(output)
         assert snapshot["metadata"]["source"] == "grype_runner"
         assert snapshot["vulnerabilities"] == []
+
+
+def test_empty_pending_dir_preserves_previous_snapshot():
+    with runner_dirs() as (pending, processed, failed, output):
+        (pending / "003.json").write_text("{}", encoding="utf-8")
+        with patch.object(grype_runner, "process_sbom", lambda p, timeout_seconds: [make_record("003")]):
+            grype_runner.process_pending(pending, processed, failed, output)
+
+        metadata = grype_runner.process_pending(pending, processed, failed, output)
+
+        assert metadata["processed_count"] == 0
+        assert metadata["written"] is False
+        assert metadata["vulnerability_count"] == 1
+        assert len(read_snapshot(output)["vulnerabilities"]) == 1
 
 
 def test_snapshot_final_has_grype_record_schema():

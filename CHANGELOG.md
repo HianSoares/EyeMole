@@ -13,10 +13,23 @@
 - fix(installer): use SYSTEMD_UNIT_DIR for testable systemd paths
 - fix(tests): skip node --check when Node.js unavailable
 - fix(tests): remove dependency on var-www-wazuh-soar/index.html in clone
+- fix(remediation): providers Wazuh/Grype verificam a revisão do snapshot (mtime_ns, size, inode) em toda consulta; arquivo removido/inválido descarta dados antigos; consulta, agrupamento apt e orientação usam a mesma revisão
+- fix(remediation): cache de orientação invalida por Grype, contexto de ativos, allowlist, políticas, templates e evidências; resultado gerado sob revisão superada não é armazenado
+- fix(grype): consolidado preserva o último scan válido por agente (lote vazio não apaga; falha mantém evidência marcada com erro/idade)
+- fix(remediation): fusão separa confirmação da vulnerabilidade e da correção; divergência de versão/ecossistema bloqueia o comando; match de baixa confiança não vira alta
+- fix(remediation): package.type propagado no caminho somente-Grype (npm não recebe apt); veto not-fixed/wont-fix/unknown também no provider único
+- fix(remediation): validação semântica de versão (dpkg, rpm, build/UBR Windows); downgrade bloqueado; --oldpackage removido do zypper; pin sem comparador (apk) vira orientação textual
+- fix(remediation): identidade de instância (finding_id v2 com versão/tipo/arquitetura/caminho); ID legado ambíguo retorna 409; analisador não descarta mais instalações distintas
+- fix(analyser): TLS validado por padrão (CA interna configurável, opt-in inseguro só na sessão interna); paginação incompleta não publica snapshot
+- fix(api): logger inicializado antes do fallback do rate limiter; sem limiter, endpoints dependentes respondem 503
+- fix(analyser): risco, delta, tendência e SLA agregam por exposição (agente+CVE+pacote); instâncias (finding_id v2) ficam listadas na exposição e não inflam score/contagens; relógio de SLA não reinicia por nova versão, nova instalação ou reavaliação de severidade
+- fix(remediation): orientação vinculada a um conjunto estável de revisões (Wazuh, Grype, contexto, allowlist, configs, templates, evidências); fonte alterada durante a geração → regeneração (até 3 tentativas) ou 503; snapshot_revision reflete as revisões efetivamente lidas
+- feat(remediation): contrato v2 do "Ver correção" (guidance_kind, guidance_text, rationale, diagnostics, verification_steps, prerequisites, missing_context, sources, reboot_required); Windows recebe orientação textual + diagnósticos, nunca texto no campo de comando
 
 ### Documentação
 
 - docs: document remediation guidance installation and operations
+- docs: REMEDIATION_GUIDANCE.md (instância × exposição, prazo de SLA, contrato v2, confiança TLS, validação Linux pendente, próximos passos Kiro) e TEST_ENVIRONMENT_NOTES.md (falhas Git Bash por teste)
 
 ### Adicionado
 
