@@ -298,6 +298,18 @@ As alterações passam a influenciar integralmente a priorização no próximo r
 
 ---
 
+## Plataforma operacional
+
+A área **Operações** acrescenta campanhas de correção, responsáveis, prazos,
+validação por inventário e nova coleta, papéis por ambiente/ativo e jobs duráveis.
+Há conectores opcionais para Kiro, GLPI, QRadar, Vision One e Wazuh, evidências
+oficiais e execução piloto Linux com aprovação e janela de manutenção.
+
+A plataforma é instalada desabilitada; a configuração e ativação estão no
+[guia operacional da plataforma](docs/PLATFORM.md). Credenciais e integrações
+precisam ser configuradas no servidor. Windows continua com planos e procedimento
+manual revisado. O dashboard existente e o processo de primeira instalação são preservados.
+
 ## Atualizações do EyeMole
 
 A primeira instalação continua seguindo o passo a passo acima. O instalador

@@ -164,7 +164,7 @@ create_user_and_dirs() {
       "${APP_USER}"
   fi
 
-  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}"
+  install -d -o root -g "${WEB_GROUP}" -m 0755 "${APP_DIR}"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0750 "${APP_DIR}/config"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/assets"
   install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/output"
@@ -191,6 +191,21 @@ create_user_and_dirs() {
   chmod 0660 "${WEB_DIR}/data/audit_actions.jsonl"
 
   install -d -o root -g root -m 0755 "${ETC_DIR}"
+  if ! getent group eyemole-ops >/dev/null; then groupadd --system eyemole-ops; fi
+  if ! id eyemole-worker >/dev/null 2>&1; then
+    useradd --system --gid eyemole-ops --groups "${WEB_GROUP}" --home-dir /var/lib/eyemole --shell /usr/sbin/nologin eyemole-worker
+  fi
+  install -d -o "${APP_USER}" -g eyemole-ops -m 2770 /var/lib/eyemole/platform
+  install -d -o eyemole-worker -g eyemole-ops -m 0700 /var/lib/eyemole/kiro-jobs
+  if [[ ! -f "${ETC_DIR}/platform.json" ]]; then
+    install -o root -g "${WEB_GROUP}" -m 0640 "${REPO_ROOT}/config/platform.json.example" "${ETC_DIR}/platform.json"
+  fi
+  if [[ ! -f "${ETC_DIR}/integrations.env" ]]; then
+    install -o root -g root -m 0600 "${REPO_ROOT}/config/integrations.env.example" "${ETC_DIR}/integrations.env"
+  fi
+  if [[ ! -f "${ETC_DIR}/update-policy.json" ]]; then
+    install -o root -g root -m 0600 "${REPO_ROOT}/config/update-policy.json.example" "${ETC_DIR}/update-policy.json"
+  fi
 }
 
 ensure_api_audit_dirs() {
@@ -273,6 +288,8 @@ install_app_files() {
     --exclude 'config/' \
     --exclude 'output/' \
     --exclude 'sbom/' \
+    --exclude 'audit/' \
+    --exclude '.test-tmp-pytest/' \
     --exclude '.hmg_cache/' \
     --exclude '__pycache__/' \
     "${REPO_ROOT}/opt/hmg-soar/" \
@@ -280,8 +297,20 @@ install_app_files() {
 
   chown -R "${APP_USER}:${WEB_GROUP}" "${APP_DIR}"
 
+  # Worker code cannot be replaced by the account that collects reports.
+  chown root:"${WEB_GROUP}" "${APP_DIR}"
+  chmod 0755 "${APP_DIR}"
+  find "${APP_DIR}" -maxdepth 1 -type f -exec chown root:"${WEB_GROUP}" {} +
+  find "${APP_DIR}" -maxdepth 1 -type f -exec chmod go-w {} +
+  local code_dir
+  for code_dir in remediation operations assets tests; do
+    if [[ -d "${APP_DIR}/${code_dir}" && ! -L "${APP_DIR}/${code_dir}" ]]; then
+      chown -R root:"${WEB_GROUP}" "${APP_DIR}/${code_dir}"
+      chmod -R go-w "${APP_DIR}/${code_dir}"
+    fi
+  done
   rm -rf "${APP_DIR}/__pycache__"
-  install -d -o "${APP_USER}" -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/__pycache__"
+  install -d -o root -g "${WEB_GROUP}" -m 0755 "${APP_DIR}/__pycache__"
 
   if [[ -f "${APP_DIR}/assets/eyemole.png" ]]; then
     install -o "${APP_USER}" -g "${WEB_GROUP}" -m 0644 \
@@ -309,15 +338,16 @@ validate_python() {
   # Todos os .py em remediation/
   while IFS= read -r -d '' pyf; do
     py_files+=("${pyf}")
-  done < <(find "${APP_DIR}/remediation" -name '*.py' -print0 2>/dev/null || true)
+  done < <(find "${APP_DIR}/remediation" "${APP_DIR}/operations" -name '*.py' -print0 2>/dev/null || true)
 
   local f
   for f in "${py_files[@]}"; do
     if ! PYTHONDONTWRITEBYTECODE=1 runuser -u "${APP_USER}" -- python3 -c "
-import sys, py_compile
+import sys
+from pathlib import Path
 try:
-    py_compile.compile(sys.argv[1], doraise=True)
-except py_compile.PyCompileError as e:
+    compile(Path(sys.argv[1]).read_bytes(), sys.argv[1], 'exec')
+except SyntaxError as e:
     print(f'Erro de sintaxe: {e}', file=sys.stderr)
     sys.exit(1)
 " "${f}"; then
@@ -330,6 +360,8 @@ except py_compile.PyCompileError as e:
   if ! PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="${APP_DIR}" runuser -u "${APP_USER}" -- python3 -c "
 import importlib, sys
 modules = [
+    'operations.api',
+    'operations.worker',
     'remediation',
     'remediation.engine',
     'remediation.cache',
@@ -505,6 +537,7 @@ install_systemd() {
   fi
 
   API_SERVICE_FILE="hmg-soar-api.service"
+  install -o root -g root -m 0644 "${REPO_ROOT}/systemd/eyemole-platform-worker.service" "${SYSTEMD_UNIT_DIR}/eyemole-platform-worker.service"
   if [[ -f "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" ]]; then
     install -o root -g root -m 0644 \
       "${REPO_ROOT}/systemd/${API_SERVICE_FILE}" \
@@ -514,6 +547,10 @@ install_systemd() {
   fi
 
   systemctl daemon-reload
+  if [[ "${EYEMOLE_DEFER_COLLECTION_TIMERS:-0}" != 1 ]]; then
+    systemctl enable --now eyemole-platform-worker.service
+    systemctl restart eyemole-platform-worker.service
+  fi
 
   # Timer: enable e verificar
   if [[ -f "${SYSTEMD_UNIT_DIR}/${TIMER_FILE}" && "${EYEMOLE_DEFER_COLLECTION_TIMERS:-0}" != 1 ]]; then
@@ -605,7 +642,18 @@ location = /soar {
     return 301 /soar/;
 }
 
+location = /eyemole-access {
+    internal;
+    proxy_pass http://127.0.0.1:8765/platform/access;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-Original-URI \$request_uri;
+    proxy_set_header X-Remote-User \$remote_user;
+    proxy_set_header Authorization \$http_authorization;
+}
+
 location ^~ /soar/assets/ {
+    auth_request /eyemole-access;
     alias ${WEB_DIR}/assets/;
     autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
@@ -618,6 +666,7 @@ location ^~ /soar/assets/ {
 }
 
 location ^~ /soar/data/ {
+    auth_request /eyemole-access;
     alias ${WEB_DIR}/data/;
     autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
@@ -632,6 +681,7 @@ location ^~ /soar/data/ {
 }
 
 location ^~ /soar/reports/ {
+    auth_request /eyemole-access;
     alias ${WEB_DIR}/reports/;
     autoindex off;
     auth_basic "HMG SOAR - Acesso Restrito";
@@ -644,6 +694,7 @@ location ^~ /soar/reports/ {
 }
 
 location ^~ /soar/ {
+    auth_request /eyemole-access;
     alias ${WEB_DIR}/;
     index index.html;
     autoindex off;
@@ -684,6 +735,7 @@ location ^~ /soar-api/sbom/ {
 }
 
 location /soar-api/ {
+    auth_request /eyemole-access;
     auth_basic "HMG SOAR - Acesso Restrito";
     auth_basic_user_file ${HTPASSWD_FILE};
 
@@ -703,6 +755,24 @@ location /soar-api/ {
     proxy_set_header X-Remote-User \$remote_user;
 }
 NGINX_EYEMOLE_SNIPPET
+
+  local auth_mode
+  auth_mode="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])) if __import__("os").path.exists(sys.argv[1]) else {}).get("authentication",{}).get("mode","basic"))' "${ETC_DIR}/platform.json")"
+  if [[ "${auth_mode}" == oidc ]]; then
+    sed -i -e '/auth_basic_user_file/d' -e 's/^[ ]*auth_basic .*;/    auth_basic off;/' "${SNIPPET_FILE}"
+    sed -i '/auth_request \/eyemole-access;/a\    error_page 401 = /oauth2/sign_in;' "${SNIPPET_FILE}"
+    cat >> "${SNIPPET_FILE}" <<OIDC_EYEMOLE
+location /oauth2/ {
+    proxy_pass http://127.0.0.1:4180;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Auth-Request-Redirect \$scheme://\$host/soar/assets/operations.html;
+}
+OIDC_EYEMOLE
+  elif [[ "${auth_mode}" != basic ]]; then
+    die "Modo de autenticação desconhecido: ${auth_mode}"
+  fi
 
   chown root:root "${SNIPPET_FILE}"
   chmod 0644 "${SNIPPET_FILE}"
@@ -1174,6 +1244,8 @@ final_message() {
 install_update_cli() {
   # Keep privileged administration code root-owned, outside APP_DIR (service-owned).
   install -o root -g root -m 0755 "${REPO_ROOT}/cli/eyemole.py" "${EYEMOLE_CLI_BIN}"
+  install -d -o root -g root -m 0755 /usr/local/lib/eyemole
+  install -o root -g root -m 0644 "${REPO_ROOT}/cli/administration.py" /usr/local/lib/eyemole/administration.py
   local unit
   for unit in eyemole-update-check.service eyemole-update-check.timer; do
     install -o root -g root -m 0644 "${REPO_ROOT}/systemd/${unit}" "${SYSTEMD_UNIT_DIR}/${unit}"
@@ -1192,6 +1264,11 @@ record_installed_version() {
     args+=(--custom-layout)
   fi
   "${EYEMOLE_CLI_BIN}" "${args[@]}"
+  # Bootstrap from the earlier CLI: it defers timers but does not know this worker.
+  # The new updater starts it after its verified snapshot transaction instead.
+  if [[ "${EYEMOLE_DEFER_COLLECTION_TIMERS:-0}" == 1 && -z "${EYEMOLE_RECOVERY_SNAPSHOT:-}" ]]; then
+    systemctl enable --now eyemole-platform-worker.service
+  fi
   # A failed network check must not turn a successful installation into a failure.
   systemctl start --no-block eyemole-update-check.service || warn "Verificação de updates pendente."
 }
@@ -1203,25 +1280,33 @@ main() {
   install_package_if_missing python3 python3
   install_package_if_missing git git
   install_package_if_missing rsync rsync
+  install_package_if_missing acl setfacl
   install_package_if_missing nginx nginx
 
   ensure_python_runtime_dependencies
 
+  if [[ -n "${EYEMOLE_RECOVERY_SNAPSHOT:-}" ]]; then
+    python3 "${REPO_ROOT}/cli/administration.py" verify "${EYEMOLE_RECOVERY_SNAPSHOT}"
+    BACKUP_DIR="${EYEMOLE_RECOVERY_SNAPSHOT}"
+  elif [[ "${APP_DIR}" == /opt/hmg-soar && "${WEB_DIR}" == /var/www/wazuh-soar && "${ETC_DIR}" == /etc/hmg-soar && "${SYSTEMD_UNIT_DIR}" == /etc/systemd/system ]]; then
+    BACKUP_DIR="$(python3 "${REPO_ROOT}/cli/administration.py" backup-install)"
+  fi
+
   mkdir -p "${BACKUP_DIR}"
   chmod 0700 "${BACKUP_DIR}"
-
-  backup_path "${APP_DIR}"
-  backup_path "${WEB_DIR}"
-  backup_path "${HTPASSWD_FILE}"
-  backup_path "${SNIPPET_FILE}"
-  backup_path "${SUDOERS_FILE}"
-  backup_path "${POLKIT_RULE_FILE}"
-  backup_credentials
-  backup_path "${EYEMOLE_CLI_BIN}"
-  local unit
-  for unit in "${SERVICE_FILE}" "${TIMER_FILE}" "${GRYPE_SERVICE_FILE}" "${GRYPE_TIMER_FILE}" hmg-soar-api.service eyemole-update-check.service eyemole-update-check.timer; do
-    backup_path "${SYSTEMD_UNIT_DIR}/${unit}"
-  done
+  if [[ "${APP_DIR}" != /opt/hmg-soar || "${WEB_DIR}" != /var/www/wazuh-soar || "${ETC_DIR}" != /etc/hmg-soar || "${SYSTEMD_UNIT_DIR}" != /etc/systemd/system ]]; then
+    backup_path "${APP_DIR}"
+    backup_path "${WEB_DIR}"
+    backup_credentials
+    backup_path "${HTPASSWD_FILE}"
+    backup_path "${SNIPPET_FILE}"
+    backup_path "${POLKIT_RULE_FILE}"
+    backup_path "${EYEMOLE_CLI_BIN}"
+    local unit
+    for unit in "${SERVICE_FILE}" "${TIMER_FILE}" "${GRYPE_SERVICE_FILE}" "${GRYPE_TIMER_FILE}" hmg-soar-api.service eyemole-update-check.service eyemole-update-check.timer eyemole-platform-worker.service; do
+      backup_path "${SYSTEMD_UNIT_DIR}/${unit}"
+    done
+  fi
 
   create_user_and_dirs
   install_app_files

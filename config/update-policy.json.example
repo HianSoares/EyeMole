@@ -1,0 +1,8 @@
+{
+  "backup_root": "/var/backups/eyemole",
+  "keep_snapshots": 3,
+  "max_backup_bytes": 21474836480,
+  "minimum_free_bytes": 268435456,
+  "report_keep_count": 100,
+  "report_max_bytes": 2147483648
+}

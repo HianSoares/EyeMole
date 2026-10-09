@@ -1,0 +1,37 @@
+[Unit]
+Description=EyeMole - campanhas e integrações
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/hmg-soar/platform.json
+
+[Service]
+Type=simple
+User=eyemole-worker
+Group=eyemole-ops
+SupplementaryGroups=www-data
+WorkingDirectory=/opt/hmg-soar
+EnvironmentFile=-/etc/hmg-soar/integrations.env
+ExecStart=/usr/bin/python3 -m operations.worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/eyemole/platform /var/lib/eyemole/kiro-jobs
+UMask=0007
+MemoryMax=512M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

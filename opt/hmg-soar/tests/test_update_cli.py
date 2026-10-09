@@ -137,6 +137,27 @@ def test_update_pins_revision_preserves_mode_and_records_only_success(tmp_path, 
     monkeypatch.setattr(cli, "check_update", lambda s: cli.check_update_original(s, published))
     monkeypatch.setattr(cli, "UPDATE_ROOT", tmp_path / "updates")
     monkeypatch.setattr(cli, "BACKUP_ROOT", tmp_path / "backups")
+    monkeypatch.setattr(cli, "MAINTENANCE_FLAG", tmp_path / "maintenance")
+    monkeypatch.setattr(cli, "RECOVERY_REQUIRED", tmp_path / "recovery-required")
+    class FakeSnapshot:
+        def __init__(self, path):
+            pass
+        def create(self):
+            pass
+        def check_restore_space(self):
+            pass
+        def mark(self, status):
+            pass
+        def remember_services(self, states):
+            pass
+        def restore(self):
+            cli.atomic_json(state, {"installed_commit": A})
+    admin = SimpleNamespace(preflight=lambda: None, RecoveryError=RuntimeError,
+                            policy=lambda: {"backup_root": str(tmp_path / "backups")},
+                            secure_directory=lambda p: p.mkdir(parents=True), Snapshot=FakeSnapshot,
+                            pause_application=lambda run: contextlib.nullcontext(), cleanup=lambda *a, **k: None,
+                            service_states=lambda run: {})
+    monkeypatch.setattr(cli, "administration", lambda: admin)
     flag = tmp_path / "web_run.enabled"
     monkeypatch.setattr(cli, "WEB_RUN_FLAG", flag)
     if web_run:
@@ -150,16 +171,18 @@ def test_update_pins_revision_preserves_mode_and_records_only_success(tmp_path, 
     monkeypatch.setattr(cli, "validate_checkout", lambda r: None)
     calls = []
     def install(args, **kw):
+        if args[0] != "bash":
+            return SimpleNamespace(stdout="inactive\n")
         calls.append((args, kw))
         if fail:
             raise cli.UpdateError("installer failed")
         cli.atomic_json(state, {"installed_commit": B})
     monkeypatch.setattr(cli, "run", install)
     if fail:
-        with pytest.raises(cli.UpdateError, match="Instalação falhou"):
+        with pytest.raises(cli.UpdateError, match="instalação anterior restaurada"):
             cli.update(state, status)
-        assert cli.read_json(state)["last_update_failed"] is True
-        assert cli.read_json(status)["state"] == "install_failed"
+        assert cli.read_json(state)["installed_commit"] == A
+        assert not cli.read_json(state).get("last_update_failed")
     else:
         assert cli.update(state, status) == 0
         assert cli.read_json(state)["installed_commit"] == B
@@ -183,7 +206,7 @@ def test_timers_resume_even_when_collection_is_busy(monkeypatch):
         with cli.pause_collection_timers():
             pytest.fail("must not deploy during collection")
     starts = [a[2] for a in calls if a[1] == "start"]
-    assert starts == ["hmg-soar-report.timer", "hmg-soar-grype.timer"]
+    assert starts == ["hmg-soar-report.timer", "hmg-soar-grype.timer", "eyemole-update-check.timer"]
 
 
 def test_record_install_tracks_exact_git_revision_and_dirty_tree(tmp_path):

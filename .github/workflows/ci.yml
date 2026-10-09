@@ -1,0 +1,29 @@
+name: EyeMole validation
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install pytest requests urllib3
+      - name: Syntax and whitespace
+        run: |
+          bash -n install.sh uninstall.sh
+          python -m compileall -q cli agents opt/hmg-soar
+          node --check opt/hmg-soar/assets/operations.js
+          git diff --check
+      - name: Python and Linux installer suites
+        run: python -m pytest -q opt/hmg-soar/tests

@@ -11,6 +11,12 @@ o instalador **uma vez**, preservando os parâmetros usados na instalação
 original. Após isso, as próximas atualizações usam apenas `sudo eyemole update`.
 Não é necessário preencher novamente credenciais existentes.
 
+A primeira atualização executada pela CLI anterior ainda usa o mecanismo de
+recuperação dessa CLI: a recuperação automática descrita abaixo passa a valer
+**depois** de instalada esta versão. O novo instalador cria o snapshot comprimido
+mesmo nessa migração e inicia o worker ao concluir; consulte a localização real
+do snapshot no log do instalador.
+
 ## Aviso e comandos
 
 ```bash
@@ -46,11 +52,14 @@ inválido não são apresentados como uma instalação atualizada. A consulta
    Um opt-in de laboratório já configurado é preservado, nunca ativado sozinho.
 4. Clona o repositório fixo com TLS normal e checkout do SHA verificado;
    valida a sintaxe Bash/Python antes da implantação.
-5. Pausa os timers de coleta e recusa a troca se uma coleta já estiver ativa.
-6. Executa o instalador, preservando `config/`, `output/`, SBOMs, cache,
-   credenciais e o marcador de web-run. O instalador verifica API, nginx e
-   publicação dos relatórios. A revisão é registrada somente ao final.
-7. Retoma os timers que estavam ativos e atualiza o status do painel.
+5. Verifica espaço para backup e restauração; recusa jobs/coletas ativos; pausa
+   timers e processos que alteram os dados.
+6. Cria e verifica um snapshot comprimido privado; executa o instalador preservando
+   configurações, dados, credenciais e web-run. A revisão é registrada ao final.
+7. Em falha de instalação, restaura o snapshot e valida Nginx. Se a recuperação
+   falhar, mantém a manutenção e bloqueia novas atualizações.
+8. Em sucesso, retoma os serviços/timers, atualiza o aviso e aplica retenção aos
+   snapshots bem-sucedidos e relatórios históricos conforme a política.
 
 A atualização pode levar alguns minutos e reinicia a API. Os componentes
 Wazuh e os agentes não são atualizados por esse comando.
@@ -62,24 +71,53 @@ no layout padrão por engano.
 
 ## Backup e falhas
 
-Cada aplicação cria um backup privado em
-`/opt/backup-eyemole-update-{timestamp}-{id}/`, incluindo aplicação, publicação
-web, credenciais, CLI anterior e unidades systemd existentes. O log fica em
-`/var/lib/eyemole/updates/update-{id}/install.log`; esses diretórios são privados
-do administrador. Backups e logs não são eliminados automaticamente.
+No layout padrão, snapshots ficam em `/var/backups/eyemole/eyemole-snapshot-*`,
+com `snapshot.tar.gz` e manifesto SHA-256 privados. O destino pode ser alterado
+em `/etc/hmg-soar/update-policy.json`. O log do update permanece em
+`/var/lib/eyemole/updates/update-*/install.log`. O checkout inicial pode continuar
+em `/EyeMole`; o updater usa staging privado persistente, sem depender de `/tmp`.
 
-Erro de rede, TLS ou validação antes da instalação não altera o código em uso.
-Uma falha durante a instalação pode deixar mudanças parciais: **não há rollback
-automático**. A CLI mostra backup/log e registra `install_failed`, bloqueando
-novas tentativas até a recuperação. Consulte o procedimento em
-[OPERATIONS.md](OPERATIONS.md#rollback-de-instalação), restaurando também a
-CLI, as unidades e `/etc/hmg-soar/installed-version.json` (da pasta
-`credentials/` no backup) conforme
-necessário. Não trate o SHA anterior como prova de que o código foi restaurado.
+O snapshot inclui aplicação, publicação web, configuração e credenciais,
+CLI/helper anteriores, base da plataforma, unidades gerenciadas e `/etc/nginx`.
+**A recuperação restaura também a configuração completa do Nginx** capturada
+naquele instante. Não execute mudanças paralelas de outros sites durante o update.
+ACLs e atributos estendidos são preservados; recuperação de ACL exige `setfacl`
+(pacote `acl`, instalado como dependência). Links para fora dos caminhos gerenciados
+ou arquivos especiais bloqueiam o snapshot antes de instalar.
 
-Se a recuperação for feita por uma reinstalação bem-sucedida, o instalador
-registra novamente a revisão e remove o estado de falha. Investigue o log
-antes de repetir uma instalação com a mesma causa.
+Falha antes da instalação não altera o código. Falha durante a instalação tenta
+recuperação automática. Falha da própria recuperação mantém
+`/run/eyemole-recovery-required` e exige intervenção. Não remova esse marcador
+para ignorar um estado parcial. A recuperação manual é:
+
+```bash
+sudo eyemole rollback /var/backups/eyemole/eyemole-snapshot-SEU_SNAPSHOT
+sudo eyemole doctor
+```
+
+Verifique o log antes de repetir. O comando de rollback verifica o snapshot e
+espaço para staging, restaura os caminhos gerenciados e recarrega o Nginx; não
+atualiza Wazuh nem os agentes. Arquivos externos a esses caminhos não são
+restaurados. A criação de contas Linux pelo instalador também não é revertida.
+
+A retenção conserva pelo menos dois snapshots bem-sucedidos, além de snapshots
+preparados, falhos/restaurados e backups antigos. Limites de tamanho são metas:
+se os backups protegidos excederem o limite, eles permanecem e exigem análise
+administrativa. Backups históricos `/opt/backup-eyemole-*` não são apagados
+por essa política. Relatórios históricos conservam pelo menos dois arquivos;
+`latest.json` e o relatório atual não são candidatos.
+
+```bash
+sudo eyemole doctor              # serviços, disco, coleta e TLS
+sudo eyemole status --json       # diagnóstico estruturado
+sudo eyemole cleanup             # mostra candidatos, sem apagar
+sudo eyemole cleanup --apply     # aplica a política configurada
+```
+
+O instalador direto usa snapshot comprimido para atualização de layout padrão,
+mas a recuperação automática e a pausa coordenada são funções do `eyemole update`.
+Instalações personalizadas usam seus parâmetros e backup compatível; a CLI continua
+recusando atualizar um layout diferente.
 
 ```bash
 systemctl status eyemole-update-check.timer

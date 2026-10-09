@@ -7,6 +7,7 @@ Wants=network.target
 Type=simple
 User=hmg-soar
 Group=www-data
+SupplementaryGroups=eyemole-ops
 
 WorkingDirectory=/opt/hmg-soar
 ExecStart=/usr/bin/python3 /opt/hmg-soar/soar_api.py
@@ -42,7 +43,7 @@ RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
-UMask=0027
+UMask=0007
 
 # Sem capabilities: a API não precisa de nenhum privilégio especial.
 CapabilityBoundingSet=
@@ -55,7 +56,7 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # e ao diretório de configuração (classificação de ativos via web edita apenas
 # /opt/hmg-soar/config/assets_context.json).
 ReadOnlyPaths=/opt/hmg-soar
-ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config /opt/hmg-soar/sbom/pending
+ReadWritePaths=/var/www/wazuh-soar/data /opt/hmg-soar/audit /opt/hmg-soar/config /opt/hmg-soar/sbom/pending /var/lib/eyemole/platform
 
 [Install]
 WantedBy=multi-user.target
