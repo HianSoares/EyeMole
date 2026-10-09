@@ -52,3 +52,7 @@ nginx/wazuh-soar
 
 # Test inputs/outputs
 *test_output.json
+
+# Isolated pytest state (Windows and Linux)
+.test-tmp-pytest/
+.pytest_cache/

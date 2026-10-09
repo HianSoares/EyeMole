@@ -670,9 +670,20 @@ Se for necessário utilizar o peso máximo de `production` (15 pontos):
 
 ## Backups, rollback e Git
 
-### Checkpoints de instalação
+### Snapshots e recuperação atuais
 
-Cada execução de `install.sh` cria backup em:
+Para o layout padrão, use [UPDATES.md](UPDATES.md): snapshots comprimidos privados
+em `/var/backups/eyemole`, preflight de espaço, recuperação automática no update,
+`sudo eyemole rollback`, diagnóstico e retenção. A plataforma e seus conectores
+estão documentados em [PLATFORM.md](PLATFORM.md).
+
+As instruções de cópia abaixo descrevem **backups antigos** em `/opt`; não use
+esse procedimento para snapshots novos e não restaure só o código após update
+parcial, deixando credenciais e unidades de outra revisão.
+
+### Checkpoints legados de instalação
+
+Instalações anteriores criavam backup em:
 
 ```
 /opt/backup-eyemole-install-{timestamp}/
@@ -689,7 +700,7 @@ Exemplo: `/opt/backup-eyemole-install-20260729-143022/`
 - Sudoers (se existia)
 - Regra PolicyKit (se existia)
 
-### Rollback de instalação
+### Rollback de instalação legada
 
 Para reverter para o estado anterior:
 

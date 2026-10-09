@@ -7705,6 +7705,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="meta-badge">API: <strong id="header-status-api">...</strong></div>
           <div class="meta-badge">Timer: <strong id="header-status-timer">...</strong></div>
           <div class="meta-badge">Versão: <strong id="eyemole-installed-version">...</strong></div>
+          <a class="meta-badge" href="/soar/assets/operations.html">Campanhas e operações →</a>
         </div>
       </header>
 

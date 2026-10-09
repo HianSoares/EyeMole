@@ -36,6 +36,8 @@ SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/hmg-soar-api}"
 WRAPPER_RUN_ANALYSIS="${WRAPPER_RUN_ANALYSIS:-/usr/local/sbin/hmg-soar-run-analysis}"
 WRAPPER_STATUS="${WRAPPER_STATUS:-/usr/local/sbin/hmg-soar-status}"
 EYEMOLE_CLI_BIN="${EYEMOLE_CLI_BIN:-/usr/local/bin/eyemole}"
+EYEMOLE_HELPER_DIR="${EYEMOLE_HELPER_DIR:-/usr/local/lib/eyemole}"
+PLATFORM_STATE_DIR="${PLATFORM_STATE_DIR:-/var/lib/eyemole/platform}"
 BACKUP_ROOT="${BACKUP_ROOT:-/opt}"
 NGINX_ROOT="${NGINX_ROOT:-/etc/nginx}"
 PRESERVE_ROOT="${PRESERVE_ROOT:-/var/lib/eyemole-preserved}"
@@ -211,6 +213,7 @@ inventory() {
         "$EYEMOLE_CLI_BIN"
         "${SYSTEMD_UNIT_DIR}/eyemole-update-check.service"
         "${SYSTEMD_UNIT_DIR}/eyemole-update-check.timer"
+        "${SYSTEMD_UNIT_DIR}/eyemole-platform-worker.service"
     )
 
     for p in "${check_paths[@]}"; do
@@ -381,6 +384,7 @@ stop_services() {
     log "Stopping and disabling systemd services..."
 
     local -a units_ordered=(
+        "eyemole-platform-worker.service"
         "eyemole-update-check.timer"
         "eyemole-update-check.service"
         "$REPORT_TIMER_FILE"
@@ -734,10 +738,14 @@ _nginx_rollback() {
 # =============================================================================
 remove_systemd_units() {
     log "Removing systemd unit files..."
+    if [[ "$EYEMOLE_HELPER_DIR" == /usr/local/lib/eyemole && -d "$EYEMOLE_HELPER_DIR" && ! -L "$EYEMOLE_HELPER_DIR" ]]; then
+        rm -rf -- "$EYEMOLE_HELPER_DIR"
+    fi
 
     local -a unit_files=(
         "${SYSTEMD_UNIT_DIR}/eyemole-update-check.service"
         "${SYSTEMD_UNIT_DIR}/eyemole-update-check.timer"
+        "${SYSTEMD_UNIT_DIR}/eyemole-platform-worker.service"
         "${SYSTEMD_UNIT_DIR}/${API_SERVICE_FILE}"
         "${SYSTEMD_UNIT_DIR}/${REPORT_SERVICE_FILE}"
         "${SYSTEMD_UNIT_DIR}/${REPORT_TIMER_FILE}"
@@ -850,6 +858,12 @@ preserve_data() {
     log "Preserving state data selectively to ${PRESERVE_ROOT}..."
     local preserve_ts="${PRESERVE_ROOT}/${TS}"
     mkdir -p "$preserve_ts"
+
+    chmod 0700 "$preserve_ts"
+    if [[ -d "$PLATFORM_STATE_DIR" && ! -L "$PLATFORM_STATE_DIR" ]]; then
+        cp -a "$PLATFORM_STATE_DIR" "${preserve_ts}/platform"
+        log "  Preserved operations state: ${PLATFORM_STATE_DIR}"
+    fi
 
     # --- APP_DIR: preserve only config, audit, output ---
     local -a app_preserve_dirs=(config audit output)
@@ -1003,7 +1017,7 @@ final_validations() {
     local issues=0
 
     # Check no stray systemd units
-    for unit in "$API_SERVICE_FILE" "$REPORT_SERVICE_FILE" "$REPORT_TIMER_FILE" eyemole-update-check.service eyemole-update-check.timer; do
+    for unit in "$API_SERVICE_FILE" "$REPORT_SERVICE_FILE" "$REPORT_TIMER_FILE" eyemole-update-check.service eyemole-update-check.timer eyemole-platform-worker.service; do
         if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "$unit"; then
             warn "Systemd unit ${unit} still registered (may need reboot to clear)."
             issues=$((issues + 1))

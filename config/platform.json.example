@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "users": {},
+  "projects": {
+    "hmg": {
+      "snapshot_path": "/var/www/wazuh-soar/data/latest.json",
+      "config_dir": "/opt/hmg-soar/config",
+      "timezone": "America/Sao_Paulo",
+      "snapshot_max_age_seconds": 86400,
+      "asset_map": {},
+      "execution": {
+        "enabled": false,
+        "agent_ids": [],
+        "max_actions": 10
+      },
+      "integrations": {
+        "kiro": {
+          "enabled": false,
+          "binary": "/usr/local/bin/kiro-cli",
+          "timeout_seconds": 120
+        },
+        "glpi": {
+          "enabled": false,
+          "url": "https://glpi.example.com/apirest.php"
+        },
+        "qradar": {
+          "enabled": false,
+          "url": "https://qradar.example.com/api",
+          "api_version": "20.0"
+        },
+        "vision_one": {
+          "enabled": false,
+          "url": "https://api.xdr.trendmicro.com"
+        },
+        "wazuh": {
+          "enabled": false,
+          "url": "https://127.0.0.1:55000",
+          "ca": "/etc/hmg-soar/certs/wazuh-root-ca.pem"
+        }
+      }
+    }
+  },
+  "authentication": {
+    "mode": "basic",
+    "auth_proxy_url": "http://127.0.0.1:4180/oauth2/auth"
+  }
+}

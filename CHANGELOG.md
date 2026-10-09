@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Plataforma operacional
+
+- Campanhas por instância/exposição, responsáveis, prazos, janelas, aceitação temporária e validação posterior por coleta e inventário.
+- API modular, SQLite transacional, fila durável, auditoria encadeada e worker separado com credenciais próprias.
+- RBAC por projeto/ativo, proteção do dashboard legado e SSO opcional via OAuth2 Proxy local.
+- Conectores opcionais Kiro headless sem ferramentas, GLPI V1, QRadar, Vision One, Wazuh e evidências oficiais Microsoft/Red Hat/Ubuntu.
+- Execução piloto Linux apt/dnf/yum via Active Response Wazuh 4.x, aprovação, allowlist, assinatura, validade e proteção contra replay.
+- Diagnóstico CLI, snapshots comprimidos verificados, preflight de espaço, recuperação automática do updater e retenção configurável.
+- CI Linux Python 3.12/3.13, verificação de sintaxe e workflow de releases por tag com SHA-256.
+- Guia de ativação, limites e validação em `docs/PLATFORM.md`; atualizadas as instruções de atualização e recuperação.
+
+
 ### Adicionado
 
 - CLI `eyemole version`, `eyemole check-update` e `sudo eyemole update`: revisão instalada registrada, atualização pelo SHA da main, preflight TLS, backup privado, bloqueio de concorrência e preservação do modo de operação.

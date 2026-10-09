@@ -36,6 +36,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse, parse_qs, unquote
+from operations.api import handle as handle_operations, authorize_legacy
+from operations.security import authenticated_identity, load_config
 
 # Logging — configurado ANTES de qualquer import opcional, para que o fallback
 # de import possa registrar a falha sem derrubar o módulo inteiro.
@@ -662,7 +664,9 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
     """Handler HTTP para a API local do SOAR."""
 
     def _get_remote_user(self) -> str:
-        return self.headers.get("X-Remote-User", "unknown")
+        if not hasattr(self, "_authenticated_identity"):
+            self._authenticated_identity = authenticated_identity(self.headers, load_config())
+        return self._authenticated_identity
 
     def _get_client_ip(self) -> str:
         return (
@@ -687,6 +691,9 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
         query_params = parse_qs(parsed_url.query)
+
+        if handle_operations(self, "GET", path) or not authorize_legacy(self, path):
+            return
 
         if path == "/health":
             self._handle_health()
@@ -722,6 +729,9 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed_url = urlparse(self.path)
         path = parsed_url.path
+
+        if handle_operations(self, "POST", path) or not authorize_legacy(self, path):
+            return
 
         if path == "/run-analysis":
             self._handle_run_analysis()

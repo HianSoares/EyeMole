@@ -1,0 +1,33 @@
+name: Validated release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install pytest requests urllib3
+      - name: Validate sources
+        run: |
+          bash -n install.sh uninstall.sh
+          python -m compileall -q cli agents opt/hmg-soar
+          node --check opt/hmg-soar/assets/operations.js
+          git diff --check
+      - run: python -m pytest -q opt/hmg-soar/tests
+      - name: Package with checksum
+        run: |
+          git archive --format=tar.gz --prefix=EyeMole/ HEAD > eyemole.tar.gz
+          sha256sum eyemole.tar.gz > SHA256SUMS
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" eyemole.tar.gz SHA256SUMS --verify-tag --generate-notes
