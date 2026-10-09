@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Explicação por IA (NVIDIA)
+
+- Adaptador HTTP compatível com OpenAI (`operations/llm.py`) com NVIDIA API Catalog como provedor padrão (`nvidia/nemotron-3-super-120b-a12b`, configurável); funciona sem instalação, login ou chave do Kiro.
+- "Ver correção" ganha a seção Explicação por IA por instalação; campanhas usam "Explicar com IA". Estados de fila, geração, conclusão, falha e desatualização exibidos com provedor e modelo.
+- Contrato de resposta compartilhado (`operations/ai_contract.py`): campos e IDs permitidos, rejeição de JSON inválido, referências inventadas, chamadas de ferramenta e texto com comandos.
+- Resultados ligados à instância, à revisão do snapshot/plano/evidências e ao provedor/modelo; descartados se os dados mudarem durante a geração; regenerar planos invalida a explicação da campanha.
+- Transporte: endpoint só da configuração administrativa (allowlist), TLS validado, sem redirecionamentos, orçamento de tempo, tentativas limitadas com `Retry-After`, limite de tamanho; erros sem chave nem corpo remoto.
+- `NVIDIA_API_KEY` somente em `/etc/hmg-soar/integrations.env` (worker); `sudo eyemole ai configure|status|check` para habilitar, inspecionar e validar com dados sintéticos.
+- Kiro mantido como provedor legado (configurações existentes preservadas; rota `/kiro` mapeada para o job de IA).
+- `operations.worker` importa `fcntl` apenas no processo do worker (módulo importável nos testes).
+
 ### Plataforma operacional
 
 - Campanhas por instância/exposição, responsáveis, prazos, janelas, aceitação temporária e validação posterior por coleta e inventário.

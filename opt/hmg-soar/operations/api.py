@@ -10,6 +10,23 @@ from remediation.rate_limiter import SlidingWindowLog
 
 _READ_LIMIT = SlidingWindowLog(max_tokens=120, window_seconds=60)
 _WRITE_LIMIT = SlidingWindowLog(max_tokens=30, window_seconds=60)
+LEGACY_SNAPSHOT = "/var/www/wazuh-soar/data/latest.json"
+
+
+def legacy_project(cfg, p):
+    """Project whose snapshot backs the legacy dashboard ("Ver correção")."""
+    for name, project in cfg.get("projects", {}).items():
+        allowed = name in p.projects or "*" in p.projects
+        if allowed and isinstance(project, dict) and project.get("snapshot_path", LEGACY_SNAPSHOT) == LEGACY_SNAPSHOT:
+            return name
+    return None
+
+
+def job_visible(job, campaigns, p):
+    parts = job["object_id"].split(":")
+    if parts[0] == "finding":
+        return len(parts) > 1 and (not p.agents or parts[1] in p.agents)
+    return parts[0] in campaigns
 
 
 def handle(handler, method, path):
@@ -50,7 +67,8 @@ def handle(handler, method, path):
         if path == "/platform/me" and method == "GET":
             handler._send_json(200, {"user": p.name, "role": p.role,
                                    "projects": [k for k in cfg.get("projects", {}) if k in p.projects or "*" in p.projects],
-                                   "legacy_dashboard": legacy_allowed(cfg, username)})
+                                   "legacy_dashboard": legacy_allowed(cfg, username),
+                                   "legacy_project": legacy_project(cfg, p)})
             return True
         service = Operations(Store(), cfg, p)
         service.context(project)
@@ -76,10 +94,17 @@ def handle(handler, method, path):
             result = service.proposals(project)
         elif method == "GET" and path == "/platform/jobs":
             campaigns = {c["id"] for c in service.store.list(project, "campaign") if service.visible(c)}
-            result = {"items": [j for j in service.store.jobs(project) if j["object_id"].split(":")[0] in campaigns]}
+            result = {"items": [j for j in service.store.jobs(project) if job_visible(j, campaigns, p)]}
         elif method == "GET" and path in {"/platform/inventory", "/platform/incidents", "/platform/evidence", "/platform/executions"}:
             kind = {"incidents": "incident", "executions": "execution"}.get(parts[-1], parts[-1])
             result = {"items": [r for r in service.store.list(project, kind) if service.visible(r)]}
+        elif method == "GET" and path == "/platform/ai-status":
+            result = service.ai_status(project)
+        elif len(parts) == 4 and parts[1] == "findings" and parts[3] == "ai":
+            if method == "GET":
+                result = service.finding_ai(project, parts[2])
+            else:
+                result, status = service.queue_finding_ai(project, parts[2]), 202
         elif method == "GET" and path == "/platform/audit":
             p.require("read", project)
             if p.agents:
@@ -95,7 +120,7 @@ def handle(handler, method, path):
             actions = {"transition": service.transition, "verify": service.verify, "accept": service.accept, "approve": service.approve}
             if parts[3] in actions:
                 result = actions[parts[3]](project, parts[2], body)
-            elif parts[3] in {"plans", "kiro", "ticket", "sync", "execute", "evidence"}:
+            elif parts[3] in {"plans", "ai", "kiro", "ticket", "sync", "execute", "evidence"}:
                 result, status = service.queue(project, parts[2], parts[3], body), 202
         if result is None:
             raise OperationError("Endpoint operacional não encontrado.", 404)

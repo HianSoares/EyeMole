@@ -2,7 +2,6 @@
 import argparse
 import base64
 import datetime as dt
-import fcntl
 import hashlib
 import hmac
 import json
@@ -17,6 +16,7 @@ from pathlib import Path
 
 from remediation.versioning import ecosystem_for_package_manager
 from .connectors import GLPI, QRadar, VisionOne, Wazuh, vendor_evidence
+from . import ai
 from .kiro import explain
 from .planning import engine_for, source_revision
 from .security import load_config, project_config, principal, OperationError
@@ -168,17 +168,85 @@ def execute_campaign(campaign, project, config, actor, pilot, secrets, receipt=N
     return {"actions": results, "state": "dispatched", "correction_confirmed": False}
 
 
+def explain_campaign(store, service, project, cfg, c, secrets, actor):
+    """Explain the campaign's current plans; reject if plans/evidence/sources change meanwhile."""
+    if not c.get("plans"):
+        raise OperationError("Gere os planos antes de solicitar a explicação por IA.", 409)
+    identifier = c["id"]
+    evidence = [e for e in store.list(project, "evidence") if e.get("campaign_id") == identifier]
+    plans_hash, evidence_hash = ai.digest(c["plans"]), service.evidence_hash(project, identifier)
+    sources_before = source_revision(engine_for(cfg))
+    kind, provider_settings = ai.selection(cfg)
+    if kind == "kiro":
+        result = explain(c, evidence, provider_settings, secrets)
+        result.update(provider="kiro", provider_label="Kiro (legado)", model="kiro-cli", served_model="kiro-cli")
+    else:
+        result = ai.explain_plans(c["plans"], cfg, secrets, extra_evidence=evidence)
+    # Revalidate after the (slow) provider call: never store an outdated explanation.
+    current = store.get(project, "campaign", identifier)
+    if (current["version"] != c["version"] or ai.digest(current.get("plans", [])) != plans_hash
+            or service.evidence_hash(project, identifier) != evidence_hash
+            or source_revision(engine_for(cfg)) != sources_before):
+        raise OperationError("Planos, evidências ou fontes mudaram durante a geração; solicite novamente.", 409)
+    current["ai_explanation"] = dict(result, generated_at=now(), plan_revision=c.get("plan_revision"),
+                                     plans_hash=plans_hash, evidence_hash=evidence_hash, source_revision=sources_before)
+    # Optimistic version check: a concurrent change aborts instead of overwriting.
+    store.put(project, "campaign", identifier, current, actor, "ai.explained", current["version"])
+    return {"provider": result["provider"], "model": result["model"], "recommendations": len(result["recommendations"])}
+
+
+def explain_finding(store, service, project, cfg, job, payload, secrets):
+    """Explain one installation's deterministic guidance ("Ver correção")."""
+    finding_id, agent = payload["finding_id"], payload["agent_id"]
+    service.user.require("write", project, [agent])
+    if ai.provider_key(cfg) != payload.get("provider_key"):
+        raise OperationError("Provedor ou modelo de IA mudou após o pedido; solicite novamente.", 409)
+
+    def snapshot_state():
+        _, rows, revision = read_snapshot(cfg)
+        row = rows.get(finding_id)
+        if row is None or str(row.get("agent_id")) != agent:
+            raise OperationError("Instância não está mais no snapshot atual.", 409)
+        guidance = engine_for(cfg).generate_guidance(finding_id).to_dict()
+        return revision, guidance
+
+    revision, guidance = snapshot_state()
+    if revision != payload["snapshot_revision"] or guidance.get("snapshot_revision") != payload["guidance_revision"]:
+        raise OperationError("Dados mudaram desde o pedido; solicite a explicação novamente.", 409)
+    guidance["package"] = guidance.get("package_name")
+    kind, provider_settings = ai.selection(cfg)
+    if kind == "kiro":
+        result = explain({"plans": [guidance]}, [], provider_settings, secrets)
+        result.update(provider="kiro", provider_label="Kiro (legado)", model="kiro-cli", served_model="kiro-cli")
+    else:
+        result = ai.explain_plans([guidance], cfg, secrets)
+    after_revision, after = snapshot_state()
+    if after_revision != revision or after.get("snapshot_revision") != guidance.get("snapshot_revision"):
+        raise OperationError("Dados mudaram durante a geração; explicação descartada.", 409)
+    object_id = job["object_id"]
+    data = {"finding_id": finding_id, "agent_ids": [agent], "cve": guidance.get("cve"),
+            "package": guidance.get("package_name"), "installed_version": guidance.get("installed_version"),
+            "snapshot_revision": revision, "guidance_revision": guidance.get("snapshot_revision"),
+            "provider": result["provider"], "provider_label": result["provider_label"], "model": result["model"],
+            "served_model": result.get("served_model"), "summary": result["summary"],
+            "recommendations": result["recommendations"],
+            "evidence": [{"id": e["id"], "label": e.get("label") or e.get("description"), "url": e.get("url")}
+                         for e in ai.plan_evidence(guidance)],
+            "generated_at": now()}
+    key = hashlib.sha256(object_id.encode()).hexdigest()
+    store.put(project, "ai_finding", key, data, job["actor"], "ai.finding_explained")
+    return {"provider": result["provider"], "model": result["model"], "recommendations": len(result["recommendations"])}
+
+
 def process(store, config, job, secrets):
     payload = json.loads(job["payload"])
     actor = principal(config, job["actor"])
     service = Operations(store, config, actor)
     project = job["project"]
     cfg = project_config(config, project)
-    prefix = cfg.get("secret_prefix", "")
-    if prefix:
-        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}_", prefix):
-            raise OperationError("Prefixo de credenciais inválido.")
-        secrets = {k[len(prefix):]: v for k, v in secrets.items() if k.startswith(prefix)}
+    secrets = ai.scoped_secrets(cfg, secrets)
+    if job["kind"] == "ai_finding":
+        return explain_finding(store, service, project, cfg, job, payload, secrets)
     identifier = payload["campaign_id"]
     permission = "execute" if job["kind"] == "execute" else "integrate" if job["kind"] in {"ticket", "sync", "evidence"} else "write"
     c = service.get_campaign(project, identifier, permission)
@@ -188,12 +256,8 @@ def process(store, config, job, secrets):
         plans, revision = generate_plans(c, cfg)
         service.save_plans(project, identifier, plans, revision, job["actor"])
         return {"plans": len(plans), "revision": revision}
-    if job["kind"] == "kiro":
-        evidence = [e for e in store.list(project, "evidence") if e.get("campaign_id") == identifier]
-        result = explain(c, evidence, settings(cfg, "kiro"), secrets)
-        c["ai_explanation"] = dict(result, generated_at=now(), provider="kiro", plan_revision=c.get("plan_revision"))
-        store.put(project, "campaign", identifier, c, job["actor"], "kiro.explained", c["version"])
-        return result
+    if job["kind"] in {"ai", "kiro"}:
+        return explain_campaign(store, service, project, cfg, c, secrets, job["actor"])
     if job["kind"] == "ticket":
         ticket = GLPI(settings(cfg, "glpi"), secrets).create(c)
         c["ticket"] = ticket
@@ -252,6 +316,7 @@ def main():
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    import fcntl  # Linux-only; imported here so the module stays importable for tests
     store = Store()
     lock_path = store.path.parent / "worker.lock"
     with lock_path.open("a") as lock:

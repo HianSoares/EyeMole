@@ -302,7 +302,7 @@ As alterações passam a influenciar integralmente a priorização no próximo r
 
 A área **Operações** acrescenta campanhas de correção, responsáveis, prazos,
 validação por inventário e nova coleta, papéis por ambiente/ativo e jobs duráveis.
-Há conectores opcionais para Kiro, GLPI, QRadar, Vision One e Wazuh, evidências
+Há explicação opcional por IA (NVIDIA; ver `docs/AI_PROVIDER.md`) e conectores para GLPI, QRadar, Vision One e Wazuh, evidências
 oficiais e execução piloto Linux com aprovação e janela de manutenção.
 
 A plataforma é instalada desabilitada; a configuração e ativação estão no

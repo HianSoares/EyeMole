@@ -333,13 +333,58 @@ def configure_access(username, role, projects, agents=(), enable=False, path=Pat
         if role != "admin" or projects != ["*"]:
             raise RecoveryError("Habilitação exige administrador global.")
         data["enabled"] = True
+    _write_platform(path, data)
+    return {"user": username, "role": role, "projects": projects, "enabled": data.get("enabled", False)}
+
+
+def _write_platform(path, data):
+    """Atomic replace preserving owner and mode of platform.json."""
     temporary = path.with_name(".platform-" + uuid.uuid4().hex)
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     info = path.stat()
     os.chown(temporary, info.st_uid, info.st_gid)
     os.chmod(temporary, info.st_mode & 0o777)
     temporary.replace(path)
-    return {"user": username, "role": role, "projects": projects, "enabled": data.get("enabled", False)}
+
+
+AI_PROVIDERS = {"nvidia": {"base_url": "https://integrate.api.nvidia.com/v1",
+                           "model": "nvidia/nemotron-3-super-120b-a12b", "secret": "NVIDIA_API_KEY"}}
+
+
+def configure_ai(project, provider="nvidia", model=None, enable=None, timeout=None,
+                 path=Path("/etc/hmg-soar/platform.json")):
+    """Create/update integrations.ai for one project. Secrets never go to platform.json."""
+    import re
+    if provider not in AI_PROVIDERS:
+        raise RecoveryError("Provedor de IA não suportado.")
+    if model is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:-]{0,127}", model):
+        raise RecoveryError("Identificador de modelo inválido.")
+    if timeout is not None and not 15 <= int(timeout) <= 300:
+        raise RecoveryError("timeout_seconds deve ficar entre 15 e 300.")
+    data = json.loads(path.read_text())
+    projects = data.get("projects", {})
+    if project not in projects or not isinstance(projects[project], dict):
+        raise RecoveryError("Projeto não configurado.")
+    integrations = projects[project].setdefault("integrations", {})
+    block = dict(integrations.get("ai") or {})
+    if block.get("provider") != provider:
+        # Provider change: never keep another provider's endpoint or model.
+        block.pop("base_url", None)
+        block.pop("model", None)
+    defaults = AI_PROVIDERS[provider]
+    block["provider"] = provider
+    block["base_url"] = block.get("base_url") or defaults["base_url"]
+    block["model"] = model or block.get("model") or defaults["model"]
+    block.setdefault("timeout_seconds", 90)
+    block.setdefault("max_output_tokens", 2048)
+    block.setdefault("thinking", "disabled")
+    if timeout is not None:
+        block["timeout_seconds"] = int(timeout)
+    block["enabled"] = bool(enable) if enable is not None else bool(block.get("enabled", False))
+    integrations["ai"] = block
+    _write_platform(path, data)
+    return {"project": project, "provider": provider, "model": block["model"], "enabled": block["enabled"],
+            "secret": (projects[project].get("secret_prefix", "") + defaults["secret"])}
 
 
 def cleanup(config=None, apply=False):

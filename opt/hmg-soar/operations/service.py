@@ -12,6 +12,9 @@ from remediation.versioning import compare_versions
 from .security import OperationError, project_config, PERMISSIONS
 from .store import now
 from .planning import engine_for, source_revision
+from . import ai as ai_support
+
+FINDING_ID = re.compile(r"[a-f0-9]{64}")
 
 TRANSITIONS = {
     "identified": {"analyzing"}, "analyzing": {"planned"},
@@ -101,6 +104,12 @@ class Operations:
         rows = {i: r for i, r in rows.items() if not self.user.agents or str(r["agent_id"]) in self.user.agents}
         exposures = {exposure(r) for r in rows.values()}
         campaigns = [c for c in self.store.list(project, "campaign") if self.visible(c)]
+        for c in campaigns:
+            explanation = c.get("ai_explanation")
+            if explanation:
+                # Stale when plans or campaign evidence changed after the generation.
+                explanation["current"] = (explanation.get("plans_hash") == ai_support.digest(c.get("plans", []))
+                                          and explanation.get("evidence_hash") == self.evidence_hash(project, c["id"]))
         return {"project": project, "revision": revision, "instances": len(rows), "exposures": len(exposures),
                 "quality": quality(metadata, rows.values(), cfg), "campaigns": campaigns,
                 "permissions": sorted(PERMISSIONS[self.user.role])}
@@ -254,6 +263,8 @@ class Operations:
     def save_plans(self, project, identifier, plans, revision, actor):
         c = self.store.get(project, "campaign", identifier)
         c["plans"], c["plan_revision"], c["approval"] = plans, revision, None
+        # An explanation belongs to the plans it explained; new plans invalidate it.
+        c.pop("ai_explanation", None)
         return self.store.put(project, "campaign", identifier, c, actor, "campaign.plans_generated", c["version"])
 
     def approve(self, project, identifier, body):
@@ -271,10 +282,16 @@ class Operations:
         return self.store.put(project, "campaign", identifier, c, self.user.name, "campaign.approved", body.get("version", -1))
 
     def queue(self, project, identifier, kind, body):
+        kind = "ai" if kind == "kiro" else kind  # rota antiga preservada
         permission = "execute" if kind == "execute" else "integrate" if kind in {"ticket", "sync", "evidence"} else "write"
         c = self.get_campaign(project, identifier, permission)
-        if kind not in {"plans", "kiro", "ticket", "sync", "execute", "evidence"}:
+        if kind not in {"plans", "ai", "ticket", "sync", "execute", "evidence"}:
             raise OperationError("Trabalho desconhecido.")
+        if kind == "ai":
+            if not ai_support.public_status(self.context(project)).get("enabled"):
+                raise OperationError("Explicação por IA desabilitada pelo administrador.", 503)
+            if not c.get("plans"):
+                raise OperationError("Gere os planos antes de solicitar a explicação por IA.", 409)
         # The exact campaign version forms the idempotency key for revisable read jobs.
         key = identifier if kind == "ticket" else f"{identifier}:{c['version']}"
         payload = {"campaign_id": identifier, "campaign_version": c["version"]}
@@ -287,3 +304,68 @@ class Operations:
             if not c.get("approval"):
                 raise OperationError("Execução exige aprovação explícita do plano.", 409)
         return self.store.queue(project, kind, key, self.user.name, payload)
+
+    # ------------------------------------------------------------------
+    # Explicação por IA
+    # ------------------------------------------------------------------
+
+    def evidence_hash(self, project, campaign_id):
+        items = [e for e in self.store.list(project, "evidence") if e.get("campaign_id") == campaign_id]
+        return ai_support.digest(sorted((e["id"], e.get("content_sha256")) for e in items))
+
+    def ai_status(self, project):
+        return ai_support.public_status(self.context(project))
+
+    def _finding(self, project, finding_id, permission):
+        cfg = self.context(project, permission)
+        if not isinstance(finding_id, str) or not FINDING_ID.fullmatch(finding_id):
+            raise OperationError("finding_id inválido.")
+        _, rows, revision = read_snapshot(cfg)
+        row = rows.get(finding_id)
+        if row is None:
+            raise OperationError("Instância não encontrada no snapshot atual; atualize o painel.", 404)
+        agent = str(row["agent_id"])
+        self.user.require(permission, project, [agent])
+        guidance = engine_for(cfg).generate_guidance(finding_id)
+        if guidance.status in {"not_found", "provider_unavailable", "ambiguous_finding", "validation_error", "internal_error"}:
+            raise OperationError("Orientação determinística indisponível para esta instância.", 409)
+        status = ai_support.public_status(cfg)
+        # Instance, plan revision and provider/model form the identity: an
+        # explanation is never reused for another installation of the same CVE.
+        object_id = f"finding:{agent}:{finding_id}:{guidance.snapshot_revision}:{ai_support.provider_key(cfg)}"
+        return cfg, row, agent, revision, guidance, status, object_id
+
+    def finding_ai(self, project, finding_id):
+        cfg, row, agent, revision, guidance, status, object_id = self._finding(project, finding_id, "read")
+        result = {"finding_id": finding_id, "provider": status.get("provider"), "provider_label": status.get("provider_label"),
+                  "model": status.get("model"), "enabled": bool(status.get("enabled")), "state": "none"}
+        if not status.get("enabled"):
+            result["reason"] = status.get("reason")
+            return result
+        key = hashlib.sha256(object_id.encode()).hexdigest()
+        try:
+            stored = self.store.get(project, "ai_finding", key)
+        except OperationError:
+            stored = None
+        if stored and stored.get("snapshot_revision") == revision:
+            result.update(state="succeeded", summary=stored["summary"], recommendations=stored["recommendations"],
+                          evidence=stored.get("evidence", []), generated_at=stored.get("generated_at"),
+                          served_model=stored.get("served_model"))
+            return result
+        job = self.store.job_for(project, "ai_finding", object_id)
+        if job:
+            result["state"] = {"queued": "queued", "running": "running"}.get(job["state"], "failed")
+            if result["state"] == "failed":
+                result["error"] = job.get("error") or "Geração não concluída."
+            if job["state"] == "succeeded":
+                # Job finished but its result no longer matches the current data.
+                result.update(state="stale", error="Os dados mudaram depois da geração; solicite novamente.")
+        return result
+
+    def queue_finding_ai(self, project, finding_id):
+        cfg, row, agent, revision, guidance, status, object_id = self._finding(project, finding_id, "write")
+        if not status.get("enabled"):
+            raise OperationError(status.get("reason") or "Explicação por IA desabilitada.", 503)
+        payload = {"finding_id": finding_id, "agent_id": agent, "snapshot_revision": revision,
+                   "guidance_revision": guidance.snapshot_revision, "provider_key": ai_support.provider_key(cfg)}
+        return self.store.queue(project, "ai_finding", object_id, self.user.name, payload)

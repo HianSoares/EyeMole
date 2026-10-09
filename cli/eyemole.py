@@ -31,6 +31,8 @@ WEB_RUN_FLAG = Path("/opt/hmg-soar/config/web_run.enabled")
 MAINTENANCE_FLAG = Path("/run/eyemole-maintenance")
 RECOVERY_REQUIRED = Path("/run/eyemole-recovery-required")
 SHA = re.compile(r"^[0-9a-f]{40}$")
+PLATFORM_FILE = Path("/etc/hmg-soar/platform.json")
+INTEGRATIONS_ENV = Path("/etc/hmg-soar/integrations.env")
 
 
 def administration():
@@ -376,6 +378,40 @@ def update(state_file: Path = STATE_FILE, status_file: Path = STATUS_FILE) -> in
         return 0
 
 
+def ai_status(project: str) -> dict:
+    """Configuration summary; reports whether the key exists, never its value."""
+    data = read_json(PLATFORM_FILE)
+    entry = data.get("projects", {}).get(project)
+    if not isinstance(entry, dict):
+        raise UpdateError("Projeto não configurado em platform.json.")
+    block = entry.get("integrations", {}).get("ai") or {}
+    secret = entry.get("secret_prefix", "") + "NVIDIA_API_KEY"
+    result = {"project": project, "platform_enabled": bool(data.get("enabled")),
+              "enabled": bool(block.get("enabled")), "provider": block.get("provider"),
+              "model": block.get("model"), "secret_name": secret}
+    if os.geteuid() == 0 and INTEGRATIONS_ENV.is_file():
+        result["secret_configured"] = bool(credentials(INTEGRATIONS_ENV).get(secret))
+    return result
+
+
+def ai_check(project: str) -> int:
+    """Synthetic request as eyemole-worker, with the worker's EnvironmentFile."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", project):
+        raise UpdateError("Projeto inválido.")
+    argv = ["systemd-run", "--quiet", "--wait", "--pipe", "--collect",
+            "--uid=eyemole-worker", "--gid=eyemole-ops",
+            "-p", f"EnvironmentFile={INTEGRATIONS_ENV}", "-p", "WorkingDirectory=/opt/hmg-soar",
+            "-p", "NoNewPrivileges=yes", "-p", "ProtectSystem=strict", "-p", "ProtectHome=yes",
+            "-p", "PrivateTmp=yes", "-p", "CapabilityBoundingSet=",
+            "/usr/bin/python3", "-m", "operations.ai_check", "--project", project]
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=360, check=False)
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise UpdateError("Falha ao iniciar a verificação como eyemole-worker.") from exc
+    print(result.stdout.strip() or "Sem resposta da verificação; consulte journalctl.")
+    return result.returncode
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="eyemole", description="Administração do EyeMole")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -396,6 +432,18 @@ def main(argv=None) -> int:
     access.add_argument("--project", action="append", required=True)
     access.add_argument("--agent", action="append", default=[])
     access.add_argument("--enable", action="store_true", help="Habilitar plataforma ao cadastrar administrador global")
+    ai = sub.add_parser("ai", help="Explicação por IA (NVIDIA)")
+    ai_sub = ai.add_subparsers(dest="ai_command", required=True)
+    for name in ("status", "check"):
+        ai_sub.add_parser(name).add_argument("--project", required=True)
+    ai_configure = ai_sub.add_parser("configure", help="Configurar provedor e modelo (requer sudo)")
+    ai_configure.add_argument("--project", required=True)
+    ai_configure.add_argument("--provider", default="nvidia", choices=["nvidia"])
+    ai_configure.add_argument("--model")
+    ai_configure.add_argument("--timeout", type=int)
+    toggle = ai_configure.add_mutually_exclusive_group()
+    toggle.add_argument("--enable", dest="ai_enable", action="store_const", const=True)
+    toggle.add_argument("--disable", dest="ai_enable", action="store_const", const=False)
     record = sub.add_parser("record-install", help="Uso interno do instalador")
     record.add_argument("repo", type=Path)
     record.add_argument("--state-file", type=Path, default=STATE_FILE)
@@ -433,6 +481,18 @@ def main(argv=None) -> int:
             with update_lock():
                 print(json.dumps(administration().configure_access(args.username, args.role, args.project, args.agent, args.enable), ensure_ascii=False))
             return 0
+        if args.command == "ai":
+            if args.ai_command == "status":
+                print(json.dumps(ai_status(args.project), ensure_ascii=False))
+                return 0
+            if os.geteuid() != 0:
+                raise UpdateError("Use sudo eyemole ai " + args.ai_command + ".")
+            if args.ai_command == "configure":
+                with update_lock():
+                    print(json.dumps(administration().configure_ai(args.project, args.provider, args.model,
+                                                                   args.ai_enable, args.timeout), ensure_ascii=False))
+                return 0
+            return ai_check(args.project)
         if args.command == "rollback":
             if os.geteuid() != 0:
                 raise UpdateError("Use sudo eyemole rollback <diretório>.")
