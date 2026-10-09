@@ -21,6 +21,7 @@
 
 ### Corrigido
 
+- fix(installer): detectar o comando `setfacl` e instalar o pacote Ubuntu/Debian `acl`; corrigida a inversão que interrompia a atualização antes do backup e da instalação da aplicação.
 - fix(installer): install default remediation configs on fresh install
 - fix(installer): validate all Python modules including soar_api.py and remediation/
 - fix(installer): remove || true masking from critical systemd operations

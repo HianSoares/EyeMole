@@ -71,6 +71,36 @@ BASH_CMD = _GIT_BASH if _GIT_BASH else shutil.which("bash")
 BASH_AVAILABLE = BASH_CMD is not None
 
 
+@pytest.mark.parametrize("setfacl_available", [False, True])
+def test_main_installs_acl_package_only_when_setfacl_missing(tmp_path, setfacl_available):
+    """Exercise dependency bootstrap without apt, root or application mutations."""
+    apt_log = tmp_path / "apt.log"
+    result = _run_bash(dedent(f"""\
+        set -Eeuo pipefail
+        source "{_to_wsl_path(INSTALL_SH)}"
+        need_root() {{ :; }}
+        command() {{
+          if [[ "$1" == -v ]]; then
+            case "$2" in
+              setfacl) return {0 if setfacl_available else 1} ;;
+              acl) return 1 ;;
+              python3|git|rsync|nginx|apt-get) return 0 ;;
+            esac
+          fi
+          builtin command "$@"
+        }}
+        apt-get() {{ printf '%s\\n' "$@" >> "{_to_wsl_path(apt_log)}"; }}
+        # Stop before backups, accounts, files or service changes.
+        ensure_python_runtime_dependencies() {{ exit 0; }}
+        main
+    """))
+    assert result.returncode == 0
+    if setfacl_available:
+        assert not apt_log.exists()
+    else:
+        assert apt_log.read_text().splitlines() == ["update", "-y", "install", "-y", "acl"]
+
+
 def _to_wsl_path(p) -> str:
     """Convert a Windows path to Git Bash-compatible path (/c/...)."""
     s = str(p).replace("\\", "/")
