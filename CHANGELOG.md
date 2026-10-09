@@ -21,6 +21,7 @@
 
 ### Corrigido
 
+- fix(backup): preservar os diretórios setgid (`2775`/`2770`) criados pelo instalador; continuar rejeitando arquivos privilegiados e tipos especiais, informando a entrada recusada.
 - fix(installer): detectar o comando `setfacl` e instalar o pacote Ubuntu/Debian `acl`; corrigida a inversão que interrompia a atualização antes do backup e da instalação da aplicação.
 - fix(installer): install default remediation configs on fresh install
 - fix(installer): validate all Python modules including soar_api.py and remediation/
