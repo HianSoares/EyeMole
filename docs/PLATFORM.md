@@ -11,7 +11,7 @@ A área **Operações**, em `/soar/assets/operations.html`, organiza o tratament
 | Aceitação de risco | Administrador registra motivo e vencimento; expiração fica visível |
 | Validação | Exige coleta completa e posterior à aplicação, ativo incluído, agente ativo e inventário posterior com versão corrigida |
 | Inventário | Importação via Wazuh ou observação manual identificada pelo usuário; dados desconhecidos permanecem explícitos |
-| Kiro | Análise explicativa com API key, execução headless sem ferramentas e resposta estruturada; comandos vêm do motor determinístico |
+| Explicação por IA | NVIDIA API Catalog (compatível com OpenAI) por padrão: explica a orientação de uma instalação ou os planos da campanha; resposta estruturada validada; comandos vêm do motor determinístico. Kiro mantido como provedor legado |
 | Evidências | Material oficial Microsoft CVRF, Red Hat e Ubuntu; fonte, data e hash; aplicabilidade exige revisão |
 | GLPI | Abertura de chamado com identificador da campanha e leitura do estado remoto |
 | QRadar / Vision One | Consulta de offenses/alertas, paginação limitada e correlação por mapeamento explícito de ativos |
@@ -76,7 +76,7 @@ A auditoria registra ator, ação e alterações com encadeamento de hashes. Iss
 
 Use `sudoedit /etc/hmg-soar/integrations.env` (root:root 0600). Esse arquivo é entregue **somente ao worker** pelo systemd. A API não recebe esses segredos no ambiente. Exemplos sem credenciais reais estão em `config/`.
 
-Para credenciais distintas por ambiente, defina `secret_prefix`, por exemplo `HMG_`, no projeto e use `HMG_GLPI_APP_TOKEN`, `HMG_GLPI_USER_TOKEN`, `HMG_KIRO_API_KEY`, `HMG_EYEMOLE_WAZUH_USER` etc. Quando o prefixo existe, não há fallback para credenciais sem prefixo. Reinicie o worker após editar o arquivo de ambiente:
+Para credenciais distintas por ambiente, defina `secret_prefix`, por exemplo `HMG_`, no projeto e use `HMG_GLPI_APP_TOKEN`, `HMG_GLPI_USER_TOKEN`, `HMG_NVIDIA_API_KEY`, `HMG_KIRO_API_KEY`, `HMG_EYEMOLE_WAZUH_USER` etc. Quando o prefixo existe, não há fallback para credenciais sem prefixo. Reinicie o worker após editar o arquivo de ambiente:
 
 ```bash
 sudo systemctl restart eyemole-platform-worker.service
@@ -91,9 +91,15 @@ QRadar usa `QRADAR_TOKEN` e uma versão da API compatível com seu servidor. Vis
 
 Wazuh usa `EYEMOLE_WAZUH_USER` e `EYEMOLE_WAZUH_PASSWORD`, com permissões mínimas para leitura de inventário. O instante de consulta não substitui a data do scan Syscollector. Instalações com versões conflitantes são marcadas como ambíguas.
 
-## Kiro Organization
+## Explicação por IA
 
-Instale uma versão do Kiro CLI compatível com `chat --v3 --no-interactive --agent`, em um caminho absoluto controlado por root e sem escrita por grupo/outros. Configure esse caminho em `integrations.kiro.binary`, habilite a integração e forneça `KIRO_API_KEY` emitida e permitida pela sua organização. A sessão do Kiro no Windows não é transferida ao servidor; esta integração usa autenticação própria do worker.
+O provedor padrão é a NVIDIA API Catalog, via adaptador HTTP compatível com OpenAI executado pelo worker. Não é necessário instalar Kiro, fazer login ou fornecer `KIRO_API_KEY`. Habilitação, chave `NVIDIA_API_KEY`, validação (`sudo eyemole ai check`), troca de modelo, dados enviados, limites e estados exibidos estão em [AI_PROVIDER.md](AI_PROVIDER.md).
+
+A IA explica a orientação da instalação aberta em **Ver correção** e os planos da campanha (**Explicar com IA**). O resultado fica associado à instância, à revisão do plano/evidências e ao provedor/modelo; é rejeitado se os dados mudarem durante a geração. A IA não executa, aprova, aceita risco nem confirma correções.
+
+### Kiro Organization (legado)
+
+Instalações com `integrations.kiro` habilitado e sem bloco `integrations.ai` continuam usando o Kiro. Instale uma versão do Kiro CLI compatível com `chat --v3 --no-interactive --agent`, em um caminho absoluto controlado por root e sem escrita por grupo/outros. Configure esse caminho em `integrations.kiro.binary`, habilite a integração e forneça `KIRO_API_KEY` emitida e permitida pela sua organização. A sessão do Kiro no Windows não é transferida ao servidor; esta integração usa autenticação própria do worker.
 
 Referência do provedor: [Kiro headless](https://kiro.dev/docs/cli/headless/) e [autenticação](https://kiro.dev/docs/cli/authentication/).
 
@@ -137,6 +143,6 @@ O ACK Wazuh confirma envio, não sucesso do gerenciador. Recibos são guardados 
 
 A suíte local cobre o motor existente, instalação/desinstalação Linux, fluxo operacional, acesso, transporte, inventário, execução assinada e recuperação em diretórios isolados. Não é uma execução de integração real com credenciais nem uma atualização no servidor Wazuh.
 
-Antes de habilitar integrações, valide os endpoints e versões dos seus produtos, o RBAC, o SSO (se usado), o Kiro da organização e um piloto em ativo descartável. A verificação visual em navegador não foi concluída nesta sessão por falha da ferramenta de navegação; confira desktop e mobile em homologação.
+Antes de habilitar integrações, valide os endpoints e versões dos seus produtos, o RBAC, o SSO (se usado), o provedor de IA (`sudo eyemole ai check`) e um piloto em ativo descartável. A verificação visual em navegador não foi concluída nesta sessão por falha da ferramenta de navegação; confira desktop e mobile em homologação.
 
 Consulte também [UPDATES.md](UPDATES.md) e [REMEDIATION_GUIDANCE.md](REMEDIATION_GUIDANCE.md).

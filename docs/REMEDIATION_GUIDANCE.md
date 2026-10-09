@@ -86,9 +86,17 @@ iguais às do código de referência `42ac9e4`.
 Detalhes por teste: [TEST_ENVIRONMENT_NOTES.md](TEST_ENVIRONMENT_NOTES.md).
 Checklist: [OPERATIONS.md — Validações antes do deploy](OPERATIONS.md#validações-antes-do-deploy).
 
-## O que falta para integrar o Kiro e produzir comandos específicos
+## Explicação por IA e comandos específicos
 
-Nenhum componente de IA está ativo. Próxima etapa proposta:
+A explicação por IA está implementada na plataforma operacional, com a NVIDIA
+como provedor padrão (detalhes em [AI_PROVIDER.md](AI_PROVIDER.md)). Ela explica
+a orientação determinística de uma instalação ("Ver correção") ou os planos de
+uma campanha, por jobs do worker, com resposta estruturada validada e associada
+à instância, à revisão do plano/evidências e ao provedor/modelo. A IA não gera
+nem substitui comandos.
+
+Itens ainda pendentes para produzir comandos específicos por ativo (o worker,
+a saída estruturada validada e os jobs assíncronos já existem):
 
 1. **Inventário do ativo:** coletar arquitetura, UBR, papéis instalados (ex.:
    WSUS, distinguindo papel ausente de falha de coleta), reinício pendente,
@@ -99,21 +107,13 @@ Nenhum componente de IA está ativo. Próxima etapa proposta:
    URLs, redirecionamentos, tipos e tamanho de conteúdo controlados pelo
    backend; evidência registrada com data e revisão. Substitui a curadoria
    manual de `vendor_evidence.json`.
-3. **Worker separado** (serviço systemd próprio, fila SQLite, limite de
-   concorrência e deadline): executa
-   `kiro-cli chat --no-interactive --agent eyemole-remediation` com argv fixo,
-   `shell=False`, contexto minimizado via stdin (sem hostname, IP ou
-   credenciais), diretório isolado e sem `--trust-all-tools`. A chave
-   (`KIRO_API_KEY`) fica no mecanismo de secrets do serviço. A habilitação de
-   API keys na organização Kiro deve ser confirmada pelo administrador.
-4. **Saída estruturada validada:** JSON com schema próprio; a IA só escolhe
-   entre IDs de evidências e templates existentes e não define confiança,
-   `execution_allowed` nem texto de comando.
-5. **Comandos montados pelo backend:** o template local renderiza o comando
+3. **Seleção de template pela IA (opcional):** ampliar o contrato para que a IA
+   possa indicar, entre IDs de templates aprovados, o procedimento aplicável —
+   sem definir confiança, `execution_allowed` nem texto de comando.
+4. **Comandos montados pelo backend:** o template local renderiza o comando
    específico (ex.: pacote offline com artefato e assinatura validados) apenas
    quando produto, arquitetura, aplicabilidade e pré-requisitos estiverem
    confirmados. Caso contrário, a resposta permanece textual com
    `missing_context`.
-6. **API assíncrona e piloto:** `202` + job versionado; timeout, JSON inválido
-   ou evidência ausente resultam em orientação textual. Habilitação por
-   feature flag, com piloto no caso CVE-2025-59287 (Windows Server 2019).
+5. **Piloto:** validar com a chave organizacional e o caso CVE-2025-59287
+   (Windows Server 2019) antes de ampliar para outros ecossistemas.

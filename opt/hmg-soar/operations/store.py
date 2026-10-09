@@ -128,7 +128,7 @@ class Store:
                                (project, kind, identifier)).fetchone()
             # Mutating external jobs are never automatically repeated after ambiguous failure.
             if row:
-                if kind in {"plans", "kiro", "sync", "evidence"} and row["state"] in {"failed", "interrupted", "succeeded"}:
+                if kind in {"plans", "kiro", "ai", "ai_finding", "sync", "evidence"} and row["state"] in {"failed", "interrupted", "succeeded"}:
                     conn.execute("DELETE FROM jobs WHERE id=?", (row["id"],))
                     self.audit(conn, project, actor, "job.requeued", row["id"], {"kind": kind})
                 else:
@@ -161,6 +161,13 @@ class Store:
         # Called by the sole worker under a process lock, never by API.
         with self.transaction() as conn:
             conn.execute("UPDATE jobs SET state='interrupted',finished_at=?,error='Worker interrompido; conferir destino antes de repetir.' WHERE state='running'", (now(),))
+
+    def job_for(self, project, kind, identifier):
+        """Latest job for one object (no payload): used to show AI generation state."""
+        with self.connect() as conn:
+            row = conn.execute("SELECT id,kind,object_id,state,created_at,started_at,finished_at,error FROM jobs "
+                               "WHERE project=? AND kind=? AND object_id=?", (project, kind, identifier)).fetchone()
+            return dict(row) if row else None
 
     def jobs(self, project):
         with self.connect() as conn:
