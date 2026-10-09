@@ -1280,7 +1280,7 @@ main() {
   install_package_if_missing python3 python3
   install_package_if_missing git git
   install_package_if_missing rsync rsync
-  install_package_if_missing acl setfacl
+  install_package_if_missing setfacl acl
   install_package_if_missing nginx nginx
 
   ensure_python_runtime_dependencies
