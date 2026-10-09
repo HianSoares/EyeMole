@@ -75,6 +75,74 @@ def test_external_symlink_is_rejected_before_deployment(tmp_path):
         admin.Snapshot(tmp_path / "backup", [target], root).create()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="GNU tar and POSIX permissions")
+def test_snapshot_restores_installer_setgid_directories(tmp_path):
+    """Both the legacy web layout and the new worker use group-inheriting dirs."""
+    root = tmp_path / "root"
+    web = root / "var/www/wazuh-soar"
+    platform = root / "var/lib/eyemole/platform"
+    expected = {web: 0o2775, platform: 0o2770}
+    for directory, mode in expected.items():
+        directory.mkdir(parents=True)
+        directory.chmod(mode)
+        (directory / "state.json").write_text("old")
+    for name in ("assets", "data", "reports"):
+        directory = web / name
+        directory.mkdir()
+        directory.chmod(0o2775)
+        expected[directory] = 0o2775
+    snapshot = admin.Snapshot(tmp_path / "backup", [web, platform], root).create()
+    for directory in expected:
+        directory.chmod(0o755)
+    (web / "state.json").write_text("changed")
+    snapshot.restore()
+    assert (web / "state.json").read_text() == "old"
+    assert (platform / "state.json").read_text() == "old"
+    for directory, mode in expected.items():
+        assert directory.stat().st_mode & 0o7777 == mode
+
+
+@pytest.mark.skipif(os.name != "posix", reason="GNU tar and POSIX file types")
+@pytest.mark.parametrize("kind", ["setuid-file", "setgid-file", "setuid-dir", "fifo"])
+def test_snapshot_rejects_privileged_files_and_special_entries(tmp_path, kind):
+    root = tmp_path / "root"
+    target = root / "app"
+    target.mkdir(parents=True)
+    entry = target / "unsafe-entry"
+    if kind == "fifo":
+        os.mkfifo(entry)
+    elif kind == "setuid-dir":
+        entry.mkdir()
+        entry.chmod(0o4755)
+    else:
+        entry.write_text("unchanged")
+        entry.chmod(0o4755 if kind == "setuid-file" else 0o2755)
+    with pytest.raises(admin.RecoveryError, match="snapshot"):
+        admin.Snapshot(tmp_path / "backup", [target], root).create()
+    assert entry.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="GNU tar")
+@pytest.mark.parametrize("entry_type", [tarfile.CHRTYPE, tarfile.BLKTYPE, b"Z"])
+def test_snapshot_rejects_device_and_unknown_archive_types(tmp_path, entry_type):
+    root = tmp_path / "root"
+    target = root / "app"
+    target.mkdir(parents=True)
+    snapshot = admin.Snapshot(tmp_path / "backup", [target], root).create()
+    # Build malicious archive headers without creating real device nodes.
+    with tarfile.open(snapshot.archive, "w:gz") as archive:
+        archive.add(target, arcname="app")
+        entry = tarfile.TarInfo("app/unsafe-entry")
+        entry.type = entry_type
+        archive.addfile(entry)
+    data = json.loads(snapshot.manifest.read_text())
+    data["sha256"] = admin.sha256(snapshot.archive)
+    snapshot.manifest.write_text(json.dumps(data))
+    with pytest.raises(admin.RecoveryError, match="app/unsafe-entry"):
+        snapshot.verify()
+    assert not (target / "unsafe-entry").exists()
+
+
 def test_no_space_fails_preflight_before_backup(tmp_path, monkeypatch):
     target = tmp_path / "app"
     target.write_bytes(b"x" * 8192)

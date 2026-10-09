@@ -148,8 +148,15 @@ class Snapshot:
                 name = Path(member.name)
                 if count > 500000 or name.is_absolute() or ".." in name.parts or not any(member.name == p or member.name.startswith(p + "/") for p in permitted):
                     raise RecoveryError("Conteúdo do snapshot fora dos caminhos gerenciados.")
-                if member.isdev() or member.isfifo() or member.mode & 0o6000:
-                    raise RecoveryError("Arquivo especial não permitido no snapshot.")
+                # The installer uses setgid directories for web/worker group
+                # inheritance. Preserve those, but never privileged file modes.
+                allowed_type = member.isfile() or member.isdir() or member.issym() or member.islnk()
+                if (not allowed_type or member.mode & 0o4000
+                        or (member.mode & 0o2000 and not member.isdir())):
+                    raise RecoveryError(
+                        f"Entrada não permitida no snapshot: {member.name} "
+                        f"(tipo={member.type!r}, modo={oct(member.mode)})."
+                    )
                 if member.issym() or member.islnk():
                     if member.issym():
                         target = Path(os.path.normpath(member.linkname.lstrip("/"))) if member.linkname.startswith("/") else Path(os.path.normpath(str(name.parent / member.linkname)))
