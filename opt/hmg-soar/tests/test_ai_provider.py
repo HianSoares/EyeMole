@@ -7,7 +7,9 @@ No real network call is made; the real NVIDIA endpoint is not exercised here.
 import datetime as dt
 import json
 import logging
+import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "cli"))
 from operations import ai, ai_check, api, llm
 from operations.ai_contract import AIContractError, parse_message_content, validate_response
 from operations.security import OperationError, principal
+from operations.planning import engine_for
 from operations.service import Operations, read_snapshot
 from operations.store import Store
 from operations.worker import process
@@ -440,8 +443,14 @@ def test_scope_and_permissions_are_preserved(platform):
     assert not api.job_visible(hidden, set(), principal(cfg, "owner"))
 
 
+def rewrite(path, data):
+    """Replace a source file with a signature guaranteed to differ (coarse mtime clocks)."""
+    previous = path.stat().st_mtime_ns if path.exists() else 0
+    path.write_text(json.dumps(data))
+    os.utime(path, ns=(previous + 5_000_000_000, previous + 5_000_000_000))
+
+
 def test_cached_engine_never_serves_a_replaced_snapshot(platform):
-    from operations.planning import engine_for
     service, cfg, path, (fid, _, _) = platform
     project = cfg["projects"]["hmg"]
     engine = engine_for(project)
@@ -450,10 +459,127 @@ def test_cached_engine_never_serves_a_replaced_snapshot(platform):
     before = engine.generate_guidance(fid).snapshot_revision
     data = json.loads(path.read_text())
     data["metadata"]["generated_at"] = date()
-    path.write_text(json.dumps(data))
-    import os
-    os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 5_000_000_000))
+    rewrite(path, data)
     assert engine_for(project).generate_guidance(fid).snapshot_revision != before
+
+
+def comparable(record):
+    data = record.to_dict()
+    for volatile in ("guidance_id", "generation_date"):
+        data.pop(volatile, None)
+    return data
+
+
+def test_cached_engine_is_safe_under_concurrent_requests(platform):
+    _, cfg, _, ids = platform
+    project = cfg["projects"]["hmg"]
+    expected = {fid: comparable(engine_for(project).generate_guidance(fid)) for fid in ids}
+    engines = set()
+
+    def request(fid):
+        engine = engine_for(project)
+        engines.add(id(engine))
+        return fid, comparable(engine.generate_guidance(fid))
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(request, ids * 16))
+    assert len(engines) == 1
+    # Each answer belongs to the instance requested and matches a serial generation.
+    assert all(result == expected[fid] and result["finding_id"] == fid for fid, result in results)
+
+
+def test_cached_engine_isolates_projects_and_installations(platform, tmp_path):
+    service, cfg, path, (fid, fid_other_version, _) = platform
+    other_snapshot = tmp_path / "other" / "latest.json"
+    other_snapshot.parent.mkdir()
+    data = json.loads(path.read_text())
+    data["vulnerabilities"] = [dict(data["vulnerabilities"][0], version="9.9")]
+    other_snapshot.write_text(json.dumps(data))
+    cfg["projects"]["dev"] = dict(cfg["projects"]["hmg"], snapshot_path=str(other_snapshot),
+                                  config_dir=str(tmp_path / "other"))
+    hmg, dev = engine_for(cfg["projects"]["hmg"]), engine_for(cfg["projects"]["dev"])
+    assert hmg is not dev
+    assert hmg.generate_guidance(fid).installed_version == "1.0"
+    assert hmg.generate_guidance(fid_other_version).installed_version == "1.1"
+    # An instance of one project is not served by another project's engine or API.
+    assert dev.generate_guidance(fid).status == "not_found"
+    with pytest.raises(OperationError) as exc:
+        service.finding_ai("dev", fid)
+    assert exc.value.status == 404
+    # Mutating a returned record never leaks into the next request.
+    record = hmg.generate_guidance(fid)
+    record.warnings.append("alterado pelo chamador")
+    record.missing_context.append("alterado")
+    assert "alterado pelo chamador" not in hmg.generate_guidance(fid).warnings
+
+
+def test_cached_engine_follows_configuration_and_evidence_changes(platform, tmp_path):
+    service, cfg, path, (fid, _, _) = platform
+    project = cfg["projects"]["hmg"]
+    project["evidence_path"] = str(tmp_path / "evidence.json")
+    config_dir = Path(project["config_dir"])
+    grype = Path(project["grype_snapshot_path"])
+    grype.write_text(json.dumps({
+        "metadata": {"agents": {"001": {"last_success_at": date(-3 * 3600)}}},
+        "vulnerabilities": [{"cve": "CVE-2026-12345", "agent_id": "001", "package_name": "openssl",
+                             "installed_version": "1.0", "fixed_version": "1.2", "fixed_versions": ["1.2"],
+                             "status": "fixed", "confidence": "high", "match_type": "exact-direct-match", "purl": ""}]}))
+
+    def providers(max_age):
+        return {"providers": [{"name": "wazuh_snapshot", "enabled": True},
+                              {"name": "grype_snapshot", "enabled": True, "max_scan_age_hours": max_age}]}
+
+    rewrite(config_dir / "remediation_providers.json", providers(24))
+    rewrite(tmp_path / "evidence.json", {"entries": []})
+    engine = engine_for(project)
+    fresh = engine.generate_guidance(fid)
+    assert not any("não confirmada pelo scanner Grype" in w for w in fresh.warnings)
+    service.queue_finding_ai("hmg", fid)
+    run_job(service, cfg, [completion(answer(fid, ["plan:" + fid]))])
+    assert service.finding_ai("hmg", fid)["state"] == "succeeded"
+
+    # Configuration change: the same cached engine applies the new Grype age limit.
+    rewrite(config_dir / "remediation_providers.json", providers(1))
+    expired = engine_for(project).generate_guidance(fid)
+    assert engine_for(project) is engine
+    assert any("não confirmada pelo scanner Grype" in w for w in expired.warnings)
+    assert expired.snapshot_revision != fresh.snapshot_revision
+    assert service.finding_ai("hmg", fid)["state"] != "succeeded"
+
+    # Evidence change: new revision, previous explanation no longer current.
+    before = engine.generate_guidance(fid).snapshot_revision
+    rewrite(tmp_path / "evidence.json", {"entries": [], "updated": True})
+    assert engine.generate_guidance(fid).snapshot_revision != before
+
+
+@pytest.mark.parametrize("failure", [
+    [FakeResponse(429, headers={"Retry-After": "1", "Content-Type": "application/json"})] * 3,
+    [requests.Timeout()] * 3,
+    [requests.ConnectionError()] * 3,
+    [FakeResponse(503)] * 3,
+    "missing_key",
+])
+def test_nvidia_failure_keeps_deterministic_guidance_without_kiro(platform, monkeypatch, failure):
+    from operations import worker
+    monkeypatch.setattr(worker, "explain", lambda *a, **k: pytest.fail("Kiro não deve ser usado"))
+    waits = []
+    monkeypatch.setattr(llm.ChatCompletionsClient.__init__, "__defaults__", (None, llm.time.monotonic, waits.append))
+    service, cfg, _, (fid, _, _) = platform
+    project = cfg["projects"]["hmg"]
+    guidance = comparable(engine_for(project).generate_guidance(fid))
+    service.queue_finding_ai("hmg", fid)
+    if failure == "missing_key":
+        run_job(service, cfg, [], secrets={})
+    else:
+        run_job(service, cfg, failure)
+    state = service.finding_ai("hmg", fid)
+    assert state["state"] == "failed" and state["error"]
+    assert service.store.list("hmg", "ai_finding") == []
+    # The deterministic guidance (status, rationale, validated command) is unaffected.
+    assert comparable(engine_for(project).generate_guidance(fid)) == guidance
+    cfg["projects"]["hmg"]["integrations"] = {}
+    assert comparable(engine_for(project).generate_guidance(fid)) == guidance
+    assert service.finding_ai("hmg", fid)["enabled"] is False
 
 
 def test_disabled_ai_is_reported_and_not_queued(platform):
@@ -531,6 +657,33 @@ def test_ai_check_reports_failure_without_secret(monkeypatch, capsys):
     assert ai_check.main(["--project", "hmg"]) == 1
     output = json.loads(capsys.readouterr().out)
     assert output["code"] == "auth_failed" and SECRET not in json.dumps(output)
+
+
+def test_cli_ai_check_runs_with_the_worker_identity_and_secrets_file(monkeypatch, capsys):
+    import eyemole
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return type("Done", (), {"stdout": '{"ok": false, "code": "missing_key"}\n', "stderr": "", "returncode": 1})()
+
+    monkeypatch.setattr(eyemole.subprocess, "run", fake_run)
+    assert eyemole.ai_check("hmg") == 1
+    argv = calls[0]
+    properties = {argv[i + 1].split("=", 1)[0]: argv[i + 1].split("=", 1)[1] for i, a in enumerate(argv) if a == "-p"}
+    unit = {}
+    root = Path(__file__).resolve().parents[3]
+    for line in (root / "systemd" / "eyemole-platform-worker.service").read_text(encoding="utf-8").splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            unit[key] = value
+    assert f"--uid={unit['User']}" in argv and f"--gid={unit['Group']}" in argv
+    for key in ("SupplementaryGroups", "EnvironmentFile", "WorkingDirectory", "RestrictAddressFamilies",
+                "CapabilityBoundingSet", "ProtectSystem"):
+        assert properties[key] == unit[key], key
+    assert argv[argv.index("-m") - 1] == unit["ExecStart"].split()[0]
+    with pytest.raises(eyemole.UpdateError):
+        eyemole.ai_check("hmg; rm -rf /")
 
 
 def test_configure_ai_preserves_existing_configuration(tmp_path, monkeypatch):

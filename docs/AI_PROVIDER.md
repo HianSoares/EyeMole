@@ -108,7 +108,10 @@ papel `admin`, `analyst` ou `owner` no projeto e saída HTTPS do servidor para
    ```
 
 4. Reinicie o worker para carregar o arquivo de segredos e valide a conexão com
-   dados sintéticos (executa como `eyemole-worker`, com o mesmo `EnvironmentFile`):
+   dados sintéticos. O `check` executa via `systemd-run` como `eyemole-worker`,
+   com os mesmos grupos (`eyemole-ops`, `www-data`), `EnvironmentFile` e
+   restrições de sandbox do worker; o arquivo de segredos continua ilegível para
+   o próprio usuário `eyemole-worker` (quem o lê é o systemd):
 
    ```bash
    sudo systemctl restart eyemole-platform-worker.service
@@ -116,8 +119,12 @@ papel `admin`, `analyst` ou `owner` no projeto e saída HTTPS do servidor para
    ```
 
    Saída esperada: `{"ok": true, "provider": "nvidia", "model": "nvidia/nemotron-3-super-120b-a12b", "contract": "valid", ...}`.
-   Em falha, o campo `code` indica a causa (`auth_failed`, `rate_limited`,
-   `model_unavailable`, `timeout`, `connection_failed`, `invalid_json`, ...).
+   Em falha, o campo `code` indica a causa: `missing_credentials` (chave ausente
+   no worker), `auth_failed`, `rate_limited`, `model_unavailable`, `timeout`,
+   `connection_failed` (rede, DNS, proxy ou TLS), `redirect_refused`,
+   `request_rejected`, `invalid_json`, `unknown_reference`, `command_in_text`, ...
+   O adaptador ignora variáveis de proxy do ambiente: o servidor precisa de saída
+   HTTPS direta para `integrate.api.nvidia.com:443`.
 
 5. Teste pela interface: dashboard → **Ver correção** → **Explicar com IA**, e em
    Operações → campanha → **Gerar planos** → **Explicar com IA**. O dashboard

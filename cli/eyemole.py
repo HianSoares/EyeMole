@@ -398,17 +398,26 @@ def ai_check(project: str) -> int:
     """Synthetic request as eyemole-worker, with the worker's EnvironmentFile."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", project):
         raise UpdateError("Projeto inválido.")
+    # Same identity, groups, secrets file and sandbox as eyemole-platform-worker.service.
     argv = ["systemd-run", "--quiet", "--wait", "--pipe", "--collect",
             "--uid=eyemole-worker", "--gid=eyemole-ops",
-            "-p", f"EnvironmentFile={INTEGRATIONS_ENV}", "-p", "WorkingDirectory=/opt/hmg-soar",
-            "-p", "NoNewPrivileges=yes", "-p", "ProtectSystem=strict", "-p", "ProtectHome=yes",
-            "-p", "PrivateTmp=yes", "-p", "CapabilityBoundingSet=",
+            "-p", "SupplementaryGroups=www-data",
+            "-p", f"EnvironmentFile=-{INTEGRATIONS_ENV.as_posix()}", "-p", "WorkingDirectory=/opt/hmg-soar",
+            "-p", "NoNewPrivileges=yes", "-p", "PrivateTmp=yes", "-p", "PrivateDevices=yes",
+            "-p", "ProtectSystem=strict", "-p", "ProtectHome=yes",
+            "-p", "RestrictSUIDSGID=yes", "-p", "CapabilityBoundingSet=",
+            "-p", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",
             "/usr/bin/python3", "-m", "operations.ai_check", "--project", project]
     try:
         result = subprocess.run(argv, capture_output=True, text=True, timeout=360, check=False)
     except (subprocess.SubprocessError, OSError) as exc:
         raise UpdateError("Falha ao iniciar a verificação como eyemole-worker.") from exc
-    print(result.stdout.strip() or "Sem resposta da verificação; consulte journalctl.")
+    if result.stdout.strip():
+        print(result.stdout.strip())
+    else:
+        # systemd-run/python failure before any JSON (never contains the env file).
+        detail = "\n".join(result.stderr.strip().splitlines()[-5:])
+        print("Sem resposta da verificação; consulte journalctl." + (f"\n{detail}" if detail else ""), file=sys.stderr)
     return result.returncode
 
 

@@ -118,6 +118,10 @@ class GrypeProvider:
     def snapshot_path(self) -> Path:
         return self._grype_path
 
+    def set_max_scan_age_hours(self, hours: int) -> None:
+        """Atualiza o limite de idade quando a configuração é recarregada."""
+        self._max_scan_age_hours = hours
+
     def load_grype_snapshot(self) -> bool:
         """Carrega e indexa a revisão atual do snapshot do Grype."""
         return self.current_view() is not None

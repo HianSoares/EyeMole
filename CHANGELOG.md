@@ -12,6 +12,9 @@
 - `NVIDIA_API_KEY` somente em `/etc/hmg-soar/integrations.env` (worker); `sudo eyemole ai configure|status|check` para habilitar, inspecionar e validar com dados sintéticos.
 - Kiro mantido como provedor legado (configurações existentes preservadas; rota `/kiro` mapeada para o job de IA).
 - `operations.worker` importa `fcntl` apenas no processo do worker (módulo importável nos testes).
+- Motor de remediação reutilizado entre requisições (`operations/planning.py`), com recarga por assinatura de todas as fontes; o limite `max_scan_age_hours` do Grype passa a ser reaplicado quando `remediation_providers.json` muda.
+- `eyemole ai check` espelha o worker (grupo `www-data`, `EnvironmentFile` opcional, sandbox); `platform.json` é regravado de forma atômica sem janela legível por outros usuários.
+- CI: job `ai-check` executa `ai configure/status/check` com `systemd-run` como `eyemole-worker`, chave fictícia e o host da NVIDIA desviado para localhost (sem chamada externa).
 
 ### Plataforma operacional
 

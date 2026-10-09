@@ -340,7 +340,10 @@ def configure_access(username, role, projects, agents=(), enable=False, path=Pat
 def _write_platform(path, data):
     """Atomic replace preserving owner and mode of platform.json."""
     temporary = path.with_name(".platform-" + uuid.uuid4().hex)
-    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    # Private from creation: no window where the policy file is world-readable.
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     info = path.stat()
     os.chown(temporary, info.st_uid, info.st_gid)
     os.chmod(temporary, info.st_mode & 0o777)
