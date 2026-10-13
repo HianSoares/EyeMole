@@ -15233,7 +15233,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (diag) {
         const validity = diag.validity || {};
         const label = { valid: 'válido até ' + validity.expires_at, expired: 'EXPIRADO — mantido só como histórico',
-                        conflict: 'EM CONFLITO com o contexto do ativo — não usado para validar' }[validity.status] || 'estado desconhecido';
+                        conflict: 'EM CONFLITO com o contexto atual do ativo — não usado para validar',
+                        mismatch: 'NÃO CORRESPONDE a esta instalação — mantido só como histórico',
+                        insufficient: 'DADOS INSUFICIENTES para revalidar — mantido só como histórico' }[validity.status] || 'estado desconhecido';
         diagStatus.appendChild(researchEl('div', 'Diagnóstico importado por ' + diag.imported_by + ' (coletado em ' + diag.collected_at
           + '; confiança: importado pelo analista; ' + label + ').',
           validity.status === 'valid' ? '' : 'color: #f87171; font-weight: 600;'));

@@ -372,11 +372,10 @@ class Operations:
 
     def research_inputs(self, project, row, agent, finding_id, plan, cfg=None):
         inventory = self._object(project, "inventory", agent)
+        # Kept even when it no longer matches: resolve_context re-validates it and reports why it is not used.
         diagnostic = self._object(project, "diagnostic_import", self.installation_key("diag", agent, finding_id))
-        if diagnostic and diagnostic.get("installed_version") != row["version"]:
-            diagnostic = None  # imported for another installed version
         settings = research_settings(cfg if cfg is not None else self.context(project)) or {}
-        # Time-dependent validity (diagnostic expiry) is evaluated here, without network access.
+        # Identity, coherence with the current asset context and expiry are evaluated here, without network.
         context = research_support.resolve_context(dict(row, finding_id=finding_id), plan, inventory, diagnostic,
                                                    settings, research_support._now())
         return inventory, diagnostic, context
@@ -425,7 +424,8 @@ class Operations:
                "context": {k: context.get(k) for k in ("distribution", "release", "binary_package", "source_package",
                                                        "installed_version", "architecture", "package_origin",
                                                        "repository", "origins", "missing")},
-               "diagnostic": diagnostics.public(diagnostic, settings, research_support._now()),
+               "diagnostic": diagnostics.public(diagnostic, settings, research_support._now(),
+                                                research_support.installation_for(row, plan, inventory)),
                # Read-only diagnostics the analyst may run; never shown as collected results.
                "available_diagnostics": [{"label": d.get("label"), "script": d.get("script"), "executed": False}
                                          for d in plan.get("diagnostics", [])],
@@ -464,10 +464,9 @@ class Operations:
     def import_diagnostics(self, project, finding_id, body):
         cfg, row, agent, revision = self._installation(project, finding_id, "write")
         plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        # The import is checked against the asset context known without diagnostics.
-        asset = research_support.asset_context(row, plan, self._object(project, "inventory", agent))
-        installation = {"finding_id": finding_id, "agent_id": agent, "package": row["package"], "version": row["version"],
-                        "architecture": row.get("package_architecture") or row.get("architecture"), **asset}
+        # The import is checked against the installation and the asset context known without diagnostics.
+        installation = dict(research_support.installation_for(row, plan, self._object(project, "inventory", agent)),
+                            finding_id=finding_id, agent_id=agent)
         record = diagnostics.build_import(body, installation, self.user.name, research_support._now())
         # Latest import drives the research; every import is kept as history (and audited).
         self.store.put(project, "diagnostic_import", self.installation_key("diag", agent, finding_id), record,
@@ -475,7 +474,7 @@ class Operations:
         self.store.put(project, "diagnostic_history",
                        self.installation_key(f"diag:{record['revision']}:{record['imported_at']}", agent, finding_id),
                        record, self.user.name, "diagnostic.archived")
-        return diagnostics.public(record, research_settings(cfg) or {}, research_support._now())
+        return diagnostics.public(record, research_settings(cfg) or {}, research_support._now(), installation)
 
     def finding_ai(self, project, finding_id):
         cfg, row, agent, revision, guidance, status, object_id, previous, research_facts = \

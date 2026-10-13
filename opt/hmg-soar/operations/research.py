@@ -99,6 +99,13 @@ def asset_context(row, plan, inventory=None):
     return {"distribution": distribution, "release": release, "release_origin": origin, "os_version": version or None}
 
 
+def installation_for(row, plan, inventory=None):
+    """Current identity and asset context an imported diagnostic must match."""
+    return {"package": str(row.get("package") or ""), "version": str(row.get("version") or ""),
+            "architecture": row.get("package_architecture") or row.get("architecture") or plan.get("architecture"),
+            **asset_context(row, plan, inventory)}
+
+
 def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, now=None):
     """Context of one installation with the origin of every resolved fact.
 
@@ -106,11 +113,13 @@ def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, n
     expired, no conflict with the asset context); otherwise it is reported as
     history with the reasons and a new collection is requested.
     """
+    installation = installation_for(row, plan, inventory)
     asset = asset_context(row, plan, inventory)
     distribution = asset["distribution"]
-    binary, installed = str(row.get("package") or ""), str(row.get("version") or "")
-    architecture = row.get("package_architecture") or row.get("architecture") or plan.get("architecture")
-    validity = diagnostics.evaluate(diagnostic, settings, now or _now())
+    binary, installed = installation["package"], installation["version"]
+    architecture = installation["architecture"]
+    # Re-validated at every use against the current installation and asset context (no network).
+    validity = diagnostics.evaluate(diagnostic, settings, now or _now(), installation)
     usable = diagnostic if validity and validity["status"] == "valid" else None
     parsed = (usable or {}).get("parsed", {})
     diag_origin = {"origin": "imported_by_analyst", "observed_at": (diagnostic or {}).get("collected_at")}

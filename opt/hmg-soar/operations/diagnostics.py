@@ -151,30 +151,105 @@ def context_conflicts(parsed, installation):
     return conflicts
 
 
-def evaluate(record, settings=None, now=None):
-    """Current validity of an import: valid, expired or conflict (with reasons)."""
+RECOLLECT = "Colete e importe o diagnóstico novamente."
+
+
+def identity_problems(record, installation):
+    """Re-validate a stored import against the installation as it is now.
+
+    Returns (mismatches, gaps): mismatches mean the data is not of this
+    installation; gaps mean there is not enough data to check it (e.g. imports
+    stored before these checks existed). Both block any use of the import.
+    """
+    mismatches, gaps = [], []
+    package, version = installation.get("package"), installation.get("version")
+    arch = installation.get("architecture")
+    parsed = record.get("parsed") if isinstance(record.get("parsed"), dict) else {}
+    if record.get("package") != package:
+        mismatches.append(f"O diagnóstico é do pacote {record.get('package')}, não de {package}.")
+    if record.get("installed_version") != version:
+        mismatches.append(f"O diagnóstico registra a versão {record.get('installed_version')}; a instalação está em {version}.")
+    if arch and record.get("architecture") and record["architecture"] != arch:
+        mismatches.append(f"O diagnóstico é da arquitetura {record['architecture']}; a instalação é {arch}.")
+    dpkg = parsed.get("dpkg")
+    if dpkg is not None:
+        if not isinstance(dpkg, dict) or dpkg.get("binary_package") != package:
+            mismatches.append("Saída do dpkg-query de outro pacote.")
+        elif dpkg.get("installed_version") != version:
+            mismatches.append(f"dpkg-query registra a versão {dpkg.get('installed_version')}; a instalação está em {version}.")
+        elif arch and dpkg.get("architecture") and dpkg["architecture"] != arch:
+            mismatches.append(f"dpkg-query registra a arquitetura {dpkg['architecture']}; a instalação é {arch}.")
+    policy = parsed.get("policy")
+    if policy is not None:
+        versions = policy.get("versions") if isinstance(policy, dict) else None
+        if not isinstance(versions, list) or any(not isinstance(v, dict) for v in versions):
+            gaps.append("apt-cache policy armazenado sem tabela de versões verificável.")
+        else:
+            if policy.get("installed") is None:
+                mismatches.append("apt-cache policy indica que o pacote não está instalado.")
+            elif policy["installed"] != version:
+                mismatches.append(f"apt-cache policy registra a versão {policy['installed']}; a instalação está em {version}.")
+            marked = [v for v in versions if v.get("installed")]
+            if len(marked) != 1 or marked[0].get("version") != policy.get("installed"):
+                gaps.append("apt-cache policy armazenado sem versão instalada (***) coerente.")
+            if policy.get("candidate") is not None and not any(v.get("version") == policy["candidate"] for v in versions):
+                gaps.append("apt-cache policy armazenado com Candidate fora da tabela de versões.")
+            if any("architectures" not in v for v in versions):
+                gaps.append("apt-cache policy armazenado sem as arquiteturas das origens (registro anterior às validações).")
+            else:
+                found = {a for v in versions for a in v["architectures"]} - {"all"}
+                if arch and found and found != {arch}:
+                    mismatches.append(f"apt-cache policy lista a arquitetura {', '.join(sorted(found))}; a instalação é {arch}.")
+    return mismatches, gaps
+
+
+def evaluate(record, settings=None, now=None, installation=None):
+    """Validity of an import at the moment of use: valid, mismatch, conflict, insufficient or expired.
+
+    Everything is recomputed from the stored parsed data against the current
+    installation and asset context (no network, stored ``conflicts`` are only
+    history): a record is never valid just because a field is absent.
+    """
     if not record:
         return None
     now = now or _now()
     hours = min(max(float((settings or {}).get("diagnostics_max_age_hours", DEFAULT_MAX_AGE_HOURS)), 1), 24 * 30)
-    collected = dt.datetime.fromisoformat(record["collected_at"])
-    expires = collected + dt.timedelta(hours=hours)
-    reasons = list(record.get("conflicts") or [])
-    status = "conflict" if reasons else "valid"
-    if now >= expires:
-        status = "expired"
-        reasons.append(f"Diagnóstico coletado em {record['collected_at']} expirou (validade de {hours:g} h); "
-                       "colete e importe novamente.")
-    return {"status": status, "expires_at": expires.isoformat(timespec="seconds"), "reasons": reasons}
+    reasons, status = [], "valid"
+    try:
+        collected = dt.datetime.fromisoformat(str(record.get("collected_at")))
+        if collected.tzinfo is None:
+            raise ValueError
+        expires = collected + dt.timedelta(hours=hours)
+    except ValueError:
+        collected = expires = None
+    if installation is None:
+        mismatches, gaps, conflicts = [], ["Contexto da instalação indisponível para validar o diagnóstico."], []
+    else:
+        mismatches, gaps = identity_problems(record, installation)
+        conflicts = context_conflicts(record.get("parsed") or {}, installation)
+    if expires is None:
+        gaps.append("Registro sem data de coleta válida.")
+    for kind, items in (("mismatch", mismatches), ("conflict", conflicts), ("insufficient", gaps)):
+        if items and status == "valid":
+            status = kind
+        reasons.extend(items)
+    if expires is not None and now >= expires:
+        status = "expired" if status == "valid" else status
+        reasons.append(f"Diagnóstico coletado em {record['collected_at']} expirou (validade de {hours:g} h).")
+    if status != "valid":
+        reasons.append(RECOLLECT)
+    return {"status": status, "expires_at": expires.isoformat(timespec="seconds") if expires else None,
+            "reasons": reasons, "conflicts": conflicts, "mismatches": mismatches, "gaps": gaps}
 
 
-def public(record, settings=None, now=None):
+def public(record, settings=None, now=None, installation=None):
     """Import as shown to users and to the research: provenance, parsed data and validity, no raw output."""
     if not record:
         return None
     out = {k: record.get(k) for k in ("collected_at", "imported_at", "imported_by", "origin", "confidence",
-                                      "parsed", "revision", "installed_version", "conflicts")}
-    out["validity"] = evaluate(record, settings, now)
+                                      "parsed", "revision", "installed_version")}
+    out["validity"] = evaluate(record, settings, now, installation)
+    out["conflicts"] = out["validity"]["conflicts"]  # recomputed now; the stored list is history only
     return out
 
 
@@ -221,7 +296,7 @@ def build_import(body, installation, user, now=None):
     record = {"finding_id": installation["finding_id"], "agent_ids": [str(installation["agent_id"])],
               "package": package, "installed_version": installed, "architecture": arch,
               "collected_at": collected_at, "imported_at": now.isoformat(timespec="seconds"), "imported_by": user,
-              "origin": "manual_import", "confidence": CONFIDENCE, "parsed": parsed, "raw": raws,
+              "origin": "manual_import", "confidence": CONFIDENCE, "parsed": parsed, "raw": raws, "schema": 2,
               "conflicts": context_conflicts(parsed, installation)}
     record["revision"] = hashlib.sha256(json.dumps([collected_at, parsed, record["conflicts"]],
                                                    sort_keys=True).encode()).hexdigest()

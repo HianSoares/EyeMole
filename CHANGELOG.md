@@ -7,6 +7,7 @@
 - A Candidate só valida a correção se todas as suítes que a oferecem forem autorizadas para a release do ativo (release, -security, -updates; backports só no seu escopo; extras explícitas do administrador). sid, forky, outra distribuição/release, pocket não autorizado ou origem desconhecida nunca validam pela versão; sem comando fixado.
 - Diagnósticos importados expiram (`diagnostics_max_age_hours`, padrão 72 h) e ficam como histórico; importação confrontada com a instalação (pacote, versão, arquitetura, Installed: (none), campos ausentes, Candidate fora da tabela) e com o contexto do ativo (distribuição/release em conflito: guardada, exibida, nunca usada para validar).
 - Evidências expiram (`evidence_max_age_hours`, padrão 24 h a partir da última confirmação); `valid_until` retira classificação, proposta e selo pela passagem do tempo, detectado pela API sem rede.
+- Diagnósticos guardados são revalidados a cada uso, sem rede: identidade (pacote, versão, arquitetura, estrutura do policy) e conflitos recalculados contra o contexto atual do ativo. Registros anteriores sem dados suficientes ficam como histórico (`insufficient`); mudança do ativo após a importação (ex.: Trixie → Bookworm) torna o diagnóstico conflitante e a pesquisa desatualizada.
 - Contrato da pesquisa v2 e de fatos v4: resultados anteriores ficam desatualizados, com registro e auditoria preservados.
 
 ### Pesquisa e proposta de remediação

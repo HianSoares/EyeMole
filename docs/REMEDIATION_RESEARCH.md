@@ -94,6 +94,18 @@ O analista cola a saída e informa a data da coleta. O backend:
 - grava o resultado vinculado à instalação, com quem importou, quando e a confiança `imported_by_analyst`. A saída bruta fica só no servidor;
 - **expira** o diagnóstico após `diagnostics_max_age_hours` (padrão 72 h, contados de `collected_at`). Diagnósticos expirados ou em conflito são mantidos como histórico (`diagnostic_history` e auditoria `diagnostic.imported`), e a interface pede nova coleta.
 
+**Revalidação a cada uso.** O diagnóstico guardado é revalidado sem rede sempre que é usado (pesquisa, estado na
+interface, fatos da explicação). Os conflitos gravados servem só como histórico:
+- identidade: pacote, versão instalada e arquitetura comparados com a instalação atual;
+- estrutura: `apt-cache policy` com `***` coerente, Candidate na tabela e arquiteturas das origens;
+- coerência: `/etc/os-release` comparado com o contexto **atual** do ativo (inventário Wazuh ou versão do sistema).
+
+Estados: `valid`, `mismatch` (não é desta instalação), `conflict` (contexto do ativo mudou ou diverge),
+`insufficient` (registro antigo sem dados para revalidar, ex.: policy sem arquiteturas) e `expired`. Só `valid`
+alimenta release, pacote fonte, Candidate, classificação, comandos e fatos da explicação. Os demais ficam como
+histórico, com motivos na interface e pedido de nova coleta. Registros importados antes destas validações passam
+pelas mesmas regras; a ausência do campo `conflicts` não os torna válidos.
+
 ### Origem da Candidate
 
 A versão sozinha nunca valida a correção. **Todas** as suítes que oferecem a

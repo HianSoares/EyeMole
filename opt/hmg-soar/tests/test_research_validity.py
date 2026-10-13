@@ -291,3 +291,111 @@ def _installation(service, fid):
     cfg, row, agent, _ = service._installation("hmg", fid, "read")
     from operations.planning import engine_for
     return row, agent, fid, engine_for(cfg).generate_guidance(fid).to_dict()
+
+
+# ----------------------------------------------------------------------
+# 5. Stored imports are re-validated at every use (records before PR #18, later context changes)
+# ----------------------------------------------------------------------
+
+def legacy_record(fid, clock, parsed, **fields):
+    """Import as stored before the coherence checks: no conflicts/schema; old policy shape (no architectures)."""
+    record = {"finding_id": fid, "agent_ids": ["007"], "package": "vim-tiny", "installed_version": INSTALLED,
+              "collected_at": stamp(clock[0] - dt.timedelta(hours=1)), "imported_at": stamp(clock[0]),
+              "imported_by": "analista", "origin": "manual_import", "confidence": "imported_by_analyst",
+              "parsed": parsed, "raw": {"dpkg_query": DPKG}, "revision": "legacy"}
+    record.update(fields)
+    return record
+
+
+def store_legacy(service, fid, record):
+    key = service.installation_key("diag", "007", fid)
+    service.store.put("hmg", "diagnostic_import", key, record, "analista", "diagnostic.imported")
+    return key
+
+
+LEGACY_DPKG = {"binary_package": "vim-tiny", "architecture": None, "installed_version": INSTALLED,
+               "source_package": "vim", "source_version": INSTALLED}
+LEGACY_POLICY = {"installed": INSTALLED, "candidate": DSA, "versions": [
+    {"version": DSA, "installed": False, "priority": 500, "suites": ["trixie-security/main"], "local_status_only": False},
+    {"version": INSTALLED, "installed": True, "priority": 500, "suites": ["trixie/main"], "local_status_only": False}]}
+
+
+def test_legacy_record_with_conflicting_os_release_never_redefines_release(platform, clock):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    record = legacy_record(fid, clock, {"dpkg": LEGACY_DPKG, "os_release": {"id": "ubuntu", "version_id": "24.04",
+                                                                            "version_codename": "noble"}})
+    key = store_legacy(service, fid, record)
+    state, _ = run(service, cfg, fid, with_distribution_fix([("vim", "trixie", DSA, "")]))
+    context = state["result"]["context"]
+    assert context["release"] == "trixie" and context["diagnostic"]["used"] is False
+    assert context["diagnostic"]["status"] == "conflict" and context["source_package"] is None
+    shown = service.research_state("hmg", fid)["diagnostic"]
+    assert shown["validity"]["status"] == "conflict" and any("ubuntu" in c for c in shown["conflicts"])
+    assert service.store.get("hmg", "diagnostic_import", key)["parsed"] == record["parsed"]  # kept as history
+
+
+def test_legacy_policy_without_verifiable_architecture_requests_new_collection(platform, clock):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    store_legacy(service, fid, legacy_record(fid, clock, {"dpkg": LEGACY_DPKG, "policy": LEGACY_POLICY}))
+    state, _ = run(service, cfg, fid, with_distribution_fix([("vim", "trixie", DSA, "")]))
+    result = state["result"]
+    assert result["classification"] != "validated_fix" and commands(result) == [
+        "sudo apt-get install --only-upgrade -- vim-tiny"]  # candidate treated as not observed
+    assert result["context"]["diagnostic"]["status"] == "insufficient"
+    assert any("Colete e importe" in p for p in result["pending_verifications"])
+
+
+def test_legacy_coherent_record_with_enough_data_remains_usable(platform, clock):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    store_legacy(service, fid, legacy_record(fid, clock, {"dpkg": LEGACY_DPKG, "os_release": {
+        "id": "debian", "version_id": "13", "version_codename": "trixie"}}))
+    state, _ = run(service, cfg, fid)
+    context = state["result"]["context"]
+    assert context["diagnostic"]["status"] == "valid" and context["source_package"] == "vim"
+
+
+@pytest.mark.parametrize("fields,reason", [
+    ({"installed_version": "2:9.0.0000-1"}, "versão"),
+    ({"architecture": "arm64"}, "arquitetura"),
+    ({"package": "vim"}, "pacote"),
+])
+def test_stored_record_of_another_installation_is_shown_and_never_used(platform, clock, fields, reason):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    policy = dict(LEGACY_POLICY, versions=[dict(v, architectures=["amd64"]) for v in LEGACY_POLICY["versions"]])
+    store_legacy(service, fid, legacy_record(fid, clock, {"dpkg": LEGACY_DPKG, "policy": policy}, schema=2, **fields))
+    state, _ = run(service, cfg, fid, with_distribution_fix([("vim", "trixie", DSA, "")]))
+    result = state["result"]
+    assert result["classification"] != "validated_fix" and not any(a.get("validated") for a in result["alternatives"])
+    shown = state["diagnostic"]["validity"]
+    assert shown["status"] == "mismatch" and any(reason in r for r in shown["reasons"])
+
+
+def test_asset_context_change_after_import_invalidates_the_diagnostic(platform, clock):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    state, _ = research_now(service, cfg, fid, clock, os_release='ID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\n')
+    assert state["result"]["classification"] == "validated_fix"
+    # The asset is now registered as Bookworm (Wazuh inventory), after the import.
+    service.store.put("hmg", "inventory", "007", {"observed_at": stamp(clock[0]), "source": "wazuh_api", "agent_ids": ["007"],
+                                                  "os": {"codename": "bookworm"}, "packages": {}}, "worker", "inventory.collected")
+    stale = service.research_state("hmg", fid)
+    assert stale["state"] == "stale" and stale["diagnostic"]["validity"]["status"] == "conflict"
+    assert any("bookworm" in c for c in stale["diagnostic"]["conflicts"])
+    assert service.research_facts("hmg", cfg["projects"]["hmg"], *_installation(service, fid)) is None  # no AI facts
+    again, _ = run(service, cfg, fid, with_distribution_fix([("vim", "trixie", DSA, "")]))
+    context = again["result"]["context"]
+    assert context["release"] == "bookworm" and context["diagnostic"]["used"] is False
+    assert again["result"]["classification"] != "validated_fix" and commands(again["result"]) == []
+
+
+def test_fresh_coherent_import_stays_valid_and_feeds_facts(platform, clock):
+    service, cfg, ids = platform
+    fid = ids[("007", "CVE-2026-73076")]
+    state, _ = research_now(service, cfg, fid, clock, os_release='ID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\n')
+    assert state["diagnostic"]["validity"]["status"] == "valid" and state["diagnostic"]["conflicts"] == []
+    facts = service.research_facts("hmg", cfg["projects"]["hmg"], *_installation(service, fid))
+    assert facts["validated_command"] is True and facts["diagnostics_imported"] is True
