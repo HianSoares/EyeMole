@@ -1,0 +1,24 @@
+{
+ "ghsa_id": "GHSA-r22p-fhw4-84p2",
+ "cve_id": "CVE-2026-73076",
+ "url": "https://api.github.com/repos/vim/vim/security-advisories/GHSA-r22p-fhw4-84p2",
+ "html_url": "https://github.com/vim/vim/security/advisories/GHSA-r22p-fhw4-84p2",
+ "summary": "Arbitrary Command Execution via Malicious `.VimballRecord` Entry Replay in `vimball.vim`",
+ "severity": "medium",
+ "state": "published",
+ "published_at": "2026-07-24T19:31:24Z",
+ "updated_at": "2026-08-11T17:55:00Z",
+ "withdrawn_at": null,
+ "vulnerabilities": [
+  {
+   "package": {
+    "ecosystem": "vim",
+    "name": "Vim"
+   },
+   "vulnerable_version_range": "< v9.2.0847",
+   "patched_versions": "v9.2.0847",
+   "vulnerable_functions": []
+  }
+ ],
+ "description": "Arbitrary Command Execution via the Vimball Record File in Vim < 9.2.0847\r\n=========================================================================\r\n\r\nDate: 24.07.2026\r\nSeverity: Medium\r\nCVE: CVE-2026-73076\r\nCWE: Improper Control of Generation of Code (CWE-94),\r\n     Inclusion of Functionality from Untrusted Control Sphere (CWE-829)\r\n\r\n## Summary\r\n\r\nThe vimball plugin records the files it extract"
+}

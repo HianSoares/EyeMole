@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Pesquisa e proposta de remediação
+
+- Nova ação "Pesquisar correção" em Ver correção: o worker coleta evidências oficiais, a IA (opcional) propõe e o motor verifica a aplicabilidade e classifica (correção validada, proposta a verificar, mitigação, correção só upstream, dados insuficientes, nenhuma correção encontrada nas fontes consultadas). Ausência de `fixed_version` inicia a pesquisa.
+- Conectores (`operations/research_sources.py`): Debian Security Tracker por CVE (sem baixar o feed de ~80 MB), Ubuntu CVE tracker e advisories do projeto no GitHub a partir de links das fontes oficiais; allowlist de hosts, sem redirecionamentos, cache com validade, revalidação condicional e cache antigo sinalizado em indisponibilidade.
+- Contexto do pacote com origem: release, pacote fonte (dpkg importado ou inventário Wazuh, nunca pelo nome), Candidate e suítes (`apt-cache policy`), origem/backports; comparação com regras dpkg.
+- Importação estruturada de diagnósticos somente leitura por instalação (`POST /platform/findings/<id>/diagnostics`), com origem, horário e confiança; URLs de repositório não são guardadas nos dados analisados. Novos diagnósticos apt: pacote fonte (dpkg) e release (`/etc/os-release`).
+- Contrato próprio de proposta da IA; versões, URLs, KBs e pacotes inventados ou garantias descartam a proposta; comandos de atualização vêm de templates do motor; passos manuais aparecem sem selo de validação.
+- Fatos do motor da explicação incorporam a pesquisa atual (`FACTS_VERSION = 3`); "os diagnósticos confirmam" corrigido para "permitem consultar".
+- Inventário Wazuh guarda o pacote fonte de cada binário; `eyemole research configure|status|check`.
+
 ### Explicação por IA: consistência com o motor
 
 - Corrigido: a IA podia afirmar "o plano contém um comando validado" para orientação textual sem comando (ex.: Debian sem versão corrigida, só diagnósticos). O prompt continha essa frase como instrução condicional e o payload não separava diagnósticos de correção.

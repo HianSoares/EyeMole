@@ -16,11 +16,11 @@ from pathlib import Path
 
 from remediation.versioning import ecosystem_for_package_manager
 from .connectors import GLPI, QRadar, VisionOne, Wazuh, vendor_evidence
-from . import ai, ai_facts
+from . import ai, ai_facts, research, research_sources
 from .kiro import explain
 from .planning import engine_for, source_revision
 from .security import load_config, project_config, principal, OperationError
-from .service import Operations, read_snapshot, quality, stamp
+from .service import Operations, read_snapshot, quality, research_settings, stamp
 from .store import Store, now, encode
 
 logger = logging.getLogger("eyemole-worker")
@@ -208,21 +208,26 @@ def explain_finding(store, service, project, cfg, job, payload, secrets):
         if row is None or str(row.get("agent_id")) != agent:
             raise OperationError("Instância não está mais no snapshot atual.", 409)
         guidance = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        return revision, guidance
+        # Current research extends the engine facts the explanation must agree with.
+        research_facts = service.research_facts(project, cfg, row, agent, finding_id, guidance)
+        return revision, guidance, research_facts
 
-    revision, guidance = snapshot_state()
-    if revision != payload["snapshot_revision"] or guidance.get("snapshot_revision") != payload["guidance_revision"]:
+    revision, guidance, research_facts = snapshot_state()
+    if (revision != payload["snapshot_revision"] or guidance.get("snapshot_revision") != payload["guidance_revision"]
+            or (research_facts or {}).get("revision") != payload.get("research_revision")):
         raise OperationError("Dados mudaram desde o pedido; solicite a explicação novamente.", 409)
     guidance["package"] = guidance.get("package_name")
+    research_by_id = {finding_id: research_facts} if research_facts else {}
     kind, provider_settings = ai.selection(cfg)
     if kind == "kiro":
         result = ai_facts.enforce(explain({"plans": [guidance]}, [], provider_settings, secrets), [guidance], "Kiro",
-                                  require_claims=False)
+                                  require_claims=False, research=research_by_id)
         result.update(provider="kiro", provider_label="Kiro (legado)", model="kiro-cli", served_model="kiro-cli")
     else:
-        result = ai.explain_plans([guidance], cfg, secrets)
-    after_revision, after = snapshot_state()
-    if after_revision != revision or after.get("snapshot_revision") != guidance.get("snapshot_revision"):
+        result = ai.explain_plans([guidance], cfg, secrets, research=research_by_id)
+    after_revision, after, after_research = snapshot_state()
+    if (after_revision != revision or after.get("snapshot_revision") != guidance.get("snapshot_revision")
+            or after_research != research_facts):
         raise OperationError("Dados mudaram durante a geração; explicação descartada.", 409)
     object_id = job["object_id"]
     data = {"finding_id": finding_id, "agent_ids": [agent], "cve": guidance.get("cve"),
@@ -240,6 +245,65 @@ def explain_finding(store, service, project, cfg, job, payload, secrets):
     return {"provider": result["provider"], "model": result["model"], "recommendations": len(result["recommendations"])}
 
 
+def research_finding(store, service, project, cfg, job, payload, secrets, session=None, ai_session=None, sleep=None):
+    """"Pesquisar correção": backend collects evidence, AI proposes, engine verifies and classifies.
+
+    Never changes the asset. The Wazuh inventory (read-only) is refreshed when
+    that integration is enabled; AI failures keep the deterministic result.
+    """
+    finding_id, agent = payload["finding_id"], payload["agent_id"]
+    service.user.require("write", project, [agent])
+    research_cfg = research_settings(cfg)
+    if not research_cfg:
+        raise OperationError("Pesquisa de correção desabilitada pelo administrador.", 503)
+    if cfg.get("integrations", {}).get("wazuh", {}).get("enabled") and research_cfg.get("refresh_inventory", True):
+        try:
+            client = Wazuh(settings(cfg, "wazuh"), secrets)
+            client.login()
+            store.put(project, "inventory", agent, client.inventory(agent), job["actor"], "inventory.collected")
+        except (OperationError, KeyError) as exc:
+            logging.getLogger("eyemole.worker").warning("Inventário Wazuh indisponível para a pesquisa: %s", exc)
+
+    def state():
+        _, rows, revision = read_snapshot(cfg)
+        row = rows.get(finding_id)
+        if row is None or str(row.get("agent_id")) != agent:
+            raise OperationError("Instância não está mais no snapshot atual.", 409)
+        plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
+        _, _, context = service.research_inputs(project, row, agent, finding_id, plan)
+        return revision, row, context
+
+    revision, row, context = state()
+    if revision != payload["snapshot_revision"]:
+        raise OperationError("Snapshot mudou desde o pedido; solicite a pesquisa novamente.", 409)
+    collection = research_sources.collect(row.get("cve"), context["distribution"], research_cfg, session=session)
+    assessment = research.assess(context, collection)
+    proposal, ai_state = None, {"state": "disabled"}
+    status = ai.public_status(cfg)
+    if status.get("enabled") and status.get("provider") != "kiro":
+        _, ai_settings = ai.selection(cfg)
+        labels = {"provider": status["provider"], "provider_label": status["provider_label"], "model": status["model"]}
+        try:
+            proposal = research.ai_proposal(context, assessment, collection["evidence"], ai_settings,
+                                            secrets.get(ai_settings.spec.secret, ""), session=ai_session, sleep=sleep)
+            ai_state = dict(labels, state="used")
+        except OperationError as exc:
+            # The proposal is discarded; the deterministic research stays valid.
+            ai_state = dict(labels, state="failed", error=str(exc), code=getattr(exc, "code", None))
+    elif status.get("enabled"):
+        ai_state = {"state": "not_supported", "error": "Kiro (legado) não gera propostas de pesquisa."}
+    result = research.build_result(context, collection, assessment, proposal, ai_state)
+    after_revision, _, after_context = state()
+    if after_revision != revision or after_context["revision"] != context["revision"]:
+        raise OperationError("Dados da instalação mudaram durante a pesquisa; resultado descartado.", 409)
+    result.update(finding_id=finding_id, agent_ids=[agent], cve=row.get("cve"), snapshot_revision=revision,
+                  context_revision=context["revision"], provider_key=service.research_provider(cfg))
+    store.put(project, "ai_research", service.installation_key("research", agent, finding_id), result, job["actor"],
+              "research.completed")
+    return {"classification": result["classification"], "ai": ai_state["state"],
+            "sources": [{"source": src.get("source"), "available": src.get("available")} for src in result["sources"]]}
+
+
 def process(store, config, job, secrets):
     payload = json.loads(job["payload"])
     actor = principal(config, job["actor"])
@@ -249,6 +313,8 @@ def process(store, config, job, secrets):
     secrets = ai.scoped_secrets(cfg, secrets)
     if job["kind"] == "ai_finding":
         return explain_finding(store, service, project, cfg, job, payload, secrets)
+    if job["kind"] == "research":
+        return research_finding(store, service, project, cfg, job, payload, secrets)
     identifier = payload["campaign_id"]
     permission = "execute" if job["kind"] == "execute" else "integrate" if job["kind"] in {"ticket", "sync", "evidence"} else "write"
     c = service.get_campaign(project, identifier, permission)

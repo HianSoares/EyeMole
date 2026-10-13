@@ -12,12 +12,18 @@ from remediation.versioning import compare_versions
 from .security import OperationError, project_config, PERMISSIONS
 from .store import now
 from .planning import engine_for, source_revision
-from . import ai as ai_support, ai_facts
+from . import ai as ai_support, ai_facts, diagnostics, research as research_support, research_sources
 
 INVALIDATED_AI = ("Explicação gerada antes da verificação de consistência com o motor; invalidada e não exibida "
                   "(registro e auditoria preservados). Solicite novamente.")
 
 FINDING_ID = re.compile(r"[a-f0-9]{64}")
+
+
+def research_settings(cfg):
+    """integrations.research block when enabled (administrative configuration only)."""
+    block = (cfg.get("integrations") or {}).get("research") if isinstance(cfg, dict) else None
+    return block if isinstance(block, dict) and block.get("enabled") else None
 
 TRANSITIONS = {
     "identified": {"analyzing"}, "analyzing": {"planned"},
@@ -313,7 +319,7 @@ class Operations:
     def ai_status(self, project):
         return ai_support.public_status(self.context(project))
 
-    def _finding(self, project, finding_id, permission):
+    def _installation(self, project, finding_id, permission):
         cfg = self.context(project, permission)
         if not isinstance(finding_id, str) or not FINDING_ID.fullmatch(finding_id):
             raise OperationError("finding_id inválido.")
@@ -323,30 +329,142 @@ class Operations:
             raise OperationError("Instância não encontrada no snapshot atual; atualize o painel.", 404)
         agent = str(row["agent_id"])
         self.user.require(permission, project, [agent])
+        return cfg, row, agent, revision
+
+    def _object(self, project, kind, key):
+        try:
+            return self.store.get(project, kind, key)
+        except OperationError:
+            return None
+
+    @staticmethod
+    def installation_key(prefix, agent, finding_id):
+        """Records bound to exactly one installation (agent + instance identity)."""
+        return hashlib.sha256(f"{prefix}:{agent}:{finding_id}".encode()).hexdigest()
+
+    def _finding(self, project, finding_id, permission):
+        cfg, row, agent, revision = self._installation(project, finding_id, permission)
         guidance = engine_for(cfg).generate_guidance(finding_id)
         if guidance.status in {"not_found", "provider_unavailable", "ambiguous_finding", "validation_error", "internal_error"}:
             raise OperationError("Orientação determinística indisponível para esta instância.", 409)
         status = ai_support.public_status(cfg)
-        # Instance, plan revision, provider/model and the facts contract form the
-        # identity: an explanation is never reused for another installation of
-        # the same CVE, nor across facts contracts.
+        research_facts = self.research_facts(project, cfg, row, agent, finding_id, guidance.to_dict())
+        # Instance, plan revision, provider/model, the facts contract and the
+        # current research form the identity: an explanation is never reused for
+        # another installation of the same CVE, nor across contracts or research.
         legacy_id = f"finding:{agent}:{finding_id}:{guidance.snapshot_revision}:{ai_support.provider_key(cfg)}"
-        object_id = f"{legacy_id}:facts{ai_facts.FACTS_VERSION}"
-        return cfg, row, agent, revision, guidance, status, object_id, legacy_id
+        object_id = (f"{legacy_id}:facts{ai_facts.FACTS_VERSION}:"
+                     f"{research_facts['revision'] if research_facts else 'none'}")
+        previous = [legacy_id] + [f"{legacy_id}:facts{v}" for v in range(2, ai_facts.FACTS_VERSION)]
+        return cfg, row, agent, revision, guidance, status, object_id, previous, research_facts
 
     def _stored_ai(self, project, object_id):
-        try:
-            return self.store.get(project, "ai_finding", hashlib.sha256(object_id.encode()).hexdigest())
-        except OperationError:
-            return None
+        return self._object(project, "ai_finding", hashlib.sha256(object_id.encode()).hexdigest())
+
+    # ------------------------------------------------------------------
+    # Remediation research ("Pesquisar correção") and imported diagnostics
+    # ------------------------------------------------------------------
+
+    def research_inputs(self, project, row, agent, finding_id, plan):
+        inventory = self._object(project, "inventory", agent)
+        diagnostic = self._object(project, "diagnostic_import", self.installation_key("diag", agent, finding_id))
+        if diagnostic and diagnostic.get("installed_version") != row["version"]:
+            diagnostic = None  # imported for another installed version
+        context = research_support.resolve_context(dict(row, finding_id=finding_id), plan, inventory, diagnostic)
+        return inventory, diagnostic, context
+
+    def research_provider(self, cfg):
+        status = ai_support.public_status(cfg)
+        return ai_support.provider_key(cfg) if status.get("enabled") and status.get("provider") != "kiro" else "none"
+
+    def current_research(self, project, cfg, row, agent, finding_id, plan, context=None):
+        """(stored result, reasons it is no longer current). No reasons = current."""
+        stored = self._object(project, "ai_research", self.installation_key("research", agent, finding_id))
+        if not stored:
+            return None, []
+        if context is None:
+            _, _, context = self.research_inputs(project, row, agent, finding_id, plan)
+        reasons = []
+        if stored.get("research_version") != research_support.RESEARCH_VERSION:
+            reasons.append("O contrato da pesquisa mudou.")
+        if stored.get("context_revision") != context["revision"]:
+            reasons.append("O contexto da instalação mudou (orientação, inventário ou diagnóstico importado).")
+        if stored.get("provider_key") != self.research_provider(cfg):
+            reasons.append("O provedor ou modelo de IA mudou.")
+        settings = research_settings(cfg) or {}
+        for url, sha in stored.get("evidence_index", []):
+            entry = research_sources.cached_entry(url, settings)
+            if entry and entry.get("content") is not None and entry.get("content_sha256") != sha:
+                reasons.append("As evidências das fontes mudaram desde a pesquisa.")
+                break
+        return stored, reasons
+
+    def research_facts(self, project, cfg, row, agent, finding_id, plan):
+        stored, reasons = self.current_research(project, cfg, row, agent, finding_id, plan)
+        return research_support.facts_summary(stored) if stored and not reasons else None
+
+    def research_state(self, project, finding_id):
+        cfg, row, agent, revision = self._installation(project, finding_id, "read")
+        plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
+        inventory, diagnostic, context = self.research_inputs(project, row, agent, finding_id, plan)
+        settings = research_settings(cfg)
+        out = {"finding_id": finding_id, "enabled": bool(settings), "state": "none",
+               "context": {k: context.get(k) for k in ("distribution", "release", "binary_package", "source_package",
+                                                       "installed_version", "architecture", "package_origin",
+                                                       "repository", "origins", "missing")},
+               "diagnostic": diagnostics.public(diagnostic),
+               # Read-only diagnostics the analyst may run; never shown as collected results.
+               "available_diagnostics": [{"label": d.get("label"), "script": d.get("script"), "executed": False}
+                                         for d in plan.get("diagnostics", [])],
+               "ai": ai_support.public_status(cfg)}
+        if not settings:
+            out["reason"] = "Pesquisa de correção desabilitada pelo administrador."
+            return out
+        stored, reasons = self.current_research(project, cfg, row, agent, finding_id, plan, context)
+        job = self.store.job_for(project, "research", self.research_object(cfg, agent, finding_id, context))
+        if job and job["state"] in {"queued", "running"}:
+            out["state"] = job["state"]
+        elif stored and not reasons:
+            out.update(state="succeeded", result=stored)
+        elif job and job["state"] in {"failed", "interrupted"}:
+            out.update(state="failed", error=job.get("error") or "Pesquisa não concluída.")
+        elif stored:
+            # Outdated: reasons and provenance only; no proposal or command is shown as current.
+            out.update(state="stale", stale_reasons=reasons, result={k: stored.get(k) for k in (
+                "generated_at", "classification", "classification_label", "sources")})
+        return out
+
+    def research_object(self, cfg, agent, finding_id, context):
+        return f"research:{agent}:{finding_id}:{context['revision'][:16]}:{self.research_provider(cfg)}"
+
+    def queue_research(self, project, finding_id):
+        cfg, row, agent, revision = self._installation(project, finding_id, "write")
+        if not research_settings(cfg):
+            raise OperationError("Pesquisa de correção desabilitada pelo administrador.", 503)
+        plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
+        _, _, context = self.research_inputs(project, row, agent, finding_id, plan)
+        payload = {"finding_id": finding_id, "agent_id": agent, "snapshot_revision": revision,
+                   "context_revision": context["revision"]}
+        return self.store.queue(project, "research", self.research_object(cfg, agent, finding_id, context),
+                                self.user.name, payload)
+
+    def import_diagnostics(self, project, finding_id, body):
+        cfg, row, agent, revision = self._installation(project, finding_id, "write")
+        installation = {"finding_id": finding_id, "agent_id": agent, "package": row["package"], "version": row["version"],
+                        "architecture": row.get("package_architecture") or row.get("architecture")}
+        record = diagnostics.build_import(body, installation, self.user.name)
+        self.store.put(project, "diagnostic_import", self.installation_key("diag", agent, finding_id), record,
+                       self.user.name, "diagnostic.imported")
+        return diagnostics.public(record)
 
     def finding_ai(self, project, finding_id):
-        cfg, row, agent, revision, guidance, status, object_id, legacy_id = self._finding(project, finding_id, "read")
+        cfg, row, agent, revision, guidance, status, object_id, previous, research_facts = \
+            self._finding(project, finding_id, "read")
         plan = guidance.to_dict()
-        # Critical facts always come from the engine, whatever the AI state.
+        # Critical facts always come from the engine (and current research), whatever the AI state.
         result = {"finding_id": finding_id, "provider": status.get("provider"), "provider_label": status.get("provider_label"),
                   "model": status.get("model"), "enabled": bool(status.get("enabled")), "state": "none",
-                  "engine_facts": ai_facts.engine_facts(plan)}
+                  "engine_facts": ai_facts.engine_facts(plan, research_facts)}
         if not status.get("enabled"):
             result["reason"] = status.get("reason")
             return result
@@ -364,7 +482,7 @@ class Operations:
             if job["state"] == "succeeded":
                 # Job finished but its result no longer matches the current data.
                 result.update(state="stale", error="Os dados mudaram depois da geração; solicite novamente.")
-        elif self._stored_ai(project, legacy_id) is not None:
+        elif any(self._stored_ai(project, old) is not None for old in previous):
             # Generated before the engine-consistency contract: kept for audit, never shown as valid.
             result.update(state="stale", invalidated=True, error=INVALIDATED_AI)
         return result
@@ -386,9 +504,11 @@ class Operations:
         return c
 
     def queue_finding_ai(self, project, finding_id):
-        cfg, row, agent, revision, guidance, status, object_id, _ = self._finding(project, finding_id, "write")
+        cfg, row, agent, revision, guidance, status, object_id, _, research_facts = \
+            self._finding(project, finding_id, "write")
         if not status.get("enabled"):
             raise OperationError(status.get("reason") or "Explicação por IA desabilitada.", 503)
         payload = {"finding_id": finding_id, "agent_id": agent, "snapshot_revision": revision,
-                   "guidance_revision": guidance.snapshot_revision, "provider_key": ai_support.provider_key(cfg)}
+                   "guidance_revision": guidance.snapshot_revision, "provider_key": ai_support.provider_key(cfg),
+                   "research_revision": research_facts["revision"] if research_facts else None}
         return self.store.queue(project, "ai_finding", object_id, self.user.name, payload)

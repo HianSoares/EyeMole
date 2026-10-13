@@ -128,7 +128,7 @@ class Store:
                                (project, kind, identifier)).fetchone()
             # Mutating external jobs are never automatically repeated after ambiguous failure.
             if row:
-                if kind in {"plans", "kiro", "ai", "ai_finding", "sync", "evidence"} and row["state"] in {"failed", "interrupted", "succeeded"}:
+                if kind in {"plans", "kiro", "ai", "ai_finding", "research", "sync", "evidence"} and row["state"] in {"failed", "interrupted", "succeeded"}:
                     conn.execute("DELETE FROM jobs WHERE id=?", (row["id"],))
                     self.audit(conn, project, actor, "job.requeued", row["id"], {"kind": kind})
                 else:

@@ -33,7 +33,10 @@ SYSTEM_PROMPT = (
     "Use apenas finding_id e evidence_ids presentes nos dados. "
     "Cada fato tem engine_facts, determinados pelo motor do EyeMole e autoritativos: copie para claims exatamente "
     "correction_command_available, fixed_version e fix_state, e não contradiga engine_statements. "
-    "read_only_diagnostics são diagnósticos somente leitura: chame-os de diagnóstico, nunca de comando, e não os trate como correção. "
+    "read_only_diagnostics são diagnósticos somente leitura que permitem consultar a instalação: chame-os de diagnóstico, "
+    "nunca de comando, e não os trate como correção; se diagnostics_collected for falso, não diga que eles confirmam, "
+    "mostram ou indicam algo. "
+    "upstream_fixed_versions são correções do projeto original e não confirmam pacote para a distribuição. "
     "Só mencione comando de correção se correction_command_available for verdadeiro. "
     "Se fixed_version for nulo, diga que as fontes do EyeMole não informaram a versão corrigida; isso é falta de dados e "
     "não permite concluir que a correção não foi publicada. "
@@ -82,13 +85,13 @@ def plan_evidence(plan):
     return items
 
 
-def plan_facts(plan):
+def plan_facts(plan, research=None):
     """Minimal technical facts for one instance. Asset identity never leaves the server.
 
     Correction command, verification command and diagnostics are reported
     separately in engine_facts (labels only, never command text).
     """
-    facts = ai_facts.engine_facts(plan)
+    facts = ai_facts.engine_facts(plan, research)
     return {
         "finding_id": plan["finding_id"],
         "cve": _clean(plan.get("cve"), 40, scrub=False),
@@ -110,13 +113,15 @@ def plan_facts(plan):
         "warnings": _clean_list(plan.get("warnings")),
         "engine_facts": {key: facts[key] for key in (
             "correction_command_available", "verification_command_available", "read_only_diagnostics",
-            "fixed_version", "fix_state", "fix_publication", "repository_availability", "missing_context")},
+            "diagnostics_collected", "fixed_version", "upstream_fixed_versions", "fix_state", "fix_publication",
+            "distribution_status", "repository_availability", "repository_candidate", "missing_context")},
         "engine_statements": facts["statements"],
     }
 
 
-def build_messages(plans, extra_evidence=()):
-    facts = [plan_facts(p) for p in plans]
+def build_messages(plans, extra_evidence=(), research=None):
+    research = research or {}
+    facts = [plan_facts(p, research.get(p["finding_id"])) for p in plans]
     evidence = [item for p in plans for item in plan_evidence(p)]
     for item in extra_evidence:
         evidence.append({"id": item["id"], "kind": "official_source", "cve": _clean(item.get("cve"), 40),
@@ -173,7 +178,7 @@ def scoped_secrets(cfg, secrets):
     return {k[len(prefix):]: v for k, v in secrets.items() if k.startswith(prefix)}
 
 
-def explain_plans(plans, cfg, secrets, extra_evidence=(), session=None, sleep=None):
+def explain_plans(plans, cfg, secrets, extra_evidence=(), session=None, sleep=None, research=None):
     """Explain deterministic plans with the configured HTTP provider.
 
     Returns the validated contract plus provider/model metadata. Never returns
@@ -184,7 +189,7 @@ def explain_plans(plans, cfg, secrets, extra_evidence=(), session=None, sleep=No
         raise OperationError("Provedor configurado não é HTTP.", 500)
     if not plans:
         raise OperationError("Gere os planos antes de solicitar a explicação por IA.", 409)
-    messages, evidence_ids, finding_ids = build_messages(plans, extra_evidence)
+    messages, evidence_ids, finding_ids = build_messages(plans, extra_evidence, research)
     kwargs = {"session": session}
     if sleep is not None:
         kwargs["sleep"] = sleep
@@ -192,7 +197,7 @@ def explain_plans(plans, cfg, secrets, extra_evidence=(), session=None, sleep=No
     content, served = client.complete(messages)
     result = parse_message_content(content, evidence_ids, finding_ids, settings.spec.label, claims=True)
     # Critical facts come from the engine: contradicting answers are discarded here.
-    result = ai_facts.enforce(result, plans, settings.spec.label, require_claims=True)
+    result = ai_facts.enforce(result, plans, settings.spec.label, require_claims=True, research=research)
     result.update(provider=settings.spec.name, provider_label=settings.spec.label,
                   model=settings.model, served_model=served)
     return result

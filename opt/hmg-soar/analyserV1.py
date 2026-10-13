@@ -14844,6 +14844,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         : (isStatusSuccess && hasCommand ? 'command' : 'textual');
       renderGuidanceExtras(record, guidanceKind);
       loadGuidanceAi(record.finding_id, activeGuidanceRequestId);
+      loadGuidanceResearch(record.finding_id, activeGuidanceRequestId);
 
       const showsCorrection = isStatusSuccess && isConfidenceSufficient && hasCommand && guidanceKind === 'command';
       // "Este comando" só quando um comando de correção validado está na tela.
@@ -15059,8 +15060,242 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
+    // ------------------------------------------------------------------
+    // Pesquisa de correção: o backend coleta fontes oficiais, o motor
+    // valida e classifica, a IA (opcional) propõe. Nada é executado no ativo.
+    // ------------------------------------------------------------------
+    let guidanceResearchPoll = null;
+    const RESEARCH_ORIGINS = {
+      imported_by_analyst: 'importado pelo analista', wazuh_syscollector: 'inventário Wazuh (syscollector)',
+      release_table: 'tabela de releases do EyeMole (a partir da versão do sistema)'
+    };
+
+    function researchEl(tag, text, style) {
+      const el = document.createElement(tag);
+      if (text !== undefined && text !== null) el.textContent = String(text);
+      if (style) el.style.cssText = style;
+      return el;
+    }
+
+    function researchList(items) {
+      const ul = researchEl('ul');
+      ul.className = 'guidance-list';
+      (items || []).forEach(text => ul.appendChild(researchEl('li', text)));
+      return ul;
+    }
+
+    function resetGuidanceResearch() {
+      clearTimeout(guidanceResearchPoll);
+      guidanceResearchPoll = null;
+      ['guidance-research-state', 'guidance-research-body', 'guidance-research-actions', 'guidance-diag-commands', 'guidance-diag-status'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.replaceChildren();
+      });
+      ['guidance-diag-dpkg', 'guidance-diag-policy', 'guidance-diag-os', 'guidance-diag-collected'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      const section = document.getElementById('guidance-research-section');
+      if (section) section.style.display = 'none';
+    }
+
+    function researchOrigin(origin) {
+      if (!origin) return 'não verificado';
+      return (RESEARCH_ORIGINS[origin.origin] || origin.origin) + (origin.observed_at ? ' em ' + origin.observed_at : '');
+    }
+
+    function renderResearchAlternative(alt, labels, recommended) {
+      const box = researchEl('div', null, 'border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.3rem;');
+      box.appendChild(researchEl('strong', (recommended ? 'Recomendada: ' : '') + alt.kind_label + (alt.target_version ? ' → ' + alt.target_version : '')));
+      box.appendChild(researchEl('span', alt.category_label, 'font-size: 0.78rem; color: var(--text-muted);'));
+      box.appendChild(researchEl('span', alt.validated ? 'Validado pelo EyeMole (template controlado)' : 'Sem selo de validação: exige verificação ou revisão manual',
+        alt.validated ? 'color: #34d399; font-size: 0.76rem;' : 'color: #fbbf24; font-size: 0.76rem;'));
+      if (alt.rationale) box.appendChild(researchEl('p', alt.rationale));
+      if (alt.ai_rationale) box.appendChild(researchEl('p', 'Análise da IA: ' + alt.ai_rationale));
+      if (alt.command) {
+        box.appendChild(researchEl('span', alt.validated ? 'Comando (gerado pelo EyeMole):' : 'Comando proposto (aplicar somente após as verificações):'));
+        const pre = researchEl('pre', null, 'background: rgba(0,0,0,0.4); padding: 0.5rem; border-radius: 6px; overflow-x: auto; margin: 0;');
+        pre.appendChild(researchEl('code', alt.command));
+        box.appendChild(pre);
+        if (alt.simulation) box.appendChild(researchEl('small', 'Simulação prévia: ' + alt.simulation));
+      }
+      if (alt.prerequisites && alt.prerequisites.length) { box.appendChild(researchEl('span', 'Pré-requisitos:')); box.appendChild(researchList(alt.prerequisites)); }
+      if (alt.impact) box.appendChild(researchEl('p', 'Impacto: ' + alt.impact));
+      if (alt.verification && alt.verification.length) { box.appendChild(researchEl('span', 'Verificação posterior:')); box.appendChild(researchList(alt.verification)); }
+      if (alt.rollback) box.appendChild(researchEl('p', 'Recuperação: ' + alt.rollback));
+      if (alt.manual_steps && alt.manual_steps.length) {
+        box.appendChild(researchEl('span', 'Passos propostos pela IA para revisão manual (não validados, não executados):', 'color: #fbbf24;'));
+        box.appendChild(researchList(alt.manual_steps));
+      }
+      (alt.engine_notes || []).forEach(note => box.appendChild(researchEl('small', 'Motor: ' + note)));
+      if (alt.evidence_ids && alt.evidence_ids.length) box.appendChild(researchEl('small', 'Evidências: ' + alt.evidence_ids.map(id => labels[id] || id).join('; ')));
+      return box;
+    }
+
+    function renderResearchResult(data) {
+      const body = document.getElementById('guidance-research-body');
+      const r = data.result;
+      const ctx = r.context || {};
+      const assessment = r.assessment || {};
+      body.appendChild(researchEl('strong', r.classification_label));
+      body.appendChild(researchEl('p', r.summary));
+      if (r.summary_origin === 'ai') body.appendChild(researchEl('small', 'Resumo escrito pela IA e verificado contra as evidências.'));
+      const facts = [
+        'Distribuição/release: ' + (ctx.distribution || '?') + ' ' + (ctx.release || 'não identificada') + ' (' + researchOrigin((ctx.origins || {}).release) + ')',
+        'Pacote binário ' + ctx.binary_package + ' ' + ctx.installed_version + (ctx.architecture ? ' (' + ctx.architecture + ')' : ''),
+        'Pacote fonte: ' + (ctx.source_package ? ctx.source_package + ' (' + researchOrigin((ctx.origins || {}).source_package) + ')' : 'associação não verificada'),
+        'Versão corrigida publicada para a distribuição: ' + (assessment.distribution_fixed_version || 'não encontrada para esta release'),
+        'Versão corrigida upstream: ' + ((assessment.upstream_fixed_versions || []).map(u => u.version).join(', ') || 'não informada'),
+        'Candidate no repositório do ativo: ' + (ctx.repository && ctx.repository.candidate_version
+          ? ctx.repository.candidate_version + ' (' + researchOrigin(ctx.repository) + '; ' + (ctx.repository.candidate_suites || []).join(', ') + ')'
+          : 'não observada (importe o apt-cache policy)')
+      ];
+      body.appendChild(researchList(facts));
+      if ((assessment.notes || []).length) { body.appendChild(researchEl('span', 'Observações do motor:')); body.appendChild(researchList(assessment.notes)); }
+      const labels = {};
+      (r.evidence || []).forEach(e => { labels[e.id] = (e.publisher || '') + (e.release ? ' · ' + e.release : ''); });
+      const alts = r.alternatives || [];
+      if (typeof r.recommended === 'number' && alts[r.recommended]) body.appendChild(renderResearchAlternative(alts[r.recommended], labels, true));
+      const others = alts.filter((_, i) => i !== r.recommended);
+      if (others.length) {
+        const details = researchEl('details');
+        details.appendChild(researchEl('summary', 'Outras alternativas avaliadas (' + others.length + ')'));
+        others.forEach(a => details.appendChild(renderResearchAlternative(a, labels, false)));
+        body.appendChild(details);
+      }
+      const pending = (r.pending_verifications || []).concat((r.open_questions || []).map(q => 'Questão levantada pela IA: ' + q));
+      if (pending.length) { body.appendChild(researchEl('span', 'Ainda precisa ser verificado:')); body.appendChild(researchList(pending)); }
+      const sources = researchEl('details');
+      sources.appendChild(researchEl('summary', 'Fontes consultadas (' + (r.sources || []).length + ')'));
+      (r.sources || []).forEach(s => {
+        const line = researchEl('div', null, 'font-size: 0.78rem;');
+        if (s.url && s.url.startsWith('https://')) {
+          const a = researchEl('a', s.url);
+          a.href = s.url; a.rel = 'noopener noreferrer'; a.target = '_blank';
+          line.appendChild(a);
+        } else line.appendChild(researchEl('span', s.source));
+        line.appendChild(researchEl('span', ' · ' + (s.available ? (s.found ? 'consultada' : 'sem registro desta CVE') : 'indisponível: ' + (s.error || ''))
+          + (s.retrieved_at ? ' · ' + s.retrieved_at : '') + (s.stale ? ' · cache antigo' : (s.cached ? ' · cache' : ''))));
+        sources.appendChild(line);
+      });
+      body.appendChild(sources);
+      const aiState = r.ai || {};
+      const aiText = aiState.state === 'used' ? 'Proposta analisada por ' + (aiState.provider_label || aiState.provider) + ' · ' + aiState.model
+        : aiState.state === 'failed' ? 'Proposta da IA descartada (' + (aiState.error || 'falha') + '); resultado do motor mantido.'
+        : aiState.state === 'not_supported' ? aiState.error : 'IA não utilizada; resultado do motor e das fontes.';
+      body.appendChild(researchEl('small', aiText + ' · Pesquisa de ' + r.generated_at));
+    }
+
+    function guidanceResearchButton(findingId, requestId, label) {
+      const actions = document.getElementById('guidance-research-actions');
+      actions.replaceChildren();
+      const btn = researchEl('button', label);
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await platformJson('findings/' + encodeURIComponent(findingId) + '/research?' + guidanceAiProjectQuery(), {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: '{}'
+          });
+          if (requestId !== activeGuidanceRequestId) return;
+          await refreshGuidanceResearch(findingId, requestId);
+        } catch (err) {
+          if (requestId !== activeGuidanceRequestId) return;
+          document.getElementById('guidance-research-state').textContent = 'Não foi possível solicitar a pesquisa: ' + err.message;
+          btn.disabled = false;
+        }
+      });
+      actions.appendChild(btn);
+    }
+
+    async function refreshGuidanceResearch(findingId, requestId) {
+      clearTimeout(guidanceResearchPoll);
+      const data = await platformJson('findings/' + encodeURIComponent(findingId) + '/research?' + guidanceAiProjectQuery());
+      if (requestId !== activeGuidanceRequestId) return;
+      const state = document.getElementById('guidance-research-state');
+      document.getElementById('guidance-research-body').replaceChildren();
+      document.getElementById('guidance-research-actions').replaceChildren();
+      const commands = document.getElementById('guidance-diag-commands');
+      commands.replaceChildren();
+      (data.available_diagnostics || []).forEach(d => commands.appendChild(researchEl('li', d.label + ': ' + d.script + ' (não executado pelo EyeMole)')));
+      const diag = data.diagnostic;
+      document.getElementById('guidance-diag-status').textContent = diag
+        ? 'Diagnóstico importado por ' + diag.imported_by + ' (coletado em ' + diag.collected_at + '; confiança: importado pelo analista).'
+        : 'Nenhum diagnóstico importado: a Candidate e o pacote fonte não foram observados pelo EyeMole.';
+      if (!data.enabled) { state.textContent = 'Pesquisa de correção indisponível: ' + (data.reason || 'desabilitada.'); return; }
+      if (data.state === 'queued' || data.state === 'running') {
+        state.textContent = data.state === 'queued' ? 'Pesquisa na fila...' : 'Pesquisando fontes oficiais...';
+        guidanceResearchPoll = setTimeout(() => {
+          refreshGuidanceResearch(findingId, requestId).catch(() => { state.textContent = 'Falha ao consultar o andamento da pesquisa.'; });
+        }, 4000);
+        return;
+      }
+      if (data.state === 'succeeded') {
+        state.textContent = 'Pesquisa concluída.';
+        renderResearchResult(data);
+        guidanceResearchButton(findingId, requestId, 'Pesquisar novamente');
+        return;
+      }
+      if (data.state === 'stale') {
+        state.textContent = 'Pesquisa desatualizada: ' + (data.stale_reasons || []).join(' ') + ' A proposta anterior não é exibida.';
+        guidanceResearchButton(findingId, requestId, 'Pesquisar novamente');
+        return;
+      }
+      if (data.state === 'failed') {
+        state.textContent = 'Pesquisa não concluída: ' + (data.error || 'falha') + ' A orientação acima continua válida.';
+        guidanceResearchButton(findingId, requestId, 'Tentar novamente');
+        return;
+      }
+      state.textContent = 'Nenhuma pesquisa realizada para esta instalação. A ausência de versão corrigida no Wazuh não encerra o fluxo: pesquise nas fontes oficiais.';
+      guidanceResearchButton(findingId, requestId, 'Pesquisar correção');
+    }
+
+    async function submitGuidanceDiagnostics(findingId, requestId) {
+      const status = document.getElementById('guidance-diag-status');
+      const collected = document.getElementById('guidance-diag-collected').value;
+      const body = { collected_at: collected ? new Date(collected).toISOString() : '' };
+      [['dpkg_query', 'guidance-diag-dpkg'], ['apt_cache_policy', 'guidance-diag-policy'], ['os_release', 'guidance-diag-os']].forEach(([key, id]) => {
+        const value = document.getElementById(id).value;
+        if (value.trim()) body[key] = value;
+      });
+      try {
+        await platformJson('findings/' + encodeURIComponent(findingId) + '/diagnostics?' + guidanceAiProjectQuery(), {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body)
+        });
+        if (requestId !== activeGuidanceRequestId) return;
+        await refreshGuidanceResearch(findingId, requestId);
+      } catch (err) {
+        if (requestId !== activeGuidanceRequestId) return;
+        status.textContent = 'Importação recusada: ' + err.message;
+      }
+    }
+
+    async function loadGuidanceResearch(findingId, requestId) {
+      resetGuidanceResearch();
+      if (!findingId || !/^[a-f0-9]{64}$/.test(findingId)) return;
+      document.getElementById('guidance-research-section').style.display = 'block';
+      const state = document.getElementById('guidance-research-state');
+      state.textContent = 'Verificando a pesquisa de correção...';
+      const submit = document.getElementById('guidance-diag-submit');
+      submit.onclick = () => submitGuidanceDiagnostics(findingId, requestId);
+      try {
+        if (guidanceAiProject === null) {
+          const me = await platformJson('me');
+          guidanceAiProject = me.legacy_project || '';
+        }
+        if (requestId !== activeGuidanceRequestId) return;
+        if (!guidanceAiProject) { state.textContent = 'Pesquisa indisponível: nenhum ambiente da plataforma usa este snapshot.'; return; }
+        await refreshGuidanceResearch(findingId, requestId);
+      } catch (err) {
+        if (requestId !== activeGuidanceRequestId) return;
+        state.textContent = 'Pesquisa de correção indisponível (' + (err.status === 403 ? 'sem permissão' : (err.status === 404 ? 'instalação ausente do snapshot atual' : 'serviço indisponível')) + '). A orientação acima continua válida.';
+      }
+    }
+
     function resetGuidanceExtras() {
       resetGuidanceAi();
+      resetGuidanceResearch();
       GUIDANCE_EXTRA_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -15214,6 +15449,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       // Invalidar a requisição ativa para que respostas pendentes sejam descartadas
       activeGuidanceRequestId++;
       resetGuidanceAi();
+      resetGuidanceResearch();
       document.getElementById('guidance-modal-overlay').style.display = 'none';
       if (guidanceModalTriggerBtn) {
         try {
@@ -15464,6 +15700,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div id="guidance-ai-body" class="guidance-block-text" style="display: flex; flex-direction: column; gap: 0.4rem;"></div>
             <div id="guidance-ai-actions" class="actions"></div>
             <div style="font-size: 0.72rem; color: var(--text-muted);">Texto explicativo gerado por IA somente para esta instalação. Não substitui a orientação determinística, não aprova mudanças e não confirma a correção. Respostas que contradizem os fatos do motor são descartadas.</div>
+          </div>
+
+          <!-- Pesquisa e proposta de remediação (fontes oficiais no backend; motor valida; IA propõe) -->
+          <div id="guidance-research-section" class="classify-field" style="display: none;">
+            <label>Pesquisa de correção</label>
+            <div id="guidance-research-state" class="guidance-block-text" aria-live="polite"></div>
+            <div id="guidance-research-body" class="guidance-block-text" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+            <div id="guidance-research-actions" class="actions"></div>
+            <details id="guidance-diag-import" style="font-size: 0.8rem;">
+              <summary>Importar resultados de diagnóstico desta instalação</summary>
+              <div style="color: var(--text-muted); margin: 0.3rem 0;">Os diagnósticos abaixo permitem consultar a instalação; o EyeMole não os executa. Cole aqui a saída obtida no ativo. O resultado fica marcado como importado pelo analista, com data e origem.</div>
+              <ul id="guidance-diag-commands" class="guidance-list"></ul>
+              <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                <span><label for="guidance-diag-collected" style="text-transform: none; display: inline;">Coletado em</label>
+                  <input type="datetime-local" id="guidance-diag-collected"></span>
+                <label for="guidance-diag-dpkg" style="text-transform: none;">Saída do dpkg-query (pacote fonte)</label>
+                <textarea id="guidance-diag-dpkg" rows="2" maxlength="32768" spellcheck="false" style="width: 100%; box-sizing: border-box; font-family: monospace;"></textarea>
+                <label for="guidance-diag-policy" style="text-transform: none;">Saída do apt-cache policy</label>
+                <textarea id="guidance-diag-policy" rows="6" maxlength="32768" spellcheck="false" style="width: 100%; box-sizing: border-box; font-family: monospace;"></textarea>
+                <label for="guidance-diag-os" style="text-transform: none;">Saída de /etc/os-release</label>
+                <textarea id="guidance-diag-os" rows="3" maxlength="32768" spellcheck="false" style="width: 100%; box-sizing: border-box; font-family: monospace;"></textarea>
+                <button type="button" class="btn" id="guidance-diag-submit" style="align-self: flex-start;">Importar diagnóstico</button>
+                <div id="guidance-diag-status" aria-live="polite"></div>
+              </div>
+            </details>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Pesquisar e propor não executa mudanças no ativo. O selo "Validado pelo EyeMole" só aparece em comandos gerados por template do motor; passos de revisão manual propostos pela IA não são validados. A execução continua dependendo da aprovação da campanha.</div>
           </div>
         </div>
       </div>
