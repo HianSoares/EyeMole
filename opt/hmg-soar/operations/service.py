@@ -12,7 +12,10 @@ from remediation.versioning import compare_versions
 from .security import OperationError, project_config, PERMISSIONS
 from .store import now
 from .planning import engine_for, source_revision
-from . import ai as ai_support
+from . import ai as ai_support, ai_facts
+
+INVALIDATED_AI = ("Explicação gerada antes da verificação de consistência com o motor; invalidada e não exibida "
+                  "(registro e auditoria preservados). Solicite novamente.")
 
 FINDING_ID = re.compile(r"[a-f0-9]{64}")
 
@@ -103,13 +106,7 @@ class Operations:
         metadata, rows, revision = read_snapshot(cfg)
         rows = {i: r for i, r in rows.items() if not self.user.agents or str(r["agent_id"]) in self.user.agents}
         exposures = {exposure(r) for r in rows.values()}
-        campaigns = [c for c in self.store.list(project, "campaign") if self.visible(c)]
-        for c in campaigns:
-            explanation = c.get("ai_explanation")
-            if explanation:
-                # Stale when plans or campaign evidence changed after the generation.
-                explanation["current"] = (explanation.get("plans_hash") == ai_support.digest(c.get("plans", []))
-                                          and explanation.get("evidence_hash") == self.evidence_hash(project, c["id"]))
+        campaigns = [self.present_campaign(project, c) for c in self.store.list(project, "campaign") if self.visible(c)]
         return {"project": project, "revision": revision, "instances": len(rows), "exposures": len(exposures),
                 "quality": quality(metadata, rows.values(), cfg), "campaigns": campaigns,
                 "permissions": sorted(PERMISSIONS[self.user.role])}
@@ -330,23 +327,30 @@ class Operations:
         if guidance.status in {"not_found", "provider_unavailable", "ambiguous_finding", "validation_error", "internal_error"}:
             raise OperationError("Orientação determinística indisponível para esta instância.", 409)
         status = ai_support.public_status(cfg)
-        # Instance, plan revision and provider/model form the identity: an
-        # explanation is never reused for another installation of the same CVE.
-        object_id = f"finding:{agent}:{finding_id}:{guidance.snapshot_revision}:{ai_support.provider_key(cfg)}"
-        return cfg, row, agent, revision, guidance, status, object_id
+        # Instance, plan revision, provider/model and the facts contract form the
+        # identity: an explanation is never reused for another installation of
+        # the same CVE, nor across facts contracts.
+        legacy_id = f"finding:{agent}:{finding_id}:{guidance.snapshot_revision}:{ai_support.provider_key(cfg)}"
+        object_id = f"{legacy_id}:facts{ai_facts.FACTS_VERSION}"
+        return cfg, row, agent, revision, guidance, status, object_id, legacy_id
+
+    def _stored_ai(self, project, object_id):
+        try:
+            return self.store.get(project, "ai_finding", hashlib.sha256(object_id.encode()).hexdigest())
+        except OperationError:
+            return None
 
     def finding_ai(self, project, finding_id):
-        cfg, row, agent, revision, guidance, status, object_id = self._finding(project, finding_id, "read")
+        cfg, row, agent, revision, guidance, status, object_id, legacy_id = self._finding(project, finding_id, "read")
+        plan = guidance.to_dict()
+        # Critical facts always come from the engine, whatever the AI state.
         result = {"finding_id": finding_id, "provider": status.get("provider"), "provider_label": status.get("provider_label"),
-                  "model": status.get("model"), "enabled": bool(status.get("enabled")), "state": "none"}
+                  "model": status.get("model"), "enabled": bool(status.get("enabled")), "state": "none",
+                  "engine_facts": ai_facts.engine_facts(plan)}
         if not status.get("enabled"):
             result["reason"] = status.get("reason")
             return result
-        key = hashlib.sha256(object_id.encode()).hexdigest()
-        try:
-            stored = self.store.get(project, "ai_finding", key)
-        except OperationError:
-            stored = None
+        stored = self._stored_ai(project, object_id)
         if stored and stored.get("snapshot_revision") == revision:
             result.update(state="succeeded", summary=stored["summary"], recommendations=stored["recommendations"],
                           evidence=stored.get("evidence", []), generated_at=stored.get("generated_at"),
@@ -360,10 +364,29 @@ class Operations:
             if job["state"] == "succeeded":
                 # Job finished but its result no longer matches the current data.
                 result.update(state="stale", error="Os dados mudaram depois da geração; solicite novamente.")
+        elif self._stored_ai(project, legacy_id) is not None:
+            # Generated before the engine-consistency contract: kept for audit, never shown as valid.
+            result.update(state="stale", invalidated=True, error=INVALIDATED_AI)
         return result
 
+    def present_campaign(self, project, c):
+        """Campaign as shown to users: AI explanation annotated, outdated contracts without text."""
+        explanation = c.get("ai_explanation")
+        if not explanation:
+            return c
+        c = dict(c)
+        if explanation.get("facts_version") != ai_facts.FACTS_VERSION:
+            c["ai_explanation"] = {key: explanation.get(key) for key in ("provider", "provider_label", "model", "generated_at")}
+            c["ai_explanation"].update(current=False, invalidated=True, reason=INVALIDATED_AI)
+            return c
+        # Stale when plans or campaign evidence changed after the generation.
+        c["ai_explanation"] = dict(explanation, current=(
+            explanation.get("plans_hash") == ai_support.digest(c.get("plans", []))
+            and explanation.get("evidence_hash") == self.evidence_hash(project, c["id"])))
+        return c
+
     def queue_finding_ai(self, project, finding_id):
-        cfg, row, agent, revision, guidance, status, object_id = self._finding(project, finding_id, "write")
+        cfg, row, agent, revision, guidance, status, object_id, _ = self._finding(project, finding_id, "write")
         if not status.get("enabled"):
             raise OperationError(status.get("reason") or "Explicação por IA desabilitada.", 503)
         payload = {"finding_id": finding_id, "agent_id": agent, "snapshot_revision": revision,

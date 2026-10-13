@@ -14683,6 +14683,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById('guidance-meta-rationale').textContent = '';
         document.getElementById('guidance-remediation-code').textContent = '';
         document.getElementById('guidance-verification-code').textContent = '';
+        document.getElementById('guidance-command-disclaimer').textContent = 'O EyeMole não executa comandos nem diagnósticos.';
 
         document.getElementById('guidance-remediation-section').style.display = 'none';
         document.getElementById('guidance-verification-section').style.display = 'none';
@@ -14844,7 +14845,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       renderGuidanceExtras(record, guidanceKind);
       loadGuidanceAi(record.finding_id, activeGuidanceRequestId);
 
-      if (isStatusSuccess && isConfidenceSufficient && hasCommand && guidanceKind === 'command') {
+      const showsCorrection = isStatusSuccess && isConfidenceSufficient && hasCommand && guidanceKind === 'command';
+      // "Este comando" só quando um comando de correção validado está na tela.
+      document.getElementById('guidance-command-disclaimer').textContent = showsCorrection
+        ? 'O EyeMole não executa este comando. Valide em homologação antes de aplicar.'
+        : 'Nenhum comando de correção validado para esta instalação. Diagnósticos são somente leitura e o EyeMole não os executa.';
+
+      if (showsCorrection) {
         document.getElementById('guidance-remediation-code').textContent = record.command.trim();
         document.getElementById('guidance-remediation-section').style.display = 'flex';
 
@@ -14919,12 +14926,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function resetGuidanceAi() {
       clearTimeout(guidanceAiPoll);
       guidanceAiPoll = null;
-      ['guidance-ai-provider', 'guidance-ai-state', 'guidance-ai-body', 'guidance-ai-actions'].forEach(id => {
+      ['guidance-ai-provider', 'guidance-ai-state', 'guidance-ai-body', 'guidance-ai-actions', 'guidance-ai-facts'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.replaceChildren();
       });
+      const facts = document.getElementById('guidance-ai-facts-section');
+      if (facts) facts.style.display = 'none';
       const section = document.getElementById('guidance-ai-section');
       if (section) section.style.display = 'none';
+    }
+
+    // Fatos críticos vêm do backend (motor), nunca do texto da IA.
+    function renderGuidanceAiFacts(facts) {
+      const list = document.getElementById('guidance-ai-facts');
+      const section = document.getElementById('guidance-ai-facts-section');
+      list.replaceChildren();
+      const statements = facts && Array.isArray(facts.statements) ? facts.statements : [];
+      statements.forEach(text => {
+        const li = document.createElement('li');
+        li.textContent = text;
+        list.appendChild(li);
+      });
+      section.style.display = statements.length ? 'block' : 'none';
+    }
+
+    function guidanceAiSubject(r) {
+      const s = r && r.subject ? r.subject : {};
+      return [s.package, s.cve, s.installed_version].filter(Boolean).join(' · ') || 'Instalação aberta';
     }
 
     function guidanceAiProjectQuery() {
@@ -14964,6 +14992,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const body = document.getElementById('guidance-ai-body');
       body.replaceChildren();
       document.getElementById('guidance-ai-actions').replaceChildren();
+      renderGuidanceAiFacts(data.engine_facts);
       if (data.state === 'queued' || data.state === 'running') {
         setGuidanceAiState(data.state === 'queued' ? 'Na fila de geração...' : 'Gerando explicação...', 'info');
         guidanceAiPoll = setTimeout(() => {
@@ -14979,6 +15008,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const labels = {};
         (data.evidence || []).forEach(e => { if (e && e.id) labels[e.id] = e.label || e.id; });
         (data.recommendations || []).forEach(r => {
+          const subject = document.createElement('strong');
+          subject.textContent = guidanceAiSubject(r);
+          body.appendChild(subject);
           const item = document.createElement('p');
           item.textContent = r.explanation;
           body.appendChild(item);
@@ -15365,7 +15397,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <!-- Permanent Disclaimer -->
           <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.25); border-radius: 8px; padding: 0.75rem; display: flex; align-items: flex-start; gap: 0.6rem; margin-top: 0.5rem;">
             <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
-            <span style="font-size: 0.78rem; color: #ffedd5; font-weight: 600; line-height: 1.35;">O EyeMole não executa este comando. Valide em homologação antes de aplicar.</span>
+            <span id="guidance-command-disclaimer" style="font-size: 0.78rem; color: #ffedd5; font-weight: 600; line-height: 1.35;">O EyeMole não executa comandos nem diagnósticos.</span>
           </div>
 
           <!-- Remediation Command Section -->
@@ -15424,10 +15456,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div id="guidance-ai-section" class="classify-field" style="display: none;">
             <label>Explicação por IA</label>
             <div id="guidance-ai-provider" style="font-size: 0.76rem; color: var(--text-muted);"></div>
+            <div id="guidance-ai-facts-section" style="display: none; font-size: 0.78rem;">
+              <div style="font-weight: 600; color: var(--text-muted);">Fatos do motor do EyeMole (não gerados por IA)</div>
+              <ul id="guidance-ai-facts" class="guidance-list"></ul>
+            </div>
             <div id="guidance-ai-state" class="guidance-block-text" aria-live="polite"></div>
             <div id="guidance-ai-body" class="guidance-block-text" style="display: flex; flex-direction: column; gap: 0.4rem;"></div>
             <div id="guidance-ai-actions" class="actions"></div>
-            <div style="font-size: 0.72rem; color: var(--text-muted);">Texto explicativo gerado por IA somente para esta instalação. Não substitui o comando validado, não aprova mudanças e não confirma a correção.</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Texto explicativo gerado por IA somente para esta instalação. Não substitui a orientação determinística, não aprova mudanças e não confirma a correção. Respostas que contradizem os fatos do motor são descartadas.</div>
           </div>
         </div>
       </div>

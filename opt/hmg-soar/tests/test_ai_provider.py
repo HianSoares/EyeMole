@@ -19,7 +19,7 @@ from requests.structures import CaseInsensitiveDict
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "cli"))
 
-from operations import ai, ai_check, api, llm
+from operations import ai, ai_check, ai_facts, api, llm
 from operations.ai_contract import AIContractError, parse_message_content, validate_response
 from operations.security import OperationError, principal
 from operations.planning import engine_for
@@ -78,9 +78,14 @@ def completion(content, finish="stop", tool_calls=None, model=MODEL):
     return FakeResponse(200, {"id": "x", "model": model, "choices": [{"index": 0, "message": message, "finish_reason": finish}]})
 
 
-def answer(finding, evidence, explanation="A instalação usa a versão 1.0; falta a versão corrigida, então não há correção específica confirmada."):
+INSUFFICIENT = {"correction_command_available": False, "fixed_version": None, "fix_state": "insufficient_data"}
+
+
+def answer(finding, evidence, explanation="As fontes do EyeMole não informaram a versão corrigida, então não há correção específica confirmada.",
+           claims=INSUFFICIENT):
     return json.dumps({"summary": "Contexto insuficiente para correção específica.",
-                       "recommendations": [{"finding_id": finding, "evidence_ids": evidence, "explanation": explanation}]},
+                       "recommendations": [{"finding_id": finding, "evidence_ids": evidence, "explanation": explanation,
+                                            "claims": claims}]},
                       ensure_ascii=False)
 
 
@@ -137,7 +142,11 @@ def test_success_uses_configured_official_endpoint_and_minimal_payload():
         assert forbidden not in sent, forbidden
     facts = json.loads(body["messages"][1]["content"])["facts"][0]
     assert facts["installed_version"] == "2.4.10.1-1ubuntu1"  # version is not mistaken for an IP
-    assert facts["validated_command_available"] is True and facts["fixed_version"] is None
+    # A command string in a non-success plan is not a correction; diagnostics go as labels only.
+    engine = facts["engine_facts"]
+    assert engine["correction_command_available"] is False and engine["fix_state"] == "insufficient_data"
+    assert engine["read_only_diagnostics"] == ["x"] and facts["fixed_version"] is None
+    assert "validated_command_available" not in facts
     assert "[redigido]" in facts["rationale"]
 
 
@@ -276,14 +285,14 @@ EVID = {"plan:" + FID}
 ])
 def test_contract_rejects_invalid_or_invented_content(content, code):
     with pytest.raises(AIContractError) as exc:
-        parse_message_content(content, EVID, {FID}, "NVIDIA")
+        parse_message_content(content, EVID, {FID}, "NVIDIA", claims=True)
     assert exc.value.code == code
 
 
 def test_contract_accepts_fenced_json_and_prose_mentioning_package_managers():
     text = "<think>rascunho</think>\n```json\n" + answer(FID, ["plan:" + FID],
-                                                            "O plano usa o gerenciador apt e contém um comando validado pelo motor.") + "\n```"
-    result = parse_message_content(text, EVID, {FID}, "NVIDIA")
+                                                            "O plano usa o gerenciador apt do sistema.") + "\n```"
+    result = parse_message_content(text, EVID, {FID}, "NVIDIA", claims=True)
     assert result["recommendations"][0]["evidence_ids"] == ["plan:" + FID]
 
 
@@ -534,8 +543,11 @@ def test_cached_engine_follows_configuration_and_evidence_changes(platform, tmp_
     engine = engine_for(project)
     fresh = engine.generate_guidance(fid)
     assert not any("não confirmada pelo scanner Grype" in w for w in fresh.warnings)
+    facts = ai_facts.engine_facts(fresh.to_dict())
+    assert facts["fixed_version"] == "1.2"
     service.queue_finding_ai("hmg", fid)
-    run_job(service, cfg, [completion(answer(fid, ["plan:" + fid]))])
+    run_job(service, cfg, [completion(answer(fid, ["plan:" + fid], "As fontes do EyeMole informaram versão corrigida.",
+                                             claims={k: facts[k] for k in ai_facts.CLAIM_KEYS}))])
     assert service.finding_ai("hmg", fid)["state"] == "succeeded"
 
     # Configuration change: the same cached engine applies the new Grype age limit.
@@ -604,7 +616,8 @@ def test_campaign_explanation_without_kiro_and_invalidated_by_new_plans(platform
     service.queue("hmg", c["id"], "kiro", {})  # rota antiga → job de IA
     assert service.store.jobs("hmg")[0]["kind"] == "ai"
     content = json.dumps({"summary": "Faltam versões corrigidas.", "recommendations": [
-        {"finding_id": i, "evidence_ids": ["plan:" + i], "explanation": "Sem versão corrigida confirmada."} for i in ids]})
+        {"finding_id": i, "evidence_ids": ["plan:" + i], "explanation": "Sem versão corrigida confirmada.",
+         "claims": INSUFFICIENT} for i in ids]})
     run_job(service, cfg, [completion(content)], secrets={"NVIDIA_API_KEY": SECRET})
     stored = service.get_campaign("hmg", c["id"])["ai_explanation"]
     assert stored["provider"] == "nvidia" and stored["model"] == MODEL and stored["plans_hash"] == ai.digest(plans)
@@ -717,4 +730,4 @@ def test_interface_uses_ai_terms_and_safe_rendering():
     assert 'id="guidance-ai-section"' in tpl and "loadGuidanceAi(record.finding_id, activeGuidanceRequestId);" in tpl
     block = tpl[tpl.index("async function refreshGuidanceAi"):tpl.index("async function loadGuidanceAi")]
     assert "innerHTML" not in block and "textContent = data.summary" in block
-    assert "Não substitui o comando validado" in tpl
+    assert "Não substitui a orientação determinística" in tpl

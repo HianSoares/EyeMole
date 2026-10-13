@@ -93,7 +93,11 @@ como provedor padrão (detalhes em [AI_PROVIDER.md](AI_PROVIDER.md)). Ela explic
 a orientação determinística de uma instalação ("Ver correção") ou os planos de
 uma campanha, por jobs do worker, com resposta estruturada validada e associada
 à instância, à revisão do plano/evidências e ao provedor/modelo. A IA não gera
-nem substitui comandos.
+nem substitui comandos. Existência de comando de correção, versão corrigida e
+estado da correção vêm do motor (diagnósticos nunca contam como correção; falta
+de `fixed_version` é dado insuficiente, não ausência de correção publicada); a
+resposta que contradiz esses fatos é descartada (ver "Fatos do motor" em
+[AI_PROVIDER.md](AI_PROVIDER.md)).
 
 Itens ainda pendentes para produzir comandos específicos por ativo (o worker,
 a saída estruturada validada e os jobs assíncronos já existem):
