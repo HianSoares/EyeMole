@@ -1,4 +1,9 @@
-"""Headless Kiro with no tools, isolated HOME and a bounded structured response."""
+"""Headless Kiro with no tools, isolated HOME and a bounded structured response.
+
+Legacy provider: kept for installations that already enabled
+integrations.kiro. The default AI provider is the OpenAI-compatible HTTP
+adapter (NVIDIA) in llm.py, which needs no CLI, login or Kiro key.
+"""
 import json
 import re
 import os
@@ -9,23 +14,13 @@ import tempfile
 import time
 from pathlib import Path
 
+from .ai_contract import validate_response as _validate
 from .security import OperationError
 
 
 def validate_response(response, evidence_ids, finding_ids):
-    if set(response) != {"summary", "recommendations"} or not isinstance(response["summary"], str) or len(response["summary"]) > 4000:
-        raise OperationError("Resposta Kiro fora do contrato.", 502)
-    recommendations = response["recommendations"]
-    if not isinstance(recommendations, list) or len(recommendations) > 100:
-        raise OperationError("Recomendações Kiro inválidas.", 502)
-    for item in recommendations:
-        if not isinstance(item, dict) or set(item) != {"finding_id", "evidence_ids", "explanation"}:
-            raise OperationError("Kiro retornou campos não permitidos.", 502)
-        if item["finding_id"] not in finding_ids or not isinstance(item["evidence_ids"], list) or any(i not in evidence_ids for i in item["evidence_ids"]):
-            raise OperationError("Kiro citou evidência ou instância desconhecida.", 502)
-        if not isinstance(item["explanation"], str) or len(item["explanation"]) > 2000:
-            raise OperationError("Explicação Kiro acima do limite.", 502)
-    return response
+    """Same contract as every AI provider (see ai_contract)."""
+    return _validate(response, evidence_ids, finding_ids, provider="Kiro")
 
 
 def parse_output(raw, evidence_ids, finding_ids):

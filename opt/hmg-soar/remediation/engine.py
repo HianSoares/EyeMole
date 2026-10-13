@@ -247,6 +247,8 @@ class RemediationEngine:
         if sig != self._providers_config_sig:
             self._providers_config_sig = sig
             self._providers_config = self._load_providers_config()
+            # O motor é reutilizado entre requisições: valores derivados também.
+            self._grype_provider.set_max_scan_age_hours(self._grype_max_age_hours())
         sig = file_signature(self._generic_policy_path)
         if sig != self._generic_policy_sig:
             self._generic_policy_sig = sig

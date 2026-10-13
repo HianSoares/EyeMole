@@ -27,3 +27,11 @@ jobs:
           git diff --check
       - name: Python and Linux installer suites
         run: python -m pytest -q opt/hmg-soar/tests
+  ai-check:
+    # `eyemole ai check` through systemd-run as eyemole-worker; fake key, no external call.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/ci/ai-check-smoke.sh
+      - name: AI check as eyemole-worker
+        run: sudo bash scripts/ci/ai-check-smoke.sh

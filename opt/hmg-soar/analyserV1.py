@@ -14842,6 +14842,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ? record.guidance_kind
         : (isStatusSuccess && hasCommand ? 'command' : 'textual');
       renderGuidanceExtras(record, guidanceKind);
+      loadGuidanceAi(record.finding_id, activeGuidanceRequestId);
 
       if (isStatusSuccess && isConfidenceSufficient && hasCommand && guidanceKind === 'command') {
         document.getElementById('guidance-remediation-code').textContent = record.command.trim();
@@ -14890,7 +14891,144 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       'guidance-missing', 'guidance-sources', 'guidance-meta-kind', 'guidance-meta-reboot'
     ];
 
+    // ------------------------------------------------------------------
+    // Explicação por IA (jobs da plataforma; a chave fica só no worker)
+    // ------------------------------------------------------------------
+    let guidanceAiPoll = null;
+    let guidanceAiProject = null;
+
+    async function platformJson(path, options) {
+      const response = await fetch('/soar-api/platform/' + path, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options || {}));
+      let body = null;
+      try { body = await response.json(); } catch (e) { body = null; }
+      if (!response.ok) {
+        const err = new Error((body && body.error) || 'Serviço indisponível');
+        err.status = response.status;
+        throw err;
+      }
+      return body || {};
+    }
+
+    function setGuidanceAiState(text, kind) {
+      const el = document.getElementById('guidance-ai-state');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = kind === 'error' ? '#f87171' : (kind === 'warning' ? '#fbbf24' : 'var(--text-muted)');
+    }
+
+    function resetGuidanceAi() {
+      clearTimeout(guidanceAiPoll);
+      guidanceAiPoll = null;
+      ['guidance-ai-provider', 'guidance-ai-state', 'guidance-ai-body', 'guidance-ai-actions'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.replaceChildren();
+      });
+      const section = document.getElementById('guidance-ai-section');
+      if (section) section.style.display = 'none';
+    }
+
+    function guidanceAiProjectQuery() {
+      return 'project=' + encodeURIComponent(guidanceAiProject);
+    }
+
+    function guidanceAiButton(findingId, requestId, label) {
+      const actions = document.getElementById('guidance-ai-actions');
+      actions.replaceChildren();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn';
+      btn.textContent = label;
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await platformJson('findings/' + encodeURIComponent(findingId) + '/ai?' + guidanceAiProjectQuery(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body: '{}'
+          });
+          if (requestId !== activeGuidanceRequestId) return;
+          await refreshGuidanceAi(findingId, requestId);
+        } catch (err) {
+          if (requestId !== activeGuidanceRequestId) return;
+          setGuidanceAiState('Não foi possível solicitar a explicação: ' + err.message, 'error');
+          btn.disabled = false;
+        }
+      });
+      actions.appendChild(btn);
+    }
+
+    async function refreshGuidanceAi(findingId, requestId) {
+      clearTimeout(guidanceAiPoll);
+      const data = await platformJson('findings/' + encodeURIComponent(findingId) + '/ai?' + guidanceAiProjectQuery());
+      if (requestId !== activeGuidanceRequestId) return;
+      const body = document.getElementById('guidance-ai-body');
+      body.replaceChildren();
+      document.getElementById('guidance-ai-actions').replaceChildren();
+      if (data.state === 'queued' || data.state === 'running') {
+        setGuidanceAiState(data.state === 'queued' ? 'Na fila de geração...' : 'Gerando explicação...', 'info');
+        guidanceAiPoll = setTimeout(() => {
+          refreshGuidanceAi(findingId, requestId).catch(() => setGuidanceAiState('Falha ao consultar o andamento da explicação.', 'warning'));
+        }, 4000);
+        return;
+      }
+      if (data.state === 'succeeded') {
+        setGuidanceAiState('Explicação concluída · ' + (data.provider_label || data.provider) + ' · ' + data.model + (data.generated_at ? ' · ' + data.generated_at : ''), 'info');
+        const summary = document.createElement('p');
+        summary.textContent = data.summary;
+        body.appendChild(summary);
+        const labels = {};
+        (data.evidence || []).forEach(e => { if (e && e.id) labels[e.id] = e.label || e.id; });
+        (data.recommendations || []).forEach(r => {
+          const item = document.createElement('p');
+          item.textContent = r.explanation;
+          body.appendChild(item);
+          const refs = document.createElement('small');
+          refs.textContent = 'Evidências: ' + ((r.evidence_ids || []).map(id => labels[id] || id).join('; ') || 'nenhuma');
+          body.appendChild(refs);
+        });
+        return;
+      }
+      if (data.state === 'failed' || data.state === 'stale') {
+        setGuidanceAiState((data.state === 'stale' ? 'Explicação desatualizada: ' : 'Explicação não concluída: ') + (data.error || 'falha do provedor.') + ' A orientação acima continua válida.', data.state === 'stale' ? 'warning' : 'error');
+        guidanceAiButton(findingId, requestId, 'Tentar novamente com IA');
+        return;
+      }
+      setGuidanceAiState('Nenhuma explicação gerada para esta instalação.', 'info');
+      guidanceAiButton(findingId, requestId, 'Explicar com IA');
+    }
+
+    async function loadGuidanceAi(findingId, requestId) {
+      resetGuidanceAi();
+      if (!findingId || !/^[a-f0-9]{64}$/.test(findingId)) return;
+      document.getElementById('guidance-ai-section').style.display = 'block';
+      setGuidanceAiState('Verificando a explicação por IA...', 'info');
+      try {
+        if (guidanceAiProject === null) {
+          const me = await platformJson('me');
+          guidanceAiProject = me.legacy_project || '';
+        }
+        if (requestId !== activeGuidanceRequestId) return;
+        if (!guidanceAiProject) {
+          setGuidanceAiState('Explicação por IA indisponível: nenhum ambiente da plataforma usa este snapshot.', 'warning');
+          return;
+        }
+        const status = await platformJson('ai-status?' + guidanceAiProjectQuery());
+        if (requestId !== activeGuidanceRequestId) return;
+        if (!status.enabled) {
+          setGuidanceAiState('Explicação por IA desabilitada: ' + (status.reason || 'configure o provedor no servidor.'), 'warning');
+          return;
+        }
+        document.getElementById('guidance-ai-provider').textContent = 'Provedor: ' + (status.provider_label || status.provider) + ' · Modelo: ' + status.model;
+        await refreshGuidanceAi(findingId, requestId);
+      } catch (err) {
+        if (requestId !== activeGuidanceRequestId) return;
+        const reason = err.status === 503 ? 'plataforma operacional não habilitada ou provedor indisponível' : (err.status === 403 ? 'sem permissão neste ambiente' : (err.status === 404 ? 'instalação ausente do snapshot atual' : 'serviço indisponível'));
+        setGuidanceAiState('Explicação por IA indisponível (' + reason + '). A orientação acima continua válida.', 'warning');
+      }
+    }
+
     function resetGuidanceExtras() {
+      resetGuidanceAi();
       GUIDANCE_EXTRA_SECTIONS.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -15043,6 +15181,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function closeGuidanceModal() {
       // Invalidar a requisição ativa para que respostas pendentes sejam descartadas
       activeGuidanceRequestId++;
+      resetGuidanceAi();
       document.getElementById('guidance-modal-overlay').style.display = 'none';
       if (guidanceModalTriggerBtn) {
         try {
@@ -15279,6 +15418,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div id="guidance-sources-section" class="classify-field" style="display: none;">
             <label>Fontes</label>
             <ul id="guidance-sources" class="guidance-list"></ul>
+          </div>
+
+          <!-- Explicação por IA da instalação aberta (provedor configurado pelo administrador) -->
+          <div id="guidance-ai-section" class="classify-field" style="display: none;">
+            <label>Explicação por IA</label>
+            <div id="guidance-ai-provider" style="font-size: 0.76rem; color: var(--text-muted);"></div>
+            <div id="guidance-ai-state" class="guidance-block-text" aria-live="polite"></div>
+            <div id="guidance-ai-body" class="guidance-block-text" style="display: flex; flex-direction: column; gap: 0.4rem;"></div>
+            <div id="guidance-ai-actions" class="actions"></div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Texto explicativo gerado por IA somente para esta instalação. Não substitui o comando validado, não aprova mudanças e não confirma a correção.</div>
           </div>
         </div>
       </div>

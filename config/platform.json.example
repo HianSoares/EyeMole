@@ -15,6 +15,15 @@
         "max_actions": 10
       },
       "integrations": {
+        "ai": {
+          "enabled": false,
+          "provider": "nvidia",
+          "base_url": "https://integrate.api.nvidia.com/v1",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "timeout_seconds": 90,
+          "max_output_tokens": 2048,
+          "thinking": "disabled"
+        },
         "kiro": {
           "enabled": false,
           "binary": "/usr/local/bin/kiro-cli",
