@@ -50,8 +50,13 @@ def _check_text(value, maximum, label, provider):
                               "command_in_text")
 
 
-def validate_response(response, evidence_ids, finding_ids, provider="IA"):
-    """Validate a parsed response object. Returns a normalized copy."""
+def validate_response(response, evidence_ids, finding_ids, provider="IA", claims=False):
+    """Validate a parsed response object. Returns a normalized copy.
+
+    claims=True requires each recommendation to carry the structured claims
+    that ai_facts compares with the engine facts.
+    """
+    keys = RECOMMENDATION_KEYS | {"claims"} if claims else RECOMMENDATION_KEYS
     if not isinstance(response, dict) or set(response) != RESPONSE_KEYS:
         raise AIContractError(f"Resposta {provider} fora do contrato.")
     _check_text(response["summary"], MAX_SUMMARY, "resumo", provider)
@@ -60,7 +65,7 @@ def validate_response(response, evidence_ids, finding_ids, provider="IA"):
         raise AIContractError(f"Recomendações {provider} inválidas.")
     normalized = []
     for item in recommendations:
-        if not isinstance(item, dict) or set(item) != RECOMMENDATION_KEYS:
+        if not isinstance(item, dict) or set(item) != keys:
             raise AIContractError(f"{provider} retornou campos não permitidos.")
         finding, cited = item["finding_id"], item["evidence_ids"]
         if not isinstance(finding, str) or finding not in finding_ids:
@@ -71,8 +76,11 @@ def validate_response(response, evidence_ids, finding_ids, provider="IA"):
         if not isinstance(item["explanation"], str) or len(item["explanation"]) > MAX_EXPLANATION:
             raise AIContractError(f"Explicação {provider} acima do limite.", "response_too_large")
         _check_text(item["explanation"], MAX_EXPLANATION, "explicação", provider)
-        normalized.append({"finding_id": finding, "evidence_ids": list(dict.fromkeys(cited)),
-                           "explanation": item["explanation"].strip()})
+        entry = {"finding_id": finding, "evidence_ids": list(dict.fromkeys(cited)),
+                 "explanation": item["explanation"].strip()}
+        if claims:
+            entry["claims"] = item["claims"]
+        normalized.append(entry)
     return {"summary": response["summary"].strip(), "recommendations": normalized}
 
 
@@ -80,7 +88,7 @@ _THINK_BLOCK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
 _FENCE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
 
 
-def parse_message_content(content, evidence_ids, finding_ids, provider="IA"):
+def parse_message_content(content, evidence_ids, finding_ids, provider="IA", claims=False):
     """Strict parser for chat-completion text: exactly one JSON object.
 
     A leading reasoning block (<think>…</think>) and a single surrounding
@@ -96,4 +104,4 @@ def parse_message_content(content, evidence_ids, finding_ids, provider="IA"):
         data = json.loads(text)
     except ValueError:
         raise AIContractError(f"{provider} retornou JSON inválido.", "invalid_json")
-    return validate_response(data, evidence_ids, finding_ids, provider)
+    return validate_response(data, evidence_ids, finding_ids, provider, claims)

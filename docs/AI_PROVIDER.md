@@ -37,22 +37,59 @@ CVE não reutiliza a explicação; trocar o modelo exige nova geração.
 
 Somente: `finding_id` (hash opaco), CVE, pacote, tipo de pacote, versão instalada,
 versão corrigida, família/versão do sistema, arquitetura, gerenciador, estado do
-plano, se existe comando validado (sim/não), confiança, reinício, justificativa,
-pré-requisitos, avisos, contexto ausente e identificadores/URLs públicas das
-evidências.
+plano, confiança, reinício, justificativa e motivo do motor, pré-requisitos, avisos,
+os **fatos do motor** (abaixo) e identificadores/URLs públicas das evidências.
 
 **Nunca enviados:** nome do ativo, hostname, ID do agente, IPs (removidos do texto
-livre), e-mails, usuários, credenciais, texto dos comandos e diagnósticos, caminhos
-de instalação, logs e snapshots.
+livre), e-mails, usuários, credenciais, texto dos comandos e diagnósticos (só os
+rótulos dos diagnósticos), caminhos de instalação, logs e snapshots.
+
+### Fatos do motor (autoritativos)
+
+Comando de correção, versão corrigida e estado da correção são decididos pelo motor
+determinístico (`operations/ai_facts.py`), nunca pelo modelo:
+
+| Fato | Origem e regra |
+|---|---|
+| `correction_command_available` | Verdadeiro só para comando de correção validado (`status = success` e `guidance_kind = command`). Diagnósticos nunca o tornam verdadeiro. |
+| `verification_command_available` | Só existe junto com um comando de correção. |
+| `read_only_diagnostics` | Rótulos dos diagnósticos somente leitura (ex.: versão instalada, Candidate do repositório). Não são correção. |
+| `fixed_version` | Versão corrigida informada pelas fontes do motor, ou nula. |
+| `fix_state` | `validated_command`, `fixed_version_without_command` ou `insufficient_data`. |
+| `fix_publication` | `reported_by_sources` quando há versão corrigida; senão `not_determined`. Ausência de `fixed_version` é **falta de dados**, não prova de que a correção não foi publicada. |
+| `repository_availability` | Sempre `not_observed`: o EyeMole não consulta o repositório configurado no ativo (use o diagnóstico de Candidate). |
+
+Os mesmos fatos são exibidos na interface como frases fixas ("Fatos do motor do
+EyeMole (não gerados por IA)"), em qualquer estado da explicação.
 
 ### Validação da resposta
 
-- Exatamente um objeto JSON `{"summary", "recommendations": [{"finding_id", "evidence_ids", "explanation"}]}`
+- Exatamente um objeto JSON `{"summary", "recommendations": [{"finding_id", "evidence_ids", "explanation", "claims"}]}`
   (tolera um bloco `<think>` inicial e uma cerca ```` ```json ````).
+- `claims` = `{"correction_command_available", "fixed_version", "fix_state"}` deve ser
+  **idêntico** aos fatos do motor da instalação; qualquer diferença descarta a resposta
+  (`code: contradicts_engine`).
+- Prosa que contradiz o motor também é descartada: mencionar comando quando o motor
+  não gerou nenhum (ou negá-lo quando existe), citar versão ausente dos dados do motor,
+  concluir que "não há correção publicada", ou afirmar que a correção está (ou não) no
+  repositório do ativo. Essa checagem textual é uma camada adicional; a garantia
+  principal são os fatos do backend e a comparação de `claims`.
 - Campos extras, IDs de instância ou evidência inexistentes, chamadas de ferramenta,
   respostas truncadas ou acima dos limites são rejeitados.
 - Texto com comandos (linhas iniciadas por `sudo`, `apt-get`, `dnf`, `wusa`,
   `Install-*` etc., blocos de código ou `$(...)`) é rejeitado inteiro.
+- O `finding_id` citado no texto é substituído por "pacote (CVE)"; a interface
+  identifica cada explicação por pacote, CVE e versão instalada.
+- Resposta descartada: o job fica como falha, nada é gravado como explicação e a
+  orientação determinística permanece inalterada. O Kiro (legado) passa pela mesma
+  checagem de prosa (sem `claims`).
+
+### Explicações geradas antes desta verificação
+
+A versão do contrato de fatos (`FACTS_VERSION = 2`) faz parte da identidade da
+explicação. Explicações anteriores não são apagadas nem sobrescritas (registros e
+auditoria preservados), mas aparecem como **invalidadas**, sem o texto, até uma nova
+solicitação.
 
 ### Transporte
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from remediation.versioning import ecosystem_for_package_manager
 from .connectors import GLPI, QRadar, VisionOne, Wazuh, vendor_evidence
-from . import ai
+from . import ai, ai_facts
 from .kiro import explain
 from .planning import engine_for, source_revision
 from .security import load_config, project_config, principal, OperationError
@@ -178,7 +178,7 @@ def explain_campaign(store, service, project, cfg, c, secrets, actor):
     sources_before = source_revision(engine_for(cfg))
     kind, provider_settings = ai.selection(cfg)
     if kind == "kiro":
-        result = explain(c, evidence, provider_settings, secrets)
+        result = ai_facts.enforce(explain(c, evidence, provider_settings, secrets), c["plans"], "Kiro", require_claims=False)
         result.update(provider="kiro", provider_label="Kiro (legado)", model="kiro-cli", served_model="kiro-cli")
     else:
         result = ai.explain_plans(c["plans"], cfg, secrets, extra_evidence=evidence)
@@ -216,7 +216,8 @@ def explain_finding(store, service, project, cfg, job, payload, secrets):
     guidance["package"] = guidance.get("package_name")
     kind, provider_settings = ai.selection(cfg)
     if kind == "kiro":
-        result = explain({"plans": [guidance]}, [], provider_settings, secrets)
+        result = ai_facts.enforce(explain({"plans": [guidance]}, [], provider_settings, secrets), [guidance], "Kiro",
+                                  require_claims=False)
         result.update(provider="kiro", provider_label="Kiro (legado)", model="kiro-cli", served_model="kiro-cli")
     else:
         result = ai.explain_plans([guidance], cfg, secrets)
@@ -230,6 +231,7 @@ def explain_finding(store, service, project, cfg, job, payload, secrets):
             "provider": result["provider"], "provider_label": result["provider_label"], "model": result["model"],
             "served_model": result.get("served_model"), "summary": result["summary"],
             "recommendations": result["recommendations"],
+            "engine_facts": result["engine_facts"][0], "facts_version": result["facts_version"],
             "evidence": [{"id": e["id"], "label": e.get("label") or e.get("description"), "url": e.get("url")}
                          for e in ai.plan_evidence(guidance)],
             "generated_at": now()}

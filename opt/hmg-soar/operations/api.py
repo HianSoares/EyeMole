@@ -124,6 +124,8 @@ def handle(handler, method, path):
                 result, status = service.queue(project, parts[2], parts[3], body), 202
         if result is None:
             raise OperationError("Endpoint operacional não encontrado.", 404)
+        if len(parts) >= 3 and parts[1] == "campaigns" and isinstance(result, dict) and "ai_explanation" in result:
+            result = service.present_campaign(project, result)
         handler._send_json(status, result)
     except OperationError as exc:
         handler._send_json(exc.status, {"error": str(exc)})

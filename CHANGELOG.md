@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Explicação por IA: consistência com o motor
+
+- Corrigido: a IA podia afirmar "o plano contém um comando validado" para orientação textual sem comando (ex.: Debian sem versão corrigida, só diagnósticos). O prompt continha essa frase como instrução condicional e o payload não separava diagnósticos de correção.
+- Fatos autoritativos do motor (`operations/ai_facts.py`): comando de correção, comando de verificação e diagnósticos somente leitura separados; versão corrigida, estado da correção, publicação "não determinada" quando falta `fixed_version` e repositório do ativo "não observado".
+- Contrato com `claims` estruturados comparados com o motor; respostas contraditórias (claims ou prosa) são descartadas (`contradicts_engine`), sem gravar nem exibir. Kiro passa pela mesma checagem de prosa.
+- Interface: fatos do motor exibidos fora do texto da IA; "este comando" só aparece com comando de correção validado; explicações identificadas por pacote, CVE e versão (finding_id substituído no texto).
+- Explicações anteriores invalidadas (versão do contrato na identidade), sem apagar registros nem auditoria.
+
 ### Explicação por IA (NVIDIA)
 
 - Adaptador HTTP compatível com OpenAI (`operations/llm.py`) com NVIDIA API Catalog como provedor padrão (`nvidia/nemotron-3-super-120b-a12b`, configurável); funciona sem instalação, login ou chave do Kiro.
