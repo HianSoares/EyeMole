@@ -158,7 +158,9 @@ def test_textual_guidance_payload_separates_diagnostics_from_correction(platform
     engine = facts["engine_facts"]
     assert engine["correction_command_available"] is False
     assert engine["verification_command_available"] is False
-    assert engine["read_only_diagnostics"] == ["Versão instalada", "Candidate disponível no repositório"]
+    assert engine["read_only_diagnostics"] == ["Versão instalada", "Candidate disponível no repositório",
+                                               "Pacote fonte e versão (dpkg)", "Release do sistema"]
+    assert engine["diagnostics_collected"] is False
     assert engine["fixed_version"] is None and engine["fix_state"] == "insufficient_data"
     # Missing fixed_version is "not determined", never "no fix published"; the repository is not observed.
     assert engine["fix_publication"] == "not_determined" and engine["repository_availability"] == "not_observed"

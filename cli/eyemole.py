@@ -398,6 +398,29 @@ def ai_check(project: str) -> int:
     """Synthetic request as eyemole-worker, with the worker's EnvironmentFile."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", project):
         raise UpdateError("Projeto inválido.")
+    return run_as_worker(["operations.ai_check", "--project", project])
+
+
+def research_check(project: str, cve: str, distribution: str) -> int:
+    """Public-source access check as eyemole-worker (same sandbox and cache as the worker)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", project) or not re.fullmatch(r"CVE-\d{4}-\d{4,7}", cve) \
+            or distribution not in {"debian", "ubuntu"}:
+        raise UpdateError("Projeto, CVE ou distribuição inválidos.")
+    return run_as_worker(["operations.research_check", "--project", project, "--cve", cve,
+                          "--distribution", distribution], writable=["/var/lib/eyemole/platform"])
+
+
+def research_status(project: str) -> dict:
+    data = read_json(PLATFORM_FILE)
+    entry = data.get("projects", {}).get(project)
+    if not isinstance(entry, dict):
+        raise UpdateError("Projeto não configurado em platform.json.")
+    block = entry.get("integrations", {}).get("research") or {}
+    return {"project": project, "enabled": bool(block.get("enabled")), "sources": block.get("sources"),
+            "cache_ttl_hours": block.get("cache_ttl_hours"), "max_stale_hours": block.get("max_stale_hours")}
+
+
+def run_as_worker(module_argv, writable=()):
     # Same identity, groups, secrets file and sandbox as eyemole-platform-worker.service.
     argv = ["systemd-run", "--quiet", "--wait", "--pipe", "--collect",
             "--uid=eyemole-worker", "--gid=eyemole-ops",
@@ -406,8 +429,10 @@ def ai_check(project: str) -> int:
             "-p", "NoNewPrivileges=yes", "-p", "PrivateTmp=yes", "-p", "PrivateDevices=yes",
             "-p", "ProtectSystem=strict", "-p", "ProtectHome=yes",
             "-p", "RestrictSUIDSGID=yes", "-p", "CapabilityBoundingSet=",
-            "-p", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",
-            "/usr/bin/python3", "-m", "operations.ai_check", "--project", project]
+            "-p", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX", "-p", "UMask=0007"]
+    for path in writable:
+        argv += ["-p", f"ReadWritePaths={path}"]
+    argv += ["/usr/bin/python3", "-m", *module_argv]
     try:
         result = subprocess.run(argv, capture_output=True, text=True, timeout=360, check=False)
     except (subprocess.SubprocessError, OSError) as exc:
@@ -453,6 +478,18 @@ def main(argv=None) -> int:
     toggle = ai_configure.add_mutually_exclusive_group()
     toggle.add_argument("--enable", dest="ai_enable", action="store_const", const=True)
     toggle.add_argument("--disable", dest="ai_enable", action="store_const", const=False)
+    research = sub.add_parser("research", help="Pesquisa de correção em fontes oficiais")
+    research_sub = research.add_subparsers(dest="research_command", required=True)
+    research_sub.add_parser("status").add_argument("--project", required=True)
+    research_configure = research_sub.add_parser("configure", help="Habilitar ou desabilitar a pesquisa (requer sudo)")
+    research_configure.add_argument("--project", required=True)
+    research_toggle = research_configure.add_mutually_exclusive_group(required=True)
+    research_toggle.add_argument("--enable", dest="research_enable", action="store_const", const=True)
+    research_toggle.add_argument("--disable", dest="research_enable", action="store_const", const=False)
+    research_check_parser = research_sub.add_parser("check", help="Testar acesso às fontes oficiais (requer sudo)")
+    research_check_parser.add_argument("--project", required=True)
+    research_check_parser.add_argument("--cve", required=True)
+    research_check_parser.add_argument("--distribution", required=True, choices=["debian", "ubuntu"])
     record = sub.add_parser("record-install", help="Uso interno do instalador")
     record.add_argument("repo", type=Path)
     record.add_argument("--state-file", type=Path, default=STATE_FILE)
@@ -502,6 +539,18 @@ def main(argv=None) -> int:
                                                                    args.ai_enable, args.timeout), ensure_ascii=False))
                 return 0
             return ai_check(args.project)
+        if args.command == "research":
+            if args.research_command == "status":
+                print(json.dumps(research_status(args.project), ensure_ascii=False))
+                return 0
+            if os.geteuid() != 0:
+                raise UpdateError("Use sudo eyemole research " + args.research_command + ".")
+            if args.research_command == "configure":
+                with update_lock():
+                    print(json.dumps(administration().configure_research(args.project, args.research_enable),
+                                     ensure_ascii=False))
+                return 0
+            return research_check(args.project, args.cve, args.distribution)
         if args.command == "rollback":
             if os.geteuid() != 0:
                 raise UpdateError("Use sudo eyemole rollback <diretório>.")

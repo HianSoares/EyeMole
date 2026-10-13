@@ -24,7 +24,7 @@ def legacy_project(cfg, p):
 
 def job_visible(job, campaigns, p):
     parts = job["object_id"].split(":")
-    if parts[0] == "finding":
+    if parts[0] in {"finding", "research"}:
         return len(parts) > 1 and (not p.agents or parts[1] in p.agents)
     return parts[0] in campaigns
 
@@ -105,6 +105,14 @@ def handle(handler, method, path):
                 result = service.finding_ai(project, parts[2])
             else:
                 result, status = service.queue_finding_ai(project, parts[2]), 202
+        elif len(parts) == 4 and parts[1] == "findings" and parts[3] == "research":
+            # Research runs in the worker; the API only queues and reads results.
+            if method == "GET":
+                result = service.research_state(project, parts[2])
+            else:
+                result, status = service.queue_research(project, parts[2]), 202
+        elif method == "POST" and len(parts) == 4 and parts[1] == "findings" and parts[3] == "diagnostics":
+            result, status = service.import_diagnostics(project, parts[2], body), 201
         elif method == "GET" and path == "/platform/audit":
             p.require("read", project)
             if p.agents:

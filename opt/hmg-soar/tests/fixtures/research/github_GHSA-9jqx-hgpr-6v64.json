@@ -1,0 +1,24 @@
+{
+ "ghsa_id": "GHSA-9jqx-hgpr-6v64",
+ "cve_id": "CVE-2026-73072",
+ "url": "https://api.github.com/repos/vim/vim/security-advisories/GHSA-9jqx-hgpr-6v64",
+ "html_url": "https://github.com/vim/vim/security/advisories/GHSA-9jqx-hgpr-6v64",
+ "summary": "Heap Buffer Overflow when Loading a Spell File in Vim < 9.2.0846",
+ "severity": "medium",
+ "state": "published",
+ "published_at": "2026-07-24T19:03:02Z",
+ "updated_at": "2026-08-11T17:54:37Z",
+ "withdrawn_at": null,
+ "vulnerabilities": [
+  {
+   "package": {
+    "ecosystem": "vim",
+    "name": "Vim"
+   },
+   "vulnerable_version_range": "< v9.2.0846",
+   "patched_versions": "v9.2.0846",
+   "vulnerable_functions": []
+  }
+ ],
+ "description": "Heap Buffer Overflow when Loading a Spell File in Vim < 9.2.0846\r\n==========================================\r\n\r\nDate: 24.07.2026\r\nSeverity: Medium\r\nCVE: CVE-2026-73072\r\nCWE: Heap-based Buffer Overflow (CWE-122),\r\n     Out-of-bounds Write (CWE-787)\r\n\r\n## Summary\r\n\r\nA spell file may contain a section holding sound-folding rules and a section\r\nholding a simple character mapping used for the same purp"
+}

@@ -735,8 +735,8 @@ class RemediationEngine:
             )
             if package_manager == "apt":
                 rationale += (
-                    " O apt instala a Candidate do repositório (sem fixar versão): confirme pelo "
-                    "diagnóstico que a Candidate corrige a CVE antes de aplicar."
+                    " O apt instala a Candidate do repositório (sem fixar versão): o diagnóstico permite "
+                    "consultar a Candidate; confirme em fonte oficial que ela corrige a CVE antes de aplicar."
                 )
         else:
             rationale = (

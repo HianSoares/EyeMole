@@ -22,9 +22,12 @@ from .ai_contract import AIContractError
 
 # Bump when the facts/claims contract changes: explanations generated under an
 # older contract stop being current (records and audit entries are kept).
-FACTS_VERSION = 2
+FACTS_VERSION = 3
 
-FIX_STATES = ("validated_command", "fixed_version_without_command", "insufficient_data")
+FIX_STATES = ("validated_command", "fixed_version_without_command", "upstream_fix_only", "mitigation_only",
+              "no_fix_found_in_sources", "insufficient_data")
+# Research classifications that carry a distribution-published fixed version.
+_DISTRIBUTION_FIX = {"validated_fix", "requires_verification"}
 CLAIM_KEYS = frozenset({"correction_command_available", "fixed_version", "fix_state"})
 MAX_DIAGNOSTIC_LABELS = 8
 
@@ -45,23 +48,43 @@ def correction_command_available(plan):
     return kind == "command" if isinstance(kind, str) and kind else True  # v1 plans: status+command
 
 
-def engine_facts(plan):
-    """Facts for one installation, derived only from the deterministic plan."""
-    correction = correction_command_available(plan)
-    verification = correction and isinstance(plan.get("verification_command"), str) \
+def engine_facts(plan, research=None):
+    """Facts for one installation: deterministic plan, extended by the current research.
+
+    ``research`` is research.facts_summary() of a current (non-stale) result:
+    its validated evidence widens what is known (distribution fix, upstream
+    fix, observed repository candidate) instead of freezing the snapshot's
+    unknowns.
+    """
+    research = research or None
+    command = correction_command_available(plan)
+    correction = command or bool(research and research.get("validated_command"))
+    verification = command and isinstance(plan.get("verification_command"), str) \
         and bool(plan["verification_command"].strip())
+    verification = verification or bool(research and research.get("validated_command"))
     fixed = _text(plan.get("fixed_version"), 128)
+    if not fixed and research and research.get("classification") in _DISTRIBUTION_FIX:
+        fixed = _text(research.get("distribution_fixed_version"), 128)
+    upstream = [v for v in (research or {}).get("upstream_fixed_versions", []) if v]
     diagnostics = [label for label in (_text(d.get("label"), 120) for d in plan.get("diagnostics") or []
                                        if isinstance(d, dict) and str(d.get("script") or "").strip()) if label]
+    classification = (research or {}).get("classification")
     if correction:
         state = "validated_command"
     elif fixed:
         state = "fixed_version_without_command"
+    elif classification == "upstream_fix_only":
+        state = "upstream_fix_only"
+    elif classification == "mitigation":
+        state = "mitigation_only"
+    elif classification == "no_fix_found":
+        state = "no_fix_found_in_sources"
     else:
         state = "insufficient_data"
     missing = [_text(m, 80) for m in plan.get("missing_context") or [] if _text(m, 80)]
     if not fixed and "fixed_version" not in missing:
         missing.append("fixed_version")
+    observed = bool(research and research.get("diagnostics_imported") and research.get("candidate_version"))
     facts = {
         "finding_id": plan["finding_id"],
         "cve": _text(plan.get("cve"), 40),
@@ -72,11 +95,19 @@ def engine_facts(plan):
         "correction_command_available": correction,
         "verification_command_available": bool(verification),
         "read_only_diagnostics": diagnostics[:MAX_DIAGNOSTIC_LABELS],
+        "diagnostics_collected": bool(research and research.get("diagnostics_imported")),
         "fixed_version": fixed,
+        "upstream_fixed_versions": upstream,
         "fix_state": state,
-        # fixed_version comes from the engine's sources; its absence is not proof of "no fix".
-        "fix_publication": "reported_by_sources" if fixed else "not_determined",
-        "repository_availability": "not_observed",
+        # fixed_version comes from the engine/research sources; its absence is not proof of "no fix".
+        "fix_publication": ("reported_by_sources" if fixed else "upstream_only" if upstream else
+                            "not_found_in_consulted_sources" if classification == "no_fix_found" else "not_determined"),
+        "distribution_status": (research or {}).get("distribution_status") or "unknown",
+        "repository_availability": (research or {}).get("repository_status") if observed else "not_observed",
+        "repository_candidate": (research or {}).get("candidate_version") if observed else None,
+        "research": ({"classification": classification, "revision": research.get("revision"),
+                      "release": research.get("release")} if research else None),
+        "known_versions": sorted(set((research or {}).get("versions", []))),
         "missing_context": missing[:12],
     }
     facts["statements"] = statements(facts)
@@ -91,22 +122,44 @@ def _subject(facts):
 def statements(facts):
     """Fixed Portuguese sentences shown as engine facts (never model output)."""
     system = " ".join(v for v in (facts.get("operating_system"), facts.get("os_version")) if v) or "a distribuição do ativo"
+    research = facts.get("research")
+    if research and research.get("release"):
+        system = f"{facts.get('operating_system') or 'a distribuição'} {research['release']}"
     out = []
     if facts["correction_command_available"]:
         out.append("O motor do EyeMole gerou um comando de correção validado para esta instalação "
-                   "(exibido na orientação; o EyeMole não o executa).")
+                   "(exibido na orientação ou na pesquisa; o EyeMole não o executa).")
     else:
-        out.append("O motor do EyeMole não gerou comando de correção para esta instalação.")
+        out.append("O motor do EyeMole não gerou comando de correção validado para esta instalação.")
     if facts["read_only_diagnostics"]:
-        out.append("Diagnósticos somente leitura disponíveis (não corrigem a vulnerabilidade): "
-                   + "; ".join(facts["read_only_diagnostics"]) + ".")
+        # Diagnostics only allow checking; they are not results unless imported.
+        out.append("Diagnósticos disponíveis que permitem consultar a instalação (não executados pelo EyeMole; "
+                   "não corrigem a vulnerabilidade): " + "; ".join(facts["read_only_diagnostics"]) + ".")
     if facts["fixed_version"]:
-        out.append(f"Versão corrigida informada pelas fontes do EyeMole: {facts['fixed_version']}.")
+        origin = "pesquisa nas fontes oficiais" if research and research.get("classification") in _DISTRIBUTION_FIX \
+            else "fontes do EyeMole"
+        out.append(f"Versão corrigida para a distribuição ({origin}): {facts['fixed_version']}.")
     else:
-        out.append("As fontes do EyeMole não informaram versão corrigida para esta instalação. "
-                   "Isso indica dados insuficientes, não que a correção inexista.")
-        out.append(f"Publicação de correção para {system}: não determinada pelo EyeMole.")
-    out.append("Disponibilidade da correção no repositório configurado no ativo: não observada pelo EyeMole.")
+        if facts["upstream_fixed_versions"]:
+            out.append("Correção publicada pelo projeto original: " + ", ".join(facts["upstream_fixed_versions"])
+                       + f" — sem correção confirmada para {system}.")
+        if facts["fix_publication"] == "not_found_in_consulted_sources":
+            out.append("Nenhuma correção encontrada nas fontes consultadas; isso não significa que ela não exista.")
+        elif not facts["upstream_fixed_versions"]:
+            out.append("As fontes do EyeMole não informaram versão corrigida para esta instalação. "
+                       "Isso indica dados insuficientes, não que a correção inexista.")
+        if facts["distribution_status"] == "vulnerable":
+            out.append(f"A fonte oficial consultada lista {system} como ainda vulnerável.")
+        else:
+            out.append(f"Publicação de correção para {system}: não determinada pelo EyeMole.")
+    if facts["repository_availability"] == "not_observed":
+        out.append("Disponibilidade da correção no repositório configurado no ativo: não observada pelo EyeMole.")
+    else:
+        verdict = {"candidate_fixes": "é igual ou posterior à versão corrigida",
+                   "candidate_not_fixed": "é anterior à versão corrigida",
+                   "candidate_observed": "foi observada, sem versão corrigida para comparar"}.get(
+            facts["repository_availability"], "foi observada")
+        out.append(f"Candidate do repositório do ativo (importada pelo analista): {facts['repository_candidate']}, que {verdict}.")
     return out
 
 
@@ -150,23 +203,37 @@ def _contradiction(provider, detail):
                            "contradicts_engine")
 
 
+_DIAGNOSTIC_RESULT = re.compile(
+    r"\bdiagn[óo]stic\w*\b[^.]{0,40}\b(?:confirm\w*|mostr\w*|indic\w*|revel\w*|comprov\w*|apont\w*)", re.IGNORECASE)
+
+
 def check_text(text, facts_list, provider):
-    """Reject prose that contradicts the engine facts of the installations it covers."""
+    """Reject prose that contradicts the (research-extended) engine facts it covers."""
     any_command = any(f["correction_command_available"] for f in facts_list)
     all_command = bool(facts_list) and all(f["correction_command_available"] for f in facts_list)
-    allowed = [v for f in facts_list for v in (f.get("installed_version"), f.get("fixed_version"), f.get("os_version")) if v]
+    allowed = [v for f in facts_list for v in (f.get("installed_version"), f.get("fixed_version"), f.get("os_version"),
+                                               f.get("repository_candidate"), *f.get("upstream_fixed_versions", []),
+                                               *f.get("known_versions", [])) if v]
+    # Statements the current research supports: the distribution lists the release as
+    # vulnerable (no published fix for it) and the repository candidate was observed.
+    distribution_unfixed = facts_list and all(f.get("distribution_status") == "vulnerable" and not f.get("fixed_version")
+                                              for f in facts_list)
+    repository_observed = facts_list and all(f.get("repository_availability") != "not_observed" for f in facts_list)
+    collected = facts_list and all(f.get("diagnostics_collected") for f in facts_list)
     for sentence in _sentences(text):
         if not any_command and _COMMAND.search(sentence) and not _NEGATION.search(sentence):
             raise _contradiction(provider, "afirma haver comando de correção, mas o motor não gerou nenhum")
         if all_command and _DENIES_COMMAND.search(sentence):
             raise _contradiction(provider, "nega o comando de correção validado pelo motor")
-        if _NO_PUBLISHED_FIX.search(sentence):
-            raise _contradiction(provider, "conclui que não há correção publicada, o que o EyeMole não determina")
-        if _REPOSITORY_CLAIM.search(sentence) and not _CONDITIONAL.search(sentence):
-            raise _contradiction(provider, "afirma a disponibilidade no repositório do ativo, que o EyeMole não observa")
+        if _NO_PUBLISHED_FIX.search(sentence) and not distribution_unfixed:
+            raise _contradiction(provider, "conclui que não há correção publicada, o que as fontes consultadas não sustentam")
+        if _REPOSITORY_CLAIM.search(sentence) and not _CONDITIONAL.search(sentence) and not repository_observed:
+            raise _contradiction(provider, "afirma a disponibilidade no repositório do ativo, que o EyeMole não observou")
+        if _DIAGNOSTIC_RESULT.search(sentence) and not collected and not _CONDITIONAL.search(sentence.split("diagn")[0]):
+            raise _contradiction(provider, "apresenta diagnósticos como resultados, mas nenhum foi coletado ou importado")
     for token in _VERSION.findall(_URL.sub(" ", text or "")):
         if not any(token in version for version in allowed):
-            raise _contradiction(provider, f"cita a versão {token}, ausente dos dados do motor")
+            raise _contradiction(provider, f"cita a versão {token}, ausente dos dados do motor e da pesquisa")
 
 
 def check_claims(claims, facts, provider):
@@ -177,13 +244,15 @@ def check_claims(claims, facts, provider):
         raise _contradiction(provider, "claims diferentes de comando, versão corrigida ou estado da correção")
 
 
-def enforce(result, plans, provider, require_claims):
+def enforce(result, plans, provider, require_claims, research=None):
     """Validate a contract-valid answer against the engine; returns a display-ready copy.
 
-    Contradictions raise (nothing is stored or shown). Known finding IDs in the
-    prose are replaced by "package (CVE)" so the hash is never the main text.
+    ``research`` maps finding_id → current research facts, so the comparison
+    uses the updated knowledge. Contradictions raise (nothing is stored or
+    shown). Known finding IDs in the prose are replaced by "package (CVE)".
     """
-    facts = {p["finding_id"]: engine_facts(p) for p in plans}
+    research = research or {}
+    facts = {p["finding_id"]: engine_facts(p, research.get(p["finding_id"])) for p in plans}
     covered = []
     recommendations = []
     for item in result["recommendations"]:

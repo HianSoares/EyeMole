@@ -93,6 +93,14 @@
         {
           "label": "Candidate disponível no repositório",
           "script": "apt-cache policy {package_names}"
+        },
+        {
+          "label": "Pacote fonte e versão (dpkg)",
+          "script": "dpkg-query -W -f='${binary:Package} ${Version} ${source:Package} ${source:Version}\n' {package_name}"
+        },
+        {
+          "label": "Release do sistema",
+          "script": "grep -E '^(ID|VERSION_ID|VERSION_CODENAME)=' /etc/os-release"
         }
       ],
       "verification_steps": [

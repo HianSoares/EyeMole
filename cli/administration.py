@@ -390,6 +390,25 @@ def configure_ai(project, provider="nvidia", model=None, enable=None, timeout=No
             "secret": (projects[project].get("secret_prefix", "") + defaults["secret"])}
 
 
+RESEARCH_DEFAULTS = {"sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"],
+                     "cache_ttl_hours": 6, "max_stale_hours": 72, "timeout_seconds": 20, "budget_seconds": 90,
+                     "refresh_inventory": True}
+
+
+def configure_research(project, enable, path=Path("/etc/hmg-soar/platform.json")):
+    """Enable/disable remediation research for one project (public sources only; no secrets)."""
+    data = json.loads(path.read_text())
+    projects = data.get("projects", {})
+    if project not in projects or not isinstance(projects[project], dict):
+        raise RecoveryError("Projeto não configurado.")
+    integrations = projects[project].setdefault("integrations", {})
+    block = dict(RESEARCH_DEFAULTS, **(integrations.get("research") or {}))
+    block["enabled"] = bool(enable)
+    integrations["research"] = block
+    _write_platform(path, data)
+    return {"project": project, "enabled": block["enabled"], "sources": block["sources"]}
+
+
 def cleanup(config=None, apply=False):
     config = config or policy()
     root = Path(config["backup_root"])

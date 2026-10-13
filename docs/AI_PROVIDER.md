@@ -86,7 +86,12 @@ EyeMole (não gerados por IA)"), em qualquer estado da explicação.
 
 ### Explicações geradas antes desta verificação
 
-A versão do contrato de fatos (`FACTS_VERSION = 2`) faz parte da identidade da
+Com uma pesquisa de correção atual ([REMEDIATION_RESEARCH.md](REMEDIATION_RESEARCH.md)), os fatos do motor incluem a
+correção da distribuição, as versões upstream, o estado da release e a Candidate importada; a comparação usa esse
+conjunto atualizado. Diagnósticos apenas permitem consultar: sem coleta importada, "os diagnósticos confirmam" é
+rejeitado.
+
+A versão do contrato de fatos (`FACTS_VERSION = 3`) e a revisão da pesquisa fazem parte da identidade da
 explicação. Explicações anteriores não são apagadas nem sobrescritas (registros e
 auditoria preservados), mas aparecem como **invalidadas**, sem o texto, até uma nova
 solicitação.

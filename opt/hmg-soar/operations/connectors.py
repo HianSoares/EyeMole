@@ -200,6 +200,9 @@ class Wazuh:
                         result["packages"][row["name"]] = "ambiguous"
                     else:
                         result["packages"][row["name"]] = row["version"]
+                    # Binary → source package as recorded by dpkg on the agent (syscollector "source").
+                    detail = {k: str(row[k])[:128] for k in ("version", "architecture", "source", "format") if row.get(k)}
+                    result.setdefault("package_details", {}).setdefault(row["name"], []).append(detail)
             if total >= package_data.get("data", {}).get("total_affected_items", total):
                 result["packages_complete"] = True
                 break

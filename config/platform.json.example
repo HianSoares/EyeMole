@@ -24,6 +24,15 @@
           "max_output_tokens": 2048,
           "thinking": "disabled"
         },
+        "research": {
+          "enabled": false,
+          "sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"],
+          "cache_ttl_hours": 6,
+          "max_stale_hours": 72,
+          "timeout_seconds": 20,
+          "budget_seconds": 90,
+          "refresh_inventory": true
+        },
         "kiro": {
           "enabled": false,
           "binary": "/usr/local/bin/kiro-cli",

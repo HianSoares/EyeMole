@@ -12,6 +12,7 @@ A área **Operações**, em `/soar/assets/operations.html`, organiza o tratament
 | Validação | Exige coleta completa e posterior à aplicação, ativo incluído, agente ativo e inventário posterior com versão corrigida |
 | Inventário | Importação via Wazuh ou observação manual identificada pelo usuário; dados desconhecidos permanecem explícitos |
 | Explicação por IA | NVIDIA API Catalog (compatível com OpenAI) por padrão: explica a orientação de uma instalação ou os planos da campanha; resposta estruturada validada; comandos vêm do motor determinístico. Kiro mantido como provedor legado |
+| Pesquisa de correção | "Pesquisar correção" por instalação: o worker consulta fontes oficiais (Debian Security Tracker, Ubuntu CVE tracker, advisories do projeto), o motor classifica e gera comandos por template, a IA propõe alternativas validadas. Ver [REMEDIATION_RESEARCH.md](REMEDIATION_RESEARCH.md) |
 | Evidências | Material oficial Microsoft CVRF, Red Hat e Ubuntu; fonte, data e hash; aplicabilidade exige revisão |
 | GLPI | Abertura de chamado com identificador da campanha e leitura do estado remoto |
 | QRadar / Vision One | Consulta de offenses/alertas, paginação limitada e correlação por mapeamento explícito de ativos |
