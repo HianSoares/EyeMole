@@ -262,7 +262,8 @@ def test_candidate_not_fixed_requires_verification(platform):
     assert result["classification"] == "requires_verification"
     assert result["assessment"]["repository_status"] == "candidate_not_fixed"
     best = result["alternatives"][result["recommended"]]
-    assert best["validated"] is False and best["command"] == "sudo apt-get install --only-upgrade -- vim-tiny"
+    # Installing "the candidate" would not be the published fix: no command until the repository offers it.
+    assert best["validated"] is False and best.get("command") is None
     assert any("anterior a" in p for p in result["pending_verifications"])
 
 
@@ -583,13 +584,12 @@ def test_explanation_identity_follows_research_and_previous_contracts_are_invali
     enable_ai(cfg)
     fid = ids[("007", "CVE-2026-73076")]
     before = service._finding("hmg", fid, "read")
-    assert before[6].endswith(":facts3:none") and before[8] is None
+    assert before[6].endswith(":facts4:none") and before[8] is None
     run(service, cfg, fid)
     after = service._finding("hmg", fid, "read")
     assert after[8]["classification"] == "upstream_fix_only" and after[6].endswith(":" + after[8]["revision"])
     # An explanation from the previous facts contract is kept but shown as invalidated, without text.
-    legacy = after[7][-1]
-    assert legacy.endswith(":facts2")
+    legacy = next(old for old in after[7] if old.endswith(":facts3:" + after[8]["revision"]))
     service.store.put("hmg", "ai_finding", hashlib.sha256(legacy.encode()).hexdigest(),
                       {"summary": "antigo", "recommendations": []}, "worker", "ai.finding_explained")
     state = service.finding_ai("hmg", fid)

@@ -22,7 +22,8 @@ from .ai_contract import AIContractError
 
 # Bump when the facts/claims contract changes: explanations generated under an
 # older contract stop being current (records and audit entries are kept).
-FACTS_VERSION = 3
+# 4: research facts only from research contract 2 (authorized candidate origin, validity).
+FACTS_VERSION = 4
 
 FIX_STATES = ("validated_command", "fixed_version_without_command", "upstream_fix_only", "mitigation_only",
               "no_fix_found_in_sources", "insufficient_data")
@@ -157,7 +158,9 @@ def statements(facts):
     else:
         verdict = {"candidate_fixes": "é igual ou posterior à versão corrigida",
                    "candidate_not_fixed": "é anterior à versão corrigida",
-                   "candidate_observed": "foi observada, sem versão corrigida para comparar"}.get(
+                   "candidate_observed": "foi observada, sem versão corrigida para comparar",
+                   "candidate_unauthorized_origin": "vem de origem não autorizada para a release do ativo e não valida a correção",
+                   "candidate_origin_unknown": "tem origem desconhecida e não valida a correção"}.get(
             facts["repository_availability"], "foi observada")
         out.append(f"Candidate do repositório do ativo (importada pelo analista): {facts['repository_candidate']}, que {verdict}.")
     return out

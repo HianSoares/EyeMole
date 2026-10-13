@@ -392,7 +392,8 @@ def configure_ai(project, provider="nvidia", model=None, enable=None, timeout=No
 
 RESEARCH_DEFAULTS = {"sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"],
                      "cache_ttl_hours": 6, "max_stale_hours": 72, "timeout_seconds": 20, "budget_seconds": 90,
-                     "refresh_inventory": True}
+                     "refresh_inventory": True, "evidence_max_age_hours": 24, "diagnostics_max_age_hours": 72,
+                     "authorized_pockets": ["", "-security", "-updates"], "extra_authorized_suites": []}
 
 
 def configure_research(project, enable, path=Path("/etc/hmg-soar/platform.json")):

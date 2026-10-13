@@ -356,6 +356,11 @@ class Operations:
         object_id = (f"{legacy_id}:facts{ai_facts.FACTS_VERSION}:"
                      f"{research_facts['revision'] if research_facts else 'none'}")
         previous = [legacy_id] + [f"{legacy_id}:facts{v}" for v in range(2, ai_facts.FACTS_VERSION)]
+        # Facts v3 identities carried the research revision (or "none"); the stored research, even
+        # if no longer current, tells which v3 identity may exist.
+        stored_research = self._object(project, "ai_research", self.installation_key("research", agent, finding_id))
+        previous += [f"{legacy_id}:facts3:none"] + (
+            [f"{legacy_id}:facts3:{research_support.facts_summary(stored_research)['revision']}"] if stored_research else [])
         return cfg, row, agent, revision, guidance, status, object_id, previous, research_facts
 
     def _stored_ai(self, project, object_id):
@@ -365,12 +370,15 @@ class Operations:
     # Remediation research ("Pesquisar correção") and imported diagnostics
     # ------------------------------------------------------------------
 
-    def research_inputs(self, project, row, agent, finding_id, plan):
+    def research_inputs(self, project, row, agent, finding_id, plan, cfg=None):
         inventory = self._object(project, "inventory", agent)
         diagnostic = self._object(project, "diagnostic_import", self.installation_key("diag", agent, finding_id))
         if diagnostic and diagnostic.get("installed_version") != row["version"]:
             diagnostic = None  # imported for another installed version
-        context = research_support.resolve_context(dict(row, finding_id=finding_id), plan, inventory, diagnostic)
+        settings = research_settings(cfg if cfg is not None else self.context(project)) or {}
+        # Time-dependent validity (diagnostic expiry) is evaluated here, without network access.
+        context = research_support.resolve_context(dict(row, finding_id=finding_id), plan, inventory, diagnostic,
+                                                   settings, research_support._now())
         return inventory, diagnostic, context
 
     def research_provider(self, cfg):
@@ -383,8 +391,13 @@ class Operations:
         if not stored:
             return None, []
         if context is None:
-            _, _, context = self.research_inputs(project, row, agent, finding_id, plan)
+            _, _, context = self.research_inputs(project, row, agent, finding_id, plan, cfg)
         reasons = []
+        valid_until = stored.get("valid_until")
+        if not valid_until or research_support._now() >= dt.datetime.fromisoformat(valid_until):
+            # Time alone retires the classification and the validation seal (evidence/diagnostic expired);
+            # detected without network, the refresh happens in the worker.
+            reasons.append("A validade das evidências ou do diagnóstico expirou; pesquise novamente.")
         if stored.get("research_version") != research_support.RESEARCH_VERSION:
             reasons.append("O contrato da pesquisa mudou.")
         if stored.get("context_revision") != context["revision"]:
@@ -406,13 +419,13 @@ class Operations:
     def research_state(self, project, finding_id):
         cfg, row, agent, revision = self._installation(project, finding_id, "read")
         plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        inventory, diagnostic, context = self.research_inputs(project, row, agent, finding_id, plan)
+        inventory, diagnostic, context = self.research_inputs(project, row, agent, finding_id, plan, cfg)
         settings = research_settings(cfg)
         out = {"finding_id": finding_id, "enabled": bool(settings), "state": "none",
                "context": {k: context.get(k) for k in ("distribution", "release", "binary_package", "source_package",
                                                        "installed_version", "architecture", "package_origin",
                                                        "repository", "origins", "missing")},
-               "diagnostic": diagnostics.public(diagnostic),
+               "diagnostic": diagnostics.public(diagnostic, settings, research_support._now()),
                # Read-only diagnostics the analyst may run; never shown as collected results.
                "available_diagnostics": [{"label": d.get("label"), "script": d.get("script"), "executed": False}
                                          for d in plan.get("diagnostics", [])],
@@ -442,7 +455,7 @@ class Operations:
         if not research_settings(cfg):
             raise OperationError("Pesquisa de correção desabilitada pelo administrador.", 503)
         plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        _, _, context = self.research_inputs(project, row, agent, finding_id, plan)
+        _, _, context = self.research_inputs(project, row, agent, finding_id, plan, cfg)
         payload = {"finding_id": finding_id, "agent_id": agent, "snapshot_revision": revision,
                    "context_revision": context["revision"]}
         return self.store.queue(project, "research", self.research_object(cfg, agent, finding_id, context),
@@ -450,12 +463,19 @@ class Operations:
 
     def import_diagnostics(self, project, finding_id, body):
         cfg, row, agent, revision = self._installation(project, finding_id, "write")
+        plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
+        # The import is checked against the asset context known without diagnostics.
+        asset = research_support.asset_context(row, plan, self._object(project, "inventory", agent))
         installation = {"finding_id": finding_id, "agent_id": agent, "package": row["package"], "version": row["version"],
-                        "architecture": row.get("package_architecture") or row.get("architecture")}
-        record = diagnostics.build_import(body, installation, self.user.name)
+                        "architecture": row.get("package_architecture") or row.get("architecture"), **asset}
+        record = diagnostics.build_import(body, installation, self.user.name, research_support._now())
+        # Latest import drives the research; every import is kept as history (and audited).
         self.store.put(project, "diagnostic_import", self.installation_key("diag", agent, finding_id), record,
                        self.user.name, "diagnostic.imported")
-        return diagnostics.public(record)
+        self.store.put(project, "diagnostic_history",
+                       self.installation_key(f"diag:{record['revision']}:{record['imported_at']}", agent, finding_id),
+                       record, self.user.name, "diagnostic.archived")
+        return diagnostics.public(record, research_settings(cfg) or {}, research_support._now())
 
     def finding_ai(self, project, finding_id):
         cfg, row, agent, revision, guidance, status, object_id, previous, research_facts = \

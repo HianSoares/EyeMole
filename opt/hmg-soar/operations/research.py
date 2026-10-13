@@ -22,11 +22,13 @@ import re
 
 from remediation.versioning import compare_versions
 
-from . import llm, research_sources
+from . import diagnostics, llm, research_sources
 from .ai_contract import AIContractError
 from .security import OperationError
 
-RESEARCH_VERSION = 1
+# 2: candidate origin authorization, diagnostic validity/conflicts and evidence expiry (results of
+# version 1 stop being current; records and audit entries are kept).
+RESEARCH_VERSION = 2
 
 CATEGORIES = {
     "validated_fix": "Correção validada para a instalação",
@@ -84,12 +86,33 @@ def _family(plan, row):
 # Package context
 # ----------------------------------------------------------------------
 
-def resolve_context(row, plan, inventory=None, diagnostic=None):
-    """Context of one installation with the origin of every resolved fact."""
+def asset_context(row, plan, inventory=None):
+    """Distribution/release known for the asset without imported diagnostics (to check imports against)."""
     distribution = _family(plan, row)
+    version = str(plan.get("os_version") or row.get("os_version") or "")
+    if (inventory or {}).get("os", {}).get("codename"):
+        release, origin = str(inventory["os"]["codename"]).lower(), {
+            "origin": "wazuh_syscollector", "observed_at": (inventory or {}).get("observed_at")}
+    else:
+        release = RELEASES.get(distribution, {}).get(version) or RELEASES.get(distribution, {}).get(version.split(".")[0])
+        origin = {"origin": "release_table", "observed_at": None, "basis": f"{distribution} {version}"} if release else None
+    return {"distribution": distribution, "release": release, "release_origin": origin, "os_version": version or None}
+
+
+def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, now=None):
+    """Context of one installation with the origin of every resolved fact.
+
+    An imported diagnostic only contributes facts while it is valid (not
+    expired, no conflict with the asset context); otherwise it is reported as
+    history with the reasons and a new collection is requested.
+    """
+    asset = asset_context(row, plan, inventory)
+    distribution = asset["distribution"]
     binary, installed = str(row.get("package") or ""), str(row.get("version") or "")
     architecture = row.get("package_architecture") or row.get("architecture") or plan.get("architecture")
-    parsed = (diagnostic or {}).get("parsed", {})
+    validity = diagnostics.evaluate(diagnostic, settings, now or _now())
+    usable = diagnostic if validity and validity["status"] == "valid" else None
+    parsed = (usable or {}).get("parsed", {})
     diag_origin = {"origin": "imported_by_analyst", "observed_at": (diagnostic or {}).get("collected_at")}
     inv_origin = {"origin": "wazuh_syscollector", "observed_at": (inventory or {}).get("observed_at")}
     context = {"distribution": distribution, "binary_package": binary, "installed_version": installed,
@@ -99,14 +122,8 @@ def resolve_context(row, plan, inventory=None, diagnostic=None):
     release = None
     if parsed.get("os_release", {}).get("version_codename"):
         release, context["origins"]["release"] = parsed["os_release"]["version_codename"], diag_origin
-    elif (inventory or {}).get("os", {}).get("codename"):
-        release, context["origins"]["release"] = str(inventory["os"]["codename"]).lower(), inv_origin
-    else:
-        version = str(plan.get("os_version") or row.get("os_version") or "")
-        release = RELEASES.get(distribution, {}).get(version) or RELEASES.get(distribution, {}).get(version.split(".")[0])
-        if release:
-            context["origins"]["release"] = {"origin": "release_table", "observed_at": None,
-                                             "basis": f"{distribution} {version}"}
+    elif asset["release"]:
+        release, context["origins"]["release"] = asset["release"], asset["release_origin"]
     context["release"] = release
     if not release:
         context["missing"].append("release")
@@ -140,9 +157,9 @@ def resolve_context(row, plan, inventory=None, diagnostic=None):
             "installed_suites": (installed_entry or {}).get("suites", []),
             "available_versions": [{"version": v["version"], "suites": v["suites"]} for v in policy["versions"]][:12],
             **diag_origin}
-        suites = (installed_entry or {}).get("suites", [])
-        context["package_origin"] = ("backports" if any("-backports" in s for s in suites) else
-                                     "distribution" if suites else
+        names = {_suite(s) for s in (installed_entry or {}).get("suites", [])}
+        context["package_origin"] = ("backports" if release and f"{release}-backports" in names else
+                                     "distribution" if names else
                                      "local_only" if installed_entry and installed_entry.get("local_status_only") else "unknown")
     else:
         context["repository"] = None
@@ -150,27 +167,63 @@ def resolve_context(row, plan, inventory=None, diagnostic=None):
         context["missing"].append("repository_candidate")
     if diagnostic:
         context["diagnostic"] = {"collected_at": diagnostic.get("collected_at"), "imported_by": diagnostic.get("imported_by"),
-                                 "confidence": diagnostic.get("confidence"), "revision": diagnostic.get("revision")}
+                                 "confidence": diagnostic.get("confidence"), "revision": diagnostic.get("revision"),
+                                 "status": validity["status"], "expires_at": validity["expires_at"],
+                                 "reasons": validity["reasons"], "used": usable is not None}
+        if usable is None:
+            context["missing"].append("diagnostic_" + validity["status"])
     context["revision"] = digest({k: context.get(k) for k in (
         "distribution", "binary_package", "installed_version", "architecture", "release", "source_package",
-        "repository", "package_origin")} | {"guidance": plan.get("snapshot_revision")})
+        "repository", "package_origin")} | {"guidance": plan.get("snapshot_revision"),
+                                            "diagnostic": (diagnostic or {}).get("revision"),
+                                            "diagnostic_status": (validity or {}).get("status")})
     return context
+
+
+def _suite(label):
+    """'trixie-security/main' → 'trixie-security'."""
+    return str(label or "").split("/")[0]
+
+
+def authorized_suites(context, settings, scope):
+    """Repository suites whose packages may validate a fix for the asset's release.
+
+    Release scope: the release itself plus authorized pockets (default security
+    and updates). Backports scope: only <release>-backports. Administrators may
+    add suite names explicitly (extra_authorized_suites, e.g. a mirrored suite).
+    sid/unstable, forky/testing, other releases or distributions and unknown
+    origins never qualify by version alone.
+    """
+    release = context.get("release")
+    if not release:
+        return set()
+    settings = settings or {}
+    if scope == "backports":
+        names = {f"{release}-backports"}
+    else:
+        pockets = settings.get("authorized_pockets", ["", "-security", "-updates"])
+        names = {release + str(p) for p in pockets if re.fullmatch(r"(-[a-z]{1,24})?", str(p))}
+    names |= {str(s) for s in settings.get("extra_authorized_suites", []) if re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,63}", str(s))}
+    return names
 
 
 # ----------------------------------------------------------------------
 # Deterministic assessment (engine)
 # ----------------------------------------------------------------------
 
-def _apt_commands(binary, candidate, fixed, installed, validated):
+def _apt_commands(binary, candidate, fixed, installed, validated, release=None):
     """Controlled templates. Parameters are validated; no free text reaches a command."""
     if not _PKG.fullmatch(binary or "") or (candidate and not _VER.fullmatch(candidate)) or not _VER.fullmatch(fixed or ""):
         return None
-    target = f"{binary}={candidate}" if validated and candidate else binary
+    if validated and not candidate:
+        return None
+    target = f"{binary}={candidate}" if validated else binary
     return {
         "command": f"sudo apt-get install --only-upgrade -- {target}",
         "simulation": f"apt-get install --only-upgrade -s -- {target}",
         "prerequisites": ["sudo apt-get update"] + ([] if validated else [
-            f"Confirmar com 'apt-cache policy {binary}' que a Candidate é {fixed} ou posterior antes de aplicar."]),
+            f"Confirmar com 'apt-cache policy {binary}' que a Candidate é {fixed} ou posterior e vem de uma suíte de "
+            f"{release or 'a release do ativo'} (release, -security ou -updates; nunca sid/testing) antes de aplicar."]),
         "verification": [f"dpkg-query -W -f='${{Version}}\\n' {binary}  # esperado: {fixed} ou posterior",
                          "Aguardar nova coleta do Wazuh e confirmar que o achado deixou de ser reportado."],
         "rollback": (f"sudo apt-get install -- {binary}={installed}  # somente se a versão anterior continuar disponível"
@@ -178,8 +231,25 @@ def _apt_commands(binary, candidate, fixed, installed, validated):
     }
 
 
-def assess(context, collection):
-    """Classify the research result. Returns the assessment with baseline alternatives."""
+def evidence_max_age(settings):
+    return dt.timedelta(hours=min(max(float((settings or {}).get("evidence_max_age_hours", 24)), 1), 24 * 14))
+
+
+def evidence_expires(item, settings):
+    checked = item.get("checked_at") or item.get("retrieved_at")
+    return dt.datetime.fromisoformat(checked) + evidence_max_age(settings) if checked else None
+
+
+def assess(context, collection, settings=None, now=None):
+    """Classify the research result. Returns the assessment with baseline alternatives.
+
+    A fix is validated only with: the distribution's fix for the asset release
+    (or its backports scope), a verified source package, a repository
+    Candidate from an authorized suite of that release that is not older than
+    the fix (Debian rules), fresh non-conflicting evidence and a valid
+    diagnostic. ``valid_until`` bounds how long the classification stays current.
+    """
+    now = now or _now()
     evidence = collection.get("evidence", [])
     sources = collection.get("sources", [])
     distribution, release, source = context["distribution"], context["release"], context["source_package"]
@@ -187,8 +257,16 @@ def assess(context, collection):
     notes, pending = [], []
     out = {"distribution_fixed_version": None, "distribution_status": "unknown", "upstream_fixed_versions": [],
            "other_release_fixes": [], "repository_status": "not_observed", "candidate_version": None,
+           "candidate_suites": [], "authorized_suites": [], "fix_scope": None,
            "source_association": "verified" if source else "unverified", "evidence_used": [], "notes": notes,
            "pending": pending, "alternatives": []}
+    expiries = [evidence_expires(e, settings) for e in evidence if evidence_expires(e, settings)]
+    diagnostic = context.get("diagnostic")
+    if diagnostic and diagnostic.get("used") and diagnostic.get("expires_at"):
+        expiries.append(dt.datetime.fromisoformat(diagnostic["expires_at"]))
+    out["valid_until"] = min(expiries + [now + evidence_max_age(settings)]).isoformat(timespec="seconds")
+    if diagnostic and not diagnostic.get("used"):
+        pending.extend(diagnostic.get("reasons") or [])
 
     distro_sources = [s for s in sources if s.get("source") in ("debian_security_tracker", "ubuntu_cve_tracker")]
     if distribution not in research_sources.SOURCES:
@@ -217,11 +295,13 @@ def assess(context, collection):
     if context.get("package_origin") == "backports" and release:
         wanted = [release + "-backports", release]
         notes.append("Pacote instalado a partir de backports: a correção aplicável é a do backports.")
-    scoped = []
+    scoped, scope = [], "release"
     for name in wanted:
         scoped = [e for e in rows if e.get("release") == name]
         if scoped:
+            scope = "backports" if name.endswith("-backports") else "release"
             break
+    out["fix_scope"] = scope
     fixed_versions = {}
     for e in scoped:
         version = e.get("fixed_version") or (e.get("version") if e.get("status") in ("fixed", "released") else None)
@@ -231,6 +311,9 @@ def assess(context, collection):
     stale = any(e.get("stale") for e in scoped)
     if stale:
         pending.append("Evidência da distribuição servida do cache após falha da fonte (pode estar desatualizada).")
+    if any(evidence_expires(e, settings) and evidence_expires(e, settings) <= now for e in scoped):
+        stale = True
+        pending.append("Evidência da distribuição expirada; pesquise novamente para confirmá-la nas fontes oficiais.")
     for e in rows:
         if e.get("release") not in wanted and (e.get("fixed_version") or e.get("status") in ("fixed", "released")):
             out["other_release_fixes"].append({"release": e.get("release"), "version": e.get("fixed_version") or e.get("version"),
@@ -263,11 +346,23 @@ def assess(context, collection):
     repo = context.get("repository")
     if repo and repo.get("candidate_version"):
         out["candidate_version"] = repo["candidate_version"]
+        suites = {_suite(s) for s in repo.get("candidate_suites", [])}
+        allowed = authorized_suites(context, settings, scope)
+        out["candidate_suites"], out["authorized_suites"] = sorted(suites), sorted(allowed)
+        # The version alone never validates: every suite offering the Candidate must be authorized.
+        origin = "authorized" if suites and suites <= allowed else "unknown" if not suites else "unauthorized"
+        out["candidate_origin"] = origin
         if fixed:
             comparison = _cmp(repo["candidate_version"], fixed)
-            out["repository_status"] = "candidate_fixes" if comparison is not None and comparison >= 0 else "candidate_not_fixed"
+            if comparison is None or comparison < 0:
+                out["repository_status"] = "candidate_not_fixed"
+            else:
+                out["repository_status"] = {"authorized": "candidate_fixes", "unknown": "candidate_origin_unknown",
+                                            "unauthorized": "candidate_unauthorized_origin"}[origin]
         else:
             out["repository_status"] = "candidate_observed"
+    elif repo:
+        out["repository_status"] = "candidate_none"
     if out["other_release_fixes"]:
         names = ", ".join(sorted({f["release"] for f in out["other_release_fixes"] if f["release"]}))
         notes.append(f"Correção publicada em outra release ({names}); isso não confirma pacote adequado para {release}.")
@@ -275,21 +370,37 @@ def assess(context, collection):
     # Classification
     if fixed:
         already = _cmp(installed, fixed)
-        commands = _apt_commands(binary, out["candidate_version"], fixed, installed,
-                                 validated=out["repository_status"] == "candidate_fixes")             if context.get("package_manager") == "apt" else None
+        status = out["repository_status"]
+        apt = context.get("package_manager") == "apt"
+        validated_ready = status == "candidate_fixes" and source and not stale and not out.get("conflict")
+        # Pinned command only for a validated Candidate; an unpinned one only while the Candidate is not
+        # observed (with prerequisites). No command when the observed Candidate does not fix or comes from
+        # an unknown/unauthorized origin: installing "the candidate" there would not be the published fix.
+        commands = (_apt_commands(binary, out["candidate_version"], fixed, installed, True) if apt and validated_ready else
+                    _apt_commands(binary, None, fixed, installed, False, release) if apt and status == "not_observed" else None)
         if already is not None and already >= 0:
             out["classification"] = "requires_verification"
             pending.append(f"A versão instalada já é {fixed} ou posterior segundo as regras Debian; confira se o achado está desatualizado.")
-        elif (out["repository_status"] == "candidate_fixes" and source and not stale and not out.get("conflict")
-              and commands):
+        elif validated_ready and commands:
             out["classification"] = "validated_fix"
         else:
             out["classification"] = "requires_verification"
-            if out["repository_status"] == "not_observed":
-                pending.append("Candidate do repositório do ativo não observada: importe 'apt-cache policy' após 'apt-get update'.")
-            elif out["repository_status"] == "candidate_not_fixed":
+            suites = ", ".join(out["candidate_suites"]) or "nenhuma suíte de repositório"
+            allowed = ", ".join(out["authorized_suites"]) or "nenhuma"
+            if status == "not_observed":
+                pending.append("Candidate do repositório do ativo não observada (ou diagnóstico inválido): importe "
+                               "'apt-cache policy' coletado após 'apt-get update'.")
+            elif status == "candidate_not_fixed":
                 pending.append(f"A Candidate observada ({out['candidate_version']}) é anterior a {fixed}: verifique se o "
                                f"repositório de segurança da release ({release}) está configurado e atualizado.")
+            elif status == "candidate_unauthorized_origin":
+                pending.append(f"A Candidate {out['candidate_version']} vem de {suites}, origem não autorizada para "
+                               f"{release} (autorizadas: {allowed}). Não aplique; ajuste os repositórios/pins do ativo.")
+            elif status == "candidate_origin_unknown":
+                pending.append(f"A origem da Candidate {out['candidate_version']} não é conhecida (sem suíte de repositório); "
+                               "não é possível validar.")
+            elif status == "candidate_none":
+                pending.append("O repositório do ativo não oferece versão instalável (Candidate: none).")
         if already is None or already < 0:
             out["alternatives"].append({
                 "kind": "update_package", "package": binary, "target_version": fixed,
@@ -558,6 +669,8 @@ def build_result(context, collection, assessment, ai=None, ai_state=None, provid
     pending = list(dict.fromkeys(assessment["pending"] + ([note] if note else [])))
     return {
         "research_version": RESEARCH_VERSION, "generated_at": _now().isoformat(timespec="seconds"),
+        # After this instant (evidence or diagnostic expiry) the classification is no longer current.
+        "valid_until": assessment["valid_until"],
         "classification": assessment["classification"], "classification_label": CATEGORIES[assessment["classification"]],
         "summary": summary or engine_summary(context, assessment),
         "summary_origin": "ai" if summary else "engine",
@@ -599,6 +712,7 @@ def facts_summary(result):
             "repository_status": assessment.get("repository_status"),
             "candidate_version": assessment.get("candidate_version"),
             "validated_command": result["classification"] == "validated_fix",
-            "diagnostics_imported": bool(result["context"].get("diagnostic")),
+            # Only a valid (unexpired, conflict-free) import counts as collected data.
+            "diagnostics_imported": bool((result["context"].get("diagnostic") or {}).get("used")),
             "release": result["context"].get("release"),
             "versions": sorted(v for v in versions if v)}
