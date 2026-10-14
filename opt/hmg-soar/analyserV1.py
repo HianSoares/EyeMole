@@ -15126,6 +15126,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         'Reinício: ' + (p.reboot || 'não informado')
       ]));
       if (p.reason) body.appendChild(researchEl('p', 'Motivo: ' + p.reason));
+      if ((p.supersedence_chain || []).length > 1) {
+        const proof = { msrc_listed: 'Microsoft (Security Update Guide)', channel_supersedence: 'metadados do Windows Update do próprio ativo',
+                        channel_cve_metadata: 'metadados de CVE do Windows Update do próprio ativo' }[p.proof] || 'fontes consultadas';
+        body.appendChild(researchEl('small', 'Supersedência comprovada (' + proof + '): ' + p.supersedence_chain.join(' substitui ')));
+      }
       (p.sources || []).forEach(src => {
         const line = researchEl('div', null, 'font-size: 0.76rem;');
         if (src.url && src.url.startsWith('https://')) {
@@ -15144,6 +15149,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (!c) return;
       const body = document.getElementById('guidance-primary-body');
       const text = { pending: 'Coleta somente leitura solicitada ao agente em ' + c.requested_at + '; a análise será atualizada quando os dados chegarem.',
+                     dispatching: 'Enviando o pedido de coleta somente leitura ao agente...',
                      received: 'Dados coletados pelo agente em ' + (c.received_at || '') + '.',
                      unavailable: 'Coleta automática indisponível: ' + (c.reason || ''), failed: 'Coleta automática falhou: ' + (c.reason || ''),
                      expired: 'O agente não respondeu à coleta: ' + (c.reason || '') }[c.state] || '';
@@ -15225,7 +15231,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         renderGuidanceCollection(data);
         renderResearchResult(data);
         // A pending agent collection updates the analysis automatically when the data arrives.
-        if (data.collection && data.collection.state === 'pending') scheduleGuidanceAnalysis(findingId, requestId);
+        if (data.collection && ['pending', 'dispatching'].includes(data.collection.state)) scheduleGuidanceAnalysis(findingId, requestId);
         return;
       }
       if (data.state === 'failed') {

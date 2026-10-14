@@ -70,12 +70,35 @@ ativo. Sem atualização da distribuição, a recomendação é a mitigação of
 ## Windows
 
 - **Produto:** casado pelo ramo de build (`10.0.<build>`), servidor ou cliente, arquitetura e Server Core quando conhecido (coleta > inventário > snapshot). Se a Microsoft não lista o produto ou a arquitetura do ativo, nada é recomendado e as notas indicam a incompatibilidade.
-- **KB:** a "Security Update" do produto, com build corrigida e reinício (`rebootRequired`).
-  - Já instalada (hotfix) ou build igual/posterior: sem comando de instalação; a pendência indica que o achado pode estar desatualizado.
+- **KB e supersedência:** a atualização é escolhida por cadeia de supersedência **comprovada**, nunca pelo número da KB ou por ordem textual. Provas aceitas:
+  - a listagem da Microsoft para o produto e a CVE, com o campo `supercedence` entre KBs do mesmo produto;
+  - os metadados do Windows Update do próprio ativo (`wu_updates`): `UpdateID`, KBs, `CveIDs` e `SupersededUpdateIDs`. Uma atualização oferecida que substitui (direta ou transitivamente) uma KB listada é sucessora comprovada.
+
+  Regras de escolha:
+  - escolhe-se a mais recente da cadeia que o canal oferece;
+  - se a sucessora não é oferecida e uma KB listada mais antiga é, a mais antiga é usada e a sucessora aparece nas notas;
+  - KB de outro produto ou arquitetura não prova sucessão;
+  - ciclo de supersedência ou duas atualizações sem relação comprovada ficam como incerteza (conflito), sem selo;
+  - sem metadados do canal, o alvo é a KB mais recente da cadeia da Microsoft, sem selo.
+
+  O build corrigido e o reinício (`rebootRequired`) vêm da KB listada.
+  - Já instalada (qualquer KB listada da cadeia nos hotfixes) ou build igual/posterior: sem comando de instalação; a pendência indica que o achado pode estar desatualizado.
   - KB substituída instalada: informada; a correção está na atualização mais recente.
-- **Selo "Validado":** exige build e arquitetura do inventário ou coleta (não só do snapshot), lista de hotfixes completa, KB oferecida pelo canal do ativo (coletado), evidências não expiradas e ausência de conflito.
+- **Selo "Validado":** exige build e arquitetura do inventário ou coleta (não só do snapshot), lista de hotfixes completa, atualização oferecida pelo canal do ativo (metadados coletados), evidências não expiradas e ausência de conflito.
 - **Sem o selo:** o comando ainda é entregue, porque verifica a oferta antes de instalar. KB não oferecida aparece como pendência (aprovar no WSUS), com o pacote do Microsoft Update Catalog como alternativa manual sem selo.
-- **Comando:** gerado por template com a KB validada (`KB\d{6,8}`, literal PowerShell com aspas simples escapadas). O modal indica PowerShell como Administrador e o reinício. Simulação (busca sem instalar), verificação (`Get-HotFix`, UBR) e recuperação (`wusa /uninstall`, com a ressalva de SSU+LCU) são incluídas.
+- **Comando:** gerado por template com a KB validada (`KB\d{6,8}`) e, quando conhecido, o `UpdateID` coletado no canal. Ambos entram como literais PowerShell com aspas simples escapadas. Instala **somente** essa atualização, pelo canal configurado no ativo (Windows Update/WSUS). O script:
+  - **antes de instalar**, verifica:
+    - execução como Administrador;
+    - reinício pendente (`Microsoft.Update.SystemInfo.RebootRequired`);
+    - instalador ocupado (`IsBusy`);
+    - atualização que pode pedir interação;
+    - oferta única no canal;
+  - **exige aceite explícito da licença:** se a atualização exigir, o script para e pede `$AcceptEula = $true` depois de ler `EulaText`;
+  - **confere o download:** `ResultCode` geral e da atualização, mais `IsDownloaded`;
+  - **confere a instalação:** `ResultCode` e `HResult`, geral e da atualização. Falha, cancelamento ou sucesso parcial interrompem com mensagem clara;
+  - **informa o reinício necessário** e **nunca reinicia**.
+
+  O modal mostra também a simulação (busca sem baixar nem instalar), a verificação (`Get-HotFix`, UBR) e a recuperação (`wusa /uninstall`, com a ressalva de SSU+LCU).
 
 ## Requisitos de exploração
 
@@ -96,12 +119,22 @@ quando ela cita evidência (sempre "não verificado").
 | Sistema | Ações |
 |---|---|
 | Linux | `os_release`, `dpkg_source <pacote>`, `apt_policy <pacote>` |
-| Windows | `windows_build`, `windows_hotfixes`, `wu_search <KB>` (busca no Windows Update Agent, sem instalar), `windows_feature <nome>` |
+| Windows | `windows_build` (registro pela visão de 64 bits e arquitetura nativa do sistema), `windows_hotfixes`, `wu_updates <CVE> <KBs>` (busca somente leitura no Windows Update Agent, inclusive atualizações potencialmente substituídas: UpdateID, KBs, CveIDs, SupersededUpdateIDs, baixada, licença), `windows_feature <nome>` |
 
 **Pedido:** HMAC-SHA256 sobre o texto exato do payload, vinculado ao agente,
-válido por `expiry_minutes` (padrão 10) e de uso único. É enviado pelo Wazuh
-Active Response (`!eyemole-collect` ou `!eyemole-collect-win`). Pedidos
-repetidos para a mesma instalação e as mesmas ações são reaproveitados.
+válido por `expiry_minutes` (padrão 10) e de uso único. O pedido é **gravado antes
+do envio** (estado `dispatching`) pelo Wazuh Active Response (`!eyemole-collect`
+ou `!eyemole-collect-win`). Uma resposta que chega enquanto o envio ainda está em
+curso é aceita.
+
+As transições usam gravação condicional por versão:
+- o envio só muda `dispatching` para `pending` ou `failed`;
+- `received` e `rejected` são finais;
+- duas respostas para o mesmo pedido não são aceitas;
+- resposta para envio que falhou é recusada.
+
+Tudo fica auditado (`collection.requested/dispatched/dispatch_failed/received/rejected`).
+Pedidos repetidos para a mesma instalação e as mesmas ações são reaproveitados.
 
 **Retorno:** `POST /soar-api/agent-context/<agent_id>`, com o mesmo token do
 agente usado no upload de SBOM e para o URL configurado no próprio agente. O
@@ -128,8 +161,10 @@ leitura que o obtém, para executar e importar manualmente.
     "ca_file": "/etc/eyemole-agent/ca.pem"}
    ```
 
-**Windows:**
+**Windows** (32 bits, 64 bits e ARM64):
 1. Copie `agents/eyemole-collect.cmd` e `agents/eyemole-collect.ps1` para `C:\Program Files (x86)\ossec-agent\active-response\bin\`.
+   - O agente Wazuh pode rodar como processo de 32 bits em Windows de 64 bits; por isso o `.cmd` usa `%SystemRoot%\Sysnative` quando existe, para iniciar o PowerShell nativo. No Windows de 32 bits, onde não há Sysnative, usa `System32`.
+   - O coletor lê o build pela visão de registro de 64 bits e informa a arquitetura nativa do sistema (`RuntimeInformation.OSArchitecture`, com fallback no registro), além da arquitetura do processo.
 2. Crie `%ProgramData%\EyeMole\collector.json` com os mesmos campos (`token_file` apontando para o token do agente). Restrinja a ACL a SYSTEM e Administrators.
 
 **No manager Wazuh**, registre os comandos:
@@ -175,7 +210,14 @@ existentes. A saída HTTPS do servidor precisa alcançar `api.msrc.microsoft.com
 2. **Windows Server 2019 com CVE-2025-59287:** abra Ver correção.
    - Esperado: progresso; KB5070883 (build 10.0.17763.7922, reinício "possível"); comando PowerShell; pedido de coleta ao agente.
    - Com o receptor instalado: a análise é refeita sozinha com build, hotfixes, oferta da KB e papel WSUS. O selo aparece se a KB for oferecida pelo WSUS/Windows Update.
-3. **Execução no Windows:** "Simulação" no PowerShell como Administrador (lista a KB se oferecida). Execute o comando numa janela de manutenção e confira `Get-HotFix -Id KB5070883` e o UBR.
+3. **Execução no Windows** (checklist):
+   - [ ] Rode a "Simulação" no PowerShell como Administrador. Ela mostra a atualização oferecida, se já está baixada e se a licença está aceita.
+   - [ ] Rode o comando sem Administrador e confira que ele para pedindo Administrador.
+   - [ ] Com um reinício pendente, confira que ele para pedindo o reinício antes.
+   - [ ] Se a licença for exigida, confira que ele para e só prossegue com `$AcceptEula = $true`.
+   - [ ] Execute numa janela de manutenção. Confira a mensagem final (instalada; reinício necessário ou não), `Get-HotFix -Id <KB>` e o UBR. Confira que não houve reinício automático.
+   - [ ] Num servidor WSUS em que a KB antiga foi substituída, confira que a análise escolhe a sucessora oferecida e mostra "Supersedência comprovada".
+   - [ ] Num agente Wazuh de 32 bits em Windows de 64 bits, confira na coleta `Architecture` nativa (X64/Arm64) e `Is64BitProcess` verdadeiro (PowerShell nativo via Sysnative).
 4. **Debian 13 (vim-tiny, CVE-2026-73076):** sem atualização da distribuição, a recomendação é aguardar, com fontes. Com o receptor Linux, o pacote fonte e a Candidate aparecem como "coletado pelo agente".
 5. **Desligar a coleta** (`--agent-collection off`): o modal mostra o dado ausente e o diagnóstico manual.
 6. **Agente parado:** após `expiry_minutes`, "o agente não respondeu".
@@ -183,6 +225,25 @@ existentes. A saída HTTPS do servidor precisa alcançar `api.msrc.microsoft.com
 
 ## O que depende de Windows real ou homologação
 
-- **Execução do PowerShell:** Windows Update Agent, Get-HotFix e Get-WindowsFeature num servidor Windows real, e o protocolo de Active Response do Wazuh em Windows. Nos testes automatizados só a verificação de assinatura e parâmetros roda em PowerShell; as ações de sistema não.
+**Simulado** (CI Linux com `pwsh` e estação Windows): o comando de instalação roda contra objetos COM simulados do Windows Update. Cenários:
+- sucesso com e sem reinício;
+- sem Administrador, reinício pendente, instalador ocupado e interação;
+- não oferecida e seleção restrita ao UpdateID;
+- falha de download, incluindo `IsDownloaded` falso;
+- instalação com falha, sucesso parcial e cancelamento;
+- licença com e sem aceite explícito.
+
+Também simulado: a verificação da assinatura do coletor.
+
+**Testado em Windows real** (estação Windows 11 de 64 bits do desenvolvimento, sem chamar o Windows Update):
+- o `.cmd` chamado por um `cmd.exe` de 32 bits inicia o PowerShell de 64 bits (Sysnative);
+- o PowerShell de 32 bits lê build e UBR pela visão de 64 bits e informa a arquitetura nativa;
+- o parser do Windows PowerShell 5.1 aceita o comando e o coletor.
+
+**Pendente de homologação** (servidor Windows real):
+- instalação real pelo Windows Update Agent/WSUS;
+- `Get-HotFix` e `Get-WindowsFeature`;
+- Active Response do Wazuh em Windows;
+- Windows de 32 bits e ARM64.
 - **Linux real:** o receptor Linux com `dpkg-query`/`apt-cache` reais e o comando de Active Response no manager.
 - **Fontes e IA reais:** respostas reais da MSRC/Debian/Ubuntu a partir do servidor e a proposta real da NVIDIA. Os testes usam respostas gravadas (MSRC e Debian em 13–14/10/2026) e sintéticas.

@@ -29,15 +29,20 @@ from .security import OperationError
 
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+.-]{0,127}")
 ACTIONS = {
-    "os_release": ("linux", None),
-    "dpkg_source": ("linux", "package"),
-    "apt_policy": ("linux", "package"),
-    "windows_build": ("windows", None),
-    "windows_hotfixes": ("windows", None),
-    "wu_search": ("windows", "kb"),
-    "windows_feature": ("windows", "name"),
+    "os_release": ("linux", ()),
+    "dpkg_source": ("linux", ("package",)),
+    "apt_policy": ("linux", ("package",)),
+    "windows_build": ("windows", ()),
+    "windows_hotfixes": ("windows", ()),
+    # Windows Update metadata of the asset's own channel for the CVE and the KBs listed by MSRC
+    # (UpdateID, KBs, CVE IDs, SupersededUpdateIDs): proves which successor is offered.
+    "wu_updates": ("windows", ("cve", "kbs")),
+    "windows_feature": ("windows", ("name",)),
 }
-PARAM = {"package": PACKAGE, "kb": re.compile(r"KB\d{6,8}"), "name": re.compile(r"[A-Za-z0-9-]{1,64}")}
+PARAM = {"package": PACKAGE, "name": re.compile(r"[A-Za-z0-9-]{1,64}"), "cve": re.compile(r"CVE-\d{4}-\d{4,7}"),
+         "kbs": re.compile(r"KB\d{6,8}(,KB\d{6,8}){0,9}")}
+GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+MAX_UPDATES = 50
 LABELS = {
     "os_release": ("release do sistema (/etc/os-release)", "grep -E '^(ID|VERSION_ID|VERSION_CODENAME)=' /etc/os-release"),
     "dpkg_source": ("pacote fonte e versão instalada",
@@ -47,9 +52,11 @@ LABELS = {
                       "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' | "
                       "Select-Object ProductName,EditionID,InstallationType,CurrentBuild,UBR"),
     "windows_hotfixes": ("hotfixes instalados", "Get-HotFix | Select-Object -ExpandProperty HotFixID"),
-    "wu_search": ("oferta da {kb} pelo canal do ativo (Windows Update/WSUS)",
-                  "(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search(\"IsInstalled=0 and "
-                  "Type='Software'\").Updates | Where-Object { $_.KBArticleIDs -contains '{kb_number}' } | Select-Object Title"),
+    "wu_updates": ("atualizações oferecidas pelo canal do ativo (Windows Update/WSUS) para {cve} ({kbs})",
+                   "$s=(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher(); "
+                   "$s.IncludePotentiallySupersededUpdates=$true; $s.Search(\"IsInstalled=0 and IsHidden=0 and "
+                   "Type='Software'\").Updates | Select-Object Title,@{n='UpdateID';e={$_.Identity.UpdateID}},"
+                   "KBArticleIDs,CveIDs,SupersededUpdateIDs"),
     "windows_feature": ("estado do recurso {name}", "Get-WindowsFeature -Name {name} | Select-Object Name,InstallState"),
 }
 MAX_OUTPUT = 32 * 1024
@@ -61,16 +68,18 @@ def _now():
 
 def action_key(item):
     kind = item["action"]
-    param = ACTIONS[kind][1]
-    return kind if param in (None, "package") else f"{kind}:{item[param]}"
+    if kind == "wu_updates":
+        return f"wu_updates:{item['cve']}"
+    if kind == "windows_feature":
+        return f"windows_feature:{item['name']}"
+    return kind
 
 
 def validate_action(item):
     if not isinstance(item, dict) or item.get("action") not in ACTIONS:
         raise OperationError("Ação de coleta não permitida.")
-    param = ACTIONS[item["action"]][1]
-    allowed = {"action"} | ({param} if param else set())
-    if set(item) != allowed or (param and not PARAM[param].fullmatch(str(item[param]))):
+    params = ACTIONS[item["action"]][1]
+    if set(item) != {"action", *params} or any(not PARAM[p].fullmatch(str(item[p])) for p in params):
         raise OperationError("Parâmetros de coleta inválidos.")
     return dict(item)
 
@@ -78,8 +87,8 @@ def validate_action(item):
 def describe(item):
     """Exact missing datum and the manual read-only diagnostic that provides it."""
     label, script = LABELS[item["action"]]
-    values = {"package": item.get("package", ""), "kb": item.get("kb", ""), "kb_number": str(item.get("kb", ""))[2:],
-              "name": item.get("name", "")}
+    values = {"package": item.get("package", ""), "name": item.get("name", ""), "cve": item.get("cve", ""),
+              "kbs": item.get("kbs", "")}
     for key, value in values.items():
         label, script = label.replace("{" + key + "}", value), script.replace("{" + key + "}", value)
     return {"key": action_key(item), "missing": label, "diagnostic": script,
@@ -99,9 +108,10 @@ def plan_actions(context, assessment=None, requirement_checks=()):
     elif context.get("distribution") == "windows":
         if not usable or {"os_build", "architecture", "hotfixes"} & set(context.get("missing") or []):
             actions = [{"action": "windows_build"}, {"action": "windows_hotfixes"}]
-        kb = (assessment or {}).get("kb")
-        if kb and (context.get("channel") or {}).get(kb) is None and not (assessment or {}).get("installed"):
-            actions.append({"action": "wu_search", "kb": kb})
+        listed = [k for k in (assessment or {}).get("listed_kbs") or [] if PARAM["kbs"].fullmatch(k)][:10]
+        if listed and context.get("channel_updates") is None and not (assessment or {}).get("installed") \
+                and PARAM["cve"].fullmatch(str(context.get("cve") or "")):
+            actions.append({"action": "wu_updates", "cve": context["cve"], "kbs": ",".join(listed)})
         for check in requirement_checks:
             if check["action"] == "windows_feature":
                 actions.append({"action": "windows_feature", "name": check["name"]})
@@ -167,17 +177,50 @@ def request(store, project, cfg, secrets, installation, actions, actor, now=None
                "issued_at": int(now.timestamp()), "expires_at": int((now + expiry).timestamp())}
     try:
         argument = sign(payload, key)
-        client = wazuh((cfg.get("integrations") or {})["wazuh"], secrets)
-        client.login()
-        client.collect(agent, argument, windows=installation.get("distribution") == "windows")
-        state.update(state="pending", request_id=request_id)
-    except (OperationError, KeyError) as exc:
-        state.update(state="failed", reason=f"Falha ao solicitar a coleta ao agente: {exc}")
+    except OperationError as exc:
+        state.update(state="unavailable", reason=str(exc))
+        return state
+    # Persisted BEFORE dispatch: an agent answering while collect() is still running finds the request.
+    state.update(state="dispatching", request_id=request_id)
     record = dict(state, project=project, installation={k: installation.get(k) for k in (
         "package", "version", "architecture", "distribution", "release", "os_version")}, request_payload=payload)
     store.put(project, "collection_request", request_id, record, actor, "collection.requested")
     store.put(project, "collection_pending", pending_key, state, actor, "collection.requested")
-    return state
+    try:
+        client = wazuh((cfg.get("integrations") or {})["wazuh"], secrets)
+        client.login()
+        client.collect(agent, argument, windows=installation.get("distribution") == "windows")
+        outcome = {"state": "pending"}
+    except (OperationError, KeyError) as exc:
+        outcome = {"state": "failed", "reason": f"Falha ao solicitar a coleta ao agente: {exc}"}
+    return _settle(store, project, request_id, pending_key, outcome, actor)
+
+
+def _settle(store, project, request_id, pending_key, outcome, actor):
+    """dispatching → pending/failed, unless the agent already answered (received/rejected are final)."""
+    for _ in range(5):
+        current = store.get(project, "collection_request", request_id)
+        if current.get("state") != "dispatching":
+            break  # the answer arrived during dispatch: keep it
+        updated = {k: v for k, v in current.items() if k not in ("id", "project", "version", "updated_at")}
+        updated.update(outcome, project=project)
+        try:
+            store.put(project, "collection_request", request_id, updated, actor,
+                      "collection.dispatched" if outcome["state"] == "pending" else "collection.dispatch_failed",
+                      current["version"])
+            break
+        except OperationError:
+            continue  # concurrent change (the answer): re-read and decide again
+    final = store.get(project, "collection_request", request_id)
+    pending = {k: final.get(k) for k in ("agent_id", "finding_id", "actions", "requested_at", "expires_at", "missing",
+                                         "request_id", "state", "reason", "received_at")}
+    try:
+        current_pending = store.get(project, "collection_pending", pending_key)
+        if current_pending.get("request_id") == request_id and current_pending.get("state") != final.get("state"):
+            store.put(project, "collection_pending", pending_key, pending, actor, "collection." + final["state"])
+    except OperationError:
+        store.put(project, "collection_pending", pending_key, pending, actor, "collection." + final["state"])
+    return {k: v for k, v in pending.items() if v is not None}
 
 
 def _output(results, key):
@@ -211,13 +254,12 @@ def _windows(results, wanted):
             raise OperationError("Lista de hotfixes coletada em formato inválido.")
         parsed["hotfixes"] = sorted({str(i).upper() for i in items})
     for key in wanted:
-        if key.startswith("wu_search:"):
+        if key.startswith("wu_updates:"):
             text = _output(results, key)
             if text:
-                data = json.loads(text)
-                if not isinstance(data.get("offered"), bool):
-                    raise OperationError("Resultado da busca no Windows Update em formato inválido.")
-                parsed.setdefault("wu_offered", {})[key.split(":", 1)[1]] = data["offered"]
+                parsed["wu_updates"] = _wu_updates(json.loads(text), key.split(":", 1)[1])
+                offered = {f"KB{k}" for u in parsed["wu_updates"]["updates"] for k in u["kb_ids"]}
+                parsed["wu_offered"] = {kb: kb in offered for kb in parsed["wu_updates"]["kbs"]} | {kb: True for kb in offered}
         if key.startswith("windows_feature:"):
             text = _output(results, key)
             if text:
@@ -227,6 +269,29 @@ def _windows(results, wanted):
                     raise OperationError("Estado de recurso do Windows em formato inválido.")
                 parsed.setdefault("features", {})[key.split(":", 1)[1]] = state
     return parsed
+
+
+def _wu_updates(data, cve):
+    """Strict schema of the Windows Update metadata collected by the agent."""
+    if not isinstance(data, dict) or data.get("cve") != cve or not isinstance(data.get("updates"), list):
+        raise OperationError("Metadados do Windows Update em formato inválido.")
+    kbs = data.get("kbs") if isinstance(data.get("kbs"), list) else []
+    if any(not re.fullmatch(r"KB\d{6,8}", str(k)) for k in kbs) or len(data["updates"]) > MAX_UPDATES:
+        raise OperationError("Metadados do Windows Update em formato inválido.")
+    updates = []
+    for item in data["updates"]:
+        if not isinstance(item, dict) or not GUID.fullmatch(str(item.get("update_id") or "")):
+            raise OperationError("Atualização sem UpdateID válido nos metadados do Windows Update.")
+        lists = {}
+        for field, pattern in (("kb_ids", r"\d{6,8}"), ("cve_ids", r"CVE-\d{4}-\d{4,7}"), ("superseded_update_ids", GUID.pattern)):
+            values = item.get(field) or []
+            if not isinstance(values, list) or len(values) > 200 or any(not re.fullmatch(pattern, str(v)) for v in values):
+                raise OperationError(f"Campo {field} inválido nos metadados do Windows Update.")
+            lists[field] = [str(v) for v in values]
+        updates.append({"update_id": str(item["update_id"]).lower(), "title": str(item.get("title") or "")[:200],
+                        **{k: ([v.lower() for v in vals] if k == "superseded_update_ids" else vals) for k, vals in lists.items()},
+                        "is_downloaded": bool(item.get("is_downloaded")), "eula_accepted": bool(item.get("eula_accepted"))})
+    return {"cve": cve, "kbs": [str(k) for k in kbs], "updates": updates}
 
 
 def receive(store, project, agent_id, body, now=None):
@@ -242,7 +307,8 @@ def receive(store, project, agent_id, body, now=None):
         raise OperationError("Pedido de coleta desconhecido.", 404)
     if request_record.get("agent_id") != agent_id or request_record.get("project") != project:
         raise OperationError("Pedido de coleta de outro agente ou projeto.", 403)
-    if request_record.get("state") != "pending":
+    if request_record.get("state") not in ("pending", "dispatching"):
+        # received/rejected/failed: single use (replay protection); a failed dispatch is not trusted later.
         raise OperationError("Pedido de coleta já concluído ou não enviado.", 409)
     if now > dt.datetime.fromisoformat(request_record["expires_at"]):
         raise OperationError("Pedido de coleta expirado.", 409)
@@ -264,22 +330,37 @@ def receive(store, project, agent_id, body, now=None):
             record = diagnostics.build_import(outputs, installation, f"agent:{agent_id}", now)
             record.update(origin="agent", confidence="collected_by_agent")
     except (ValueError, OperationError) as exc:
-        request_record.update(state="failed", reason=f"Coleta recebida, mas recusada: {exc}")
-        store.put(project, "collection_request", body["request_id"], request_record, f"agent:{agent_id}", "collection.rejected")
+        _claim(store, project, request_record, f"agent:{agent_id}", "collection.rejected",
+               state="rejected", reason=f"Coleta recebida, mas recusada: {exc}")
         raise OperationError(f"Coleta recusada: {exc}", 409)
+    # Single use, even with concurrent uploads or a dispatcher finishing: compare-and-set on the request.
+    _claim(store, project, request_record, f"agent:{agent_id}", "collection.received",
+           state="received", received_at=now.isoformat(timespec="seconds"))
+    request_record = store.get(project, "collection_request", body["request_id"])
     record["request_id"] = body["request_id"]
     key = hashlib.sha256(f"diag:{agent_id}:{installation['finding_id']}".encode()).hexdigest()
     store.put(project, "diagnostic_import", key, record, f"agent:{agent_id}", "diagnostic.collected")
     store.put(project, "diagnostic_history",
               hashlib.sha256(f"diag:{record['revision']}:{record['imported_at']}:{agent_id}:{installation['finding_id']}".encode()).hexdigest(),
               record, f"agent:{agent_id}", "diagnostic.archived")
-    request_record.update(state="received", received_at=now.isoformat(timespec="seconds"))
-    store.put(project, "collection_request", body["request_id"], request_record, f"agent:{agent_id}", "collection.received")
     pending_key = hashlib.sha256(f"collect:{agent_id}:{installation['finding_id']}".encode()).hexdigest()
     store.put(project, "collection_pending", pending_key, {k: request_record.get(k) for k in (
         "agent_id", "finding_id", "actions", "requested_at", "expires_at", "missing", "request_id")} | {
         "state": "received", "received_at": request_record["received_at"]}, f"agent:{agent_id}", "collection.received")
     return {"status": "accepted", "request_id": body["request_id"]}
+
+
+def _claim(store, project, record, actor, action, **changes):
+    """Move a pending/dispatching request to a final state exactly once."""
+    data = {k: v for k, v in record.items() if k not in ("id", "project", "version", "updated_at")}
+    data.update(changes, project=project)
+    try:
+        store.put(project, "collection_request", record["id"], data, actor, action, record["version"])
+    except OperationError:
+        current = store.get(project, "collection_request", record["id"])
+        if current.get("state") not in ("pending", "dispatching"):
+            raise OperationError("Pedido de coleta já concluído.", 409)
+        return _claim(store, project, current, actor, action, **changes)
 
 
 def receive_upload(agent_id, body, store=None, config=None, now=None):
@@ -308,6 +389,6 @@ def pending_state(store, project, agent, finding_id, now=None):
     except OperationError:
         return None
     state = dict(state)
-    if state.get("state") == "pending" and now > dt.datetime.fromisoformat(state["expires_at"]):
+    if state.get("state") in ("pending", "dispatching") and now > dt.datetime.fromisoformat(state["expires_at"]):
         state.update(state="expired", reason="O agente não respondeu dentro do prazo (coleta automática indisponível?).")
     return state

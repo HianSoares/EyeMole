@@ -4,6 +4,11 @@
 
 ### Remediação automática (Windows e Linux)
 
+- Revisão do PR #19:
+  - pedido de coleta gravado antes do envio, com transições condicionais (resposta durante o envio aceita; received/rejected finais);
+  - KB escolhida por cadeia de supersedência comprovada (MSRC e metadados `wu_updates` do canal do ativo: UpdateID, CveIDs, SupersededUpdateIDs), com ciclo e conflito como incerteza;
+  - comando PowerShell reforçado: Administrador, reinício pendente, instalador ocupado, interação, licença com aceite explícito, download e instalação por ResultCode/HResult, sem reinício automático;
+  - wrapper com Sysnative e arquitetura nativa do sistema no coletor.
 - "Ver correção" inicia ou reutiliza a análise da instalação (`POST /platform/findings/<id>/analysis`, idempotente), com progresso por etapa e atualização automática; sem botões separados de pesquisa e explicação por IA no modal.
 - Primeira informação do modal: ação, versão/KB alvo, comando com Copiar, terminal, privilégio, reinício, motivo e fontes.
 - Windows: Microsoft Security Update Guide API v2 (por CVE); produto por build/arquitetura/servidor-cliente; KB e build corrigida; já instalada, build posterior, substituída e incompatível; comando PowerShell (Windows Update Agent API) por template, instalando só se o canal do ativo oferecer a KB; selo apenas com coleta da oferta.

@@ -137,7 +137,7 @@ def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, n
         _attach_diagnostic(context, diagnostic, validity, usable)
         context["revision"] = digest({k: context.get(k) for k in (
             "distribution", "binary_package", "installed_version", "product_name", "os_build", "architecture",
-            "installation_type", "hotfixes", "channel", "features")} | {
+            "installation_type", "hotfixes", "channel", "channel_updates", "features")} | {
             "guidance": plan.get("snapshot_revision"), "diagnostic": (diagnostic or {}).get("revision"),
             "diagnostic_status": (validity or {}).get("status")})
         return context
@@ -736,6 +736,7 @@ def primary(result):
             "target": alt.get("target_version"), "fixed_build": alt.get("fixed_build"), "command": alt.get("command"),
             "shell": alt.get("shell"), "terminal": alt.get("terminal"), "privilege": alt.get("privilege"),
             "reboot": alt.get("reboot"), "reason": alt.get("rationale"),
+            "supersedence_chain": alt.get("supersedence_chain"), "proof": alt.get("proof"), "update_id": alt.get("update_id"),
             "sources": [{"publisher": e.get("publisher"), "url": e.get("article_url") or e.get("url"),
                          "retrieved_at": e.get("retrieved_at")} for e in cited][:5]}
 

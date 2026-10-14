@@ -7,8 +7,10 @@
   eyemole-collect.cmd. No free commands: the request is HMAC-SHA256 signed by
   the EyeMole worker over the exact payload text, bound to this agent,
   short-lived and single-use. Only these actions run, with validated
-  parameters: windows_build (registry CurrentVersion), windows_hotfixes
-  (Get-HotFix), wu_search (Windows Update Agent search, read-only),
+  parameters: windows_build (registry CurrentVersion through the 64-bit view,
+  native OS architecture), windows_hotfixes (Get-HotFix), wu_updates (Windows
+  Update Agent search, read-only: UpdateID, KBs, CVE IDs, SupersededUpdateIDs of
+  the updates offered by the configured channel for the CVE and listed KBs),
   windows_feature (Get-WindowsFeature / Get-WindowsOptionalFeature).
   Outputs are uploaded with this agent's token to the URL configured locally.
   Nothing is installed or changed.
@@ -47,7 +49,7 @@ function Confirm-Request([string]$Argument, $Policy) {
         switch ([string]$item.action) {
             'windows_build' { }
             'windows_hotfixes' { }
-            'wu_search' { if ([string]$item.kb -notmatch '^KB\d{6,8}$') { throw 'parameters' } }
+            'wu_updates' { if ([string]$item.cve -notmatch '^CVE-\d{4}-\d{4,7}$' -or [string]$item.kbs -notmatch '^KB\d{6,8}(,KB\d{6,8}){0,9}$') { throw 'parameters' } }
             'windows_feature' { if ([string]$item.name -notmatch '^[A-Za-z0-9-]{1,64}$') { throw 'parameters' } }
             default { throw 'action' }
         }
@@ -55,23 +57,63 @@ function Confirm-Request([string]$Argument, $Policy) {
     return $payload
 }
 
+function Get-EyeMoleOSArchitecture {
+    # Native OS architecture, also from a 32-bit process on 64-bit Windows (WOW64) and on ARM64.
+    try {
+        $value = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+        if ($value) { return $value }
+    } catch { }
+    $registry = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', [Microsoft.Win32.RegistryView]::Registry64)
+    $key = $registry.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment')
+    $value = if ($key) { [string]$key.GetValue('PROCESSOR_ARCHITECTURE') } else { '' }
+    if ($value) { return $value }
+    if ($env:PROCESSOR_ARCHITEW6432) { return [string]$env:PROCESSOR_ARCHITEW6432 }
+    return [string]$env:PROCESSOR_ARCHITECTURE
+}
+
+function Get-EyeMoleWindowsBuild {
+    # 64-bit registry view: a 32-bit process would otherwise read the WOW6432Node copy.
+    $registry = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', [Microsoft.Win32.RegistryView]::Registry64)
+    $cv = $registry.OpenSubKey('SOFTWARE\Microsoft\Windows NT\CurrentVersion')
+    if (-not $cv) { throw 'registry' }
+    $process = if ([Environment]::Is64BitProcess) { 'X64' } else { 'X86' }
+    try { $process = [string][System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture } catch { }
+    return (@{ ProductName = [string]$cv.GetValue('ProductName'); EditionID = [string]$cv.GetValue('EditionID');
+               InstallationType = [string]$cv.GetValue('InstallationType'); CurrentBuild = [string]$cv.GetValue('CurrentBuild');
+               UBR = [int]$cv.GetValue('UBR'); Architecture = (Get-EyeMoleOSArchitecture);
+               ProcessArchitecture = $process; Is64BitProcess = [Environment]::Is64BitProcess } | ConvertTo-Json -Compress)
+}
+
+function Get-EyeMoleChannelUpdates($Item) {
+    $searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
+    $searcher.IncludePotentiallySupersededUpdates = $true
+    $all = @($searcher.Search("IsInstalled=0 and IsHidden=0 and Type='Software'").Updates)
+    $wanted = @(([string]$Item.kbs).Split(',') | ForEach-Object { $_.Substring(2) })
+    $cve = [string]$Item.cve
+    $covered = @{}
+    foreach ($u in $all) {
+        if ((@($u.KBArticleIDs) | Where-Object { $wanted -contains $_ }) -or (@($u.CveIDs) -contains $cve)) { $covered[[string]$u.Identity.UpdateID] = $u }
+    }
+    for ($round = 0; $round -lt 5; $round++) {  # successors reaching a listed update through SupersededUpdateIDs
+        foreach ($u in $all) {
+            $id = [string]$u.Identity.UpdateID
+            if (-not $covered.ContainsKey($id) -and (@($u.SupersededUpdateIDs) | Where-Object { $covered.ContainsKey([string]$_) })) { $covered[$id] = $u }
+        }
+    }
+    $updates = @($covered.Values | Select-Object -First 50 | ForEach-Object {
+        @{ update_id = [string]$_.Identity.UpdateID; title = [string]$_.Title; kb_ids = @($_.KBArticleIDs | ForEach-Object { [string]$_ });
+           cve_ids = @($_.CveIDs | ForEach-Object { [string]$_ }); superseded_update_ids = @($_.SupersededUpdateIDs | ForEach-Object { [string]$_ });
+           is_downloaded = [bool]$_.IsDownloaded; eula_accepted = [bool]$_.EulaAccepted } })
+    return (@{ cve = $cve; kbs = @(([string]$Item.kbs).Split(',')); updates = $updates } | ConvertTo-Json -Compress -Depth 5)
+}
+
 function Invoke-ReadOnlyAction($Item) {
     switch ([string]$Item.action) {
-        'windows_build' {
-            $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-            return (@{ ProductName = [string]$cv.ProductName; EditionID = [string]$cv.EditionID;
-                       InstallationType = [string]$cv.InstallationType; CurrentBuild = [string]$cv.CurrentBuild;
-                       UBR = [int]$cv.UBR; Architecture = [string]$env:PROCESSOR_ARCHITECTURE } | ConvertTo-Json -Compress)
-        }
+        'windows_build' { return (Get-EyeMoleWindowsBuild) }
         'windows_hotfixes' {
             return (ConvertTo-Json -Compress -InputObject @(Get-HotFix | ForEach-Object { [string]$_.HotFixID }))
         }
-        'wu_search' {
-            $number = ([string]$Item.kb).Substring(2)
-            $updates = @((New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software'").Updates |
-                         Where-Object { $_.KBArticleIDs -contains $number })
-            return (@{ kb = [string]$Item.kb; offered = ($updates.Count -gt 0) } | ConvertTo-Json -Compress)
-        }
+        'wu_updates' { return (Get-EyeMoleChannelUpdates $Item) }
         'windows_feature' {
             $name = [string]$Item.name
             if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
@@ -87,7 +129,7 @@ function Invoke-ReadOnlyAction($Item) {
 
 function Get-ActionKey($Item) {
     switch ([string]$Item.action) {
-        'wu_search' { return 'wu_search:' + [string]$Item.kb }
+        'wu_updates' { return 'wu_updates:' + [string]$Item.cve }
         'windows_feature' { return 'windows_feature:' + [string]$Item.name }
         default { return [string]$Item.action }
     }

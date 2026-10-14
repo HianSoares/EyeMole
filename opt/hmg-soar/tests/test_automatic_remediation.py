@@ -142,12 +142,19 @@ def _payload(argument):
     return base64.urlsafe_b64decode(packet["p"] + "=" * (-len(packet["p"]) % 4)).decode()
 
 
-def win_results(ubr=7919, hotfixes=("KB5005112", "KB5066586"), offered=True, feature="Installed", kb="KB5070883"):
+OFFERED_ID = "7f3c2a10-1b2c-4d5e-8f90-a1b2c3d4e5f6"
+
+
+def win_results(ubr=7919, hotfixes=("KB5005112", "KB5066586"), offered=True, feature="Installed", kb="KB5070883",
+                cve="CVE-2025-59287"):
     out = {"windows_build": {"ok": True, "output": json.dumps({"ProductName": "Windows Server 2019 Datacenter",
                                                                "EditionID": "ServerDatacenter", "InstallationType": "Server",
                                                                "CurrentBuild": "17763", "UBR": ubr, "Architecture": "AMD64"})},
            "windows_hotfixes": {"ok": True, "output": json.dumps(list(hotfixes))},
-           f"wu_search:{kb}": {"ok": True, "output": json.dumps({"kb": kb, "offered": offered})}}
+           f"wu_updates:{cve}": {"ok": True, "output": json.dumps({
+               "cve": cve, "kbs": [kb], "updates": [{"update_id": OFFERED_ID, "title": f"Atualização ({kb})",
+                                                     "kb_ids": [kb[2:]], "cve_ids": [], "superseded_update_ids": [],
+                                                     "is_downloaded": False, "eula_accepted": True}] if offered else []})}}
     if feature:
         out["windows_feature:UpdateServices"] = {"ok": True, "output": json.dumps({"Name": "UpdateServices",
                                                                                      "InstallState": feature})}
@@ -217,14 +224,14 @@ def test_windows_applicable_kb_collection_then_validated(env):
     assert result["classification"] == "requires_verification"  # channel offer not observed yet
     assert primary["target"] == "KB5070883" and primary["fixed_build"] == "10.0.17763.7922"
     assert primary["terminal"] == "PowerShell (Executar como administrador)" and primary["privilege"] == "Administrador local"
-    assert primary["reboot"].startswith("possível") and "$kb='5070883'" in primary["command"]
+    assert primary["reboot"].startswith("possível") and "$kb = '5070883'" in primary["command"]
     assert "Microsoft.Update.Session" in primary["command"] and primary["validated"] is False
     # Indispensable data missing → fixed read-only collection through the agent, signed and deduplicated.
     assert state["collection"]["state"] == "pending" and len(FakeWazuh.calls) == 1
     payload = json.loads(_payload(FakeWazuh.calls[0][1]))
     assert FakeWazuh.commands == ["!eyemole-collect-win"]
     assert payload["agent_id"] == "012" and {a["action"] for a in payload["actions"]} == {
-        "windows_build", "windows_hotfixes", "wu_search", "windows_feature"}
+        "windows_build", "windows_hotfixes", "wu_updates", "windows_feature"}
     requirement = result["exploitation_requirements"][0]
     assert requirement["status"] == "unknown" and "UpdateServices" in requirement["description"]
     # The agent answers; the analysis becomes stale and restarts on the next poll/opening.
@@ -507,9 +514,9 @@ def test_linux_receiver_runs_only_fixed_actions():
 def test_windows_receiver_verifies_the_same_signature():
     shell = shutil.which("pwsh") or shutil.which("powershell")
     script = ROOT / "agents" / "eyemole-collect.ps1"
-    good = signed([{"action": "windows_build"}, {"action": "wu_search", "kb": "KB5070883"}])
+    good = signed([{"action": "windows_build"}, {"action": "wu_updates", "cve": "CVE-2025-59287", "kbs": "KB5070883"}])
     tampered = signed([{"action": "windows_build"}], key="d" * 40)
-    injected = signed([{"action": "wu_search", "kb": "KB1; Remove-Item C:\\"}])
+    injected = signed([{"action": "wu_updates", "cve": "CVE-2025-59287", "kbs": "KB1; Remove-Item C:\\"}])
     command = (f". '{script}'; $p=[pscustomobject]@{{enabled=$true; agent_id='012'; hmac_key='{COLLECT_KEY}'}}; "
                f"$r=Confirm-Request '{good}' $p; Write-Output ('ok:' + $r.id + ':' + @($r.actions).Count); "
                f"foreach ($a in @('{tampered}','{injected}')) {{ try {{ Confirm-Request $a $p | Out-Null; 'accepted' }} "
