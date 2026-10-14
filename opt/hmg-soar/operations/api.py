@@ -105,6 +105,9 @@ def handle(handler, method, path):
                 result = service.finding_ai(project, parts[2])
             else:
                 result, status = service.queue_finding_ai(project, parts[2]), 202
+        elif len(parts) == 4 and parts[1] == "findings" and parts[3] == "analysis":
+            # "Ver correção": POST starts or reuses the automatic analysis (idempotent); GET reads it.
+            result = service.ensure_analysis(project, parts[2]) if method == "POST" else service.research_state(project, parts[2])
         elif len(parts) == 4 and parts[1] == "findings" and parts[3] == "research":
             # Research runs in the worker; the API only queues and reads results.
             if method == "GET":
@@ -149,7 +152,8 @@ def authorize_legacy(handler, path):
     if Path("/run/eyemole-maintenance").exists() and handler.command == "POST":
         handler._send_json(503, {"error": "Atualização em andamento."})
         return False
-    if path in {"/health", "/update-status"} or path.startswith("/sbom/"):
+    # Machine-to-machine endpoints authenticate the agent token themselves.
+    if path in {"/health", "/update-status"} or path.startswith(("/sbom/", "/agent-context/")):
         return True
     try:
         if legacy_allowed(load_config(), handler._get_remote_user()):

@@ -12,7 +12,7 @@ from remediation.versioning import compare_versions
 from .security import OperationError, project_config, PERMISSIONS
 from .store import now
 from .planning import engine_for, source_revision
-from . import ai as ai_support, ai_facts, diagnostics, research as research_support, research_sources
+from . import ai as ai_support, ai_facts, collection as collection_support, diagnostics, research as research_support, research_sources
 
 INVALIDATED_AI = ("Explicação gerada antes da verificação de consistência com o motor; invalidada e não exibida "
                   "(registro e auditoria preservados). Solicite novamente.")
@@ -435,17 +435,45 @@ class Operations:
             return out
         stored, reasons = self.current_research(project, cfg, row, agent, finding_id, plan, context)
         job = self.store.job_for(project, "research", self.research_object(cfg, agent, finding_id, context))
+        out["collection"] = collection_support.pending_state(self.store, project, agent, finding_id, research_support._now())
         if job and job["state"] in {"queued", "running"}:
             out["state"] = job["state"]
+            try:
+                out["progress"] = (json.loads(job.get("result") or "{}") or {}).get("progress") or job["state"]
+            except ValueError:
+                out["progress"] = job["state"]
         elif stored and not reasons:
             out.update(state="succeeded", result=stored)
         elif job and job["state"] in {"failed", "interrupted"}:
-            out.update(state="failed", error=job.get("error") or "Pesquisa não concluída.")
+            out.update(state="failed", error=job.get("error") or "Pesquisa não concluída.", failed_at=job.get("finished_at"))
         elif stored:
             # Outdated: reasons and provenance only; no proposal or command is shown as current.
             out.update(state="stale", stale_reasons=reasons, result={k: stored.get(k) for k in (
                 "generated_at", "classification", "classification_label", "sources")})
         return out
+
+    def ensure_analysis(self, project, finding_id):
+        """Opening "Ver correção": reuse a valid analysis or running job; otherwise start one (worker).
+
+        Idempotent and cheap: the job identity includes the installation context
+        and provider, so repeated openings never duplicate jobs or external
+        calls; a recent failure is not retried automatically.
+        """
+        state = self.research_state(project, finding_id)
+        if not state["enabled"] or state["state"] in {"queued", "running", "succeeded"}:
+            return dict(state, started=False)
+        cfg, row, agent, revision = self._installation(project, finding_id, "read")
+        try:
+            self.user.require("write", project, [agent])
+        except OperationError:
+            return dict(state, started=False, reason_not_started="Seu papel permite consultar, mas não iniciar a análise.")
+        if state["state"] == "failed" and state.get("failed_at"):
+            retry = dt.timedelta(minutes=int((research_settings(cfg) or {}).get("retry_after_failure_minutes", 10)))
+            if research_support._now() - dt.datetime.fromisoformat(state["failed_at"]) < retry:
+                return dict(state, started=False, retry_after=(dt.datetime.fromisoformat(state["failed_at"]) + retry)
+                            .isoformat(timespec="seconds"))
+        self.queue_research(project, finding_id)
+        return dict(self.research_state(project, finding_id), started=True)
 
     def research_object(self, cfg, agent, finding_id, context):
         return f"research:{agent}:{finding_id}:{context['revision'][:16]}:{self.research_provider(cfg)}"

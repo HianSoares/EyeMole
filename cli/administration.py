@@ -390,14 +390,18 @@ def configure_ai(project, provider="nvidia", model=None, enable=None, timeout=No
             "secret": (projects[project].get("secret_prefix", "") + defaults["secret"])}
 
 
-RESEARCH_DEFAULTS = {"sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"],
+RESEARCH_DEFAULTS = {"sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory",
+                                 "msrc_security_update_guide"],
                      "cache_ttl_hours": 6, "max_stale_hours": 72, "timeout_seconds": 20, "budget_seconds": 90,
                      "refresh_inventory": True, "evidence_max_age_hours": 24, "diagnostics_max_age_hours": 72,
                      "authorized_pockets": ["", "-security", "-updates"], "extra_authorized_suites": []}
 
 
-def configure_research(project, enable, path=Path("/etc/hmg-soar/platform.json")):
-    """Enable/disable remediation research for one project (public sources only; no secrets)."""
+def configure_research(project, enable, path=Path("/etc/hmg-soar/platform.json"), agent_collection=None):
+    """Enable/disable remediation research (public sources) and, optionally, the read-only agent collection.
+
+    Enabling adds sources supported by newer versions to an existing list. No secret is written.
+    """
     data = json.loads(path.read_text())
     projects = data.get("projects", {})
     if project not in projects or not isinstance(projects[project], dict):
@@ -405,9 +409,16 @@ def configure_research(project, enable, path=Path("/etc/hmg-soar/platform.json")
     integrations = projects[project].setdefault("integrations", {})
     block = dict(RESEARCH_DEFAULTS, **(integrations.get("research") or {}))
     block["enabled"] = bool(enable)
+    if enable:
+        block["sources"] = list(dict.fromkeys(list(block.get("sources") or []) + RESEARCH_DEFAULTS["sources"]))
     integrations["research"] = block
+    if agent_collection is not None:
+        collection = dict({"expiry_minutes": 10}, **(integrations.get("collection") or {}))
+        collection["enabled"] = bool(agent_collection)
+        integrations["collection"] = collection
     _write_platform(path, data)
-    return {"project": project, "enabled": block["enabled"], "sources": block["sources"]}
+    return {"project": project, "enabled": block["enabled"], "sources": block["sources"],
+            "agent_collection": bool((integrations.get("collection") or {}).get("enabled"))}
 
 
 def cleanup(config=None, apply=False):

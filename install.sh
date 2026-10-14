@@ -708,6 +708,26 @@ location ^~ /soar/ {
     add_header Cache-Control "no-cache, no-store, must-revalidate" always;
 }
 
+location ^~ /soar-api/agent-context/ {
+    # Coleta somente leitura enviada pelo agente: autenticação própria (Bearer token do agente).
+    auth_basic off;
+
+    limit_except POST {
+        deny all;
+    }
+
+    client_max_body_size 256k;
+
+    proxy_pass http://127.0.0.1:8765/soar-api/agent-context/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Authorization \$http_authorization;
+    proxy_set_header X-Remote-User "";
+}
+
 location ^~ /soar-api/sbom/ {
     # Endpoint machine-to-machine: autenticação própria via Authorization: Bearer <token>.
     # Não usar Basic Auth nem X-Remote-User humano aqui.

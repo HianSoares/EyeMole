@@ -404,7 +404,7 @@ def ai_check(project: str) -> int:
 def research_check(project: str, cve: str, distribution: str) -> int:
     """Public-source access check as eyemole-worker (same sandbox and cache as the worker)."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", project) or not re.fullmatch(r"CVE-\d{4}-\d{4,7}", cve) \
-            or distribution not in {"debian", "ubuntu"}:
+            or distribution not in {"debian", "ubuntu", "windows"}:
         raise UpdateError("Projeto, CVE ou distribuição inválidos.")
     return run_as_worker(["operations.research_check", "--project", project, "--cve", cve,
                           "--distribution", distribution], writable=["/var/lib/eyemole/platform"])
@@ -486,10 +486,12 @@ def main(argv=None) -> int:
     research_toggle = research_configure.add_mutually_exclusive_group(required=True)
     research_toggle.add_argument("--enable", dest="research_enable", action="store_const", const=True)
     research_toggle.add_argument("--disable", dest="research_enable", action="store_const", const=False)
+    research_configure.add_argument("--agent-collection", choices=["on", "off"],
+                                    help="Coleta somente leitura pelo agente (exige Wazuh, receptor e EYEMOLE_COLLECTOR_KEYS)")
     research_check_parser = research_sub.add_parser("check", help="Testar acesso às fontes oficiais (requer sudo)")
     research_check_parser.add_argument("--project", required=True)
     research_check_parser.add_argument("--cve", required=True)
-    research_check_parser.add_argument("--distribution", required=True, choices=["debian", "ubuntu"])
+    research_check_parser.add_argument("--distribution", required=True, choices=["debian", "ubuntu", "windows"])
     record = sub.add_parser("record-install", help="Uso interno do instalador")
     record.add_argument("repo", type=Path)
     record.add_argument("--state-file", type=Path, default=STATE_FILE)
@@ -547,8 +549,9 @@ def main(argv=None) -> int:
                 raise UpdateError("Use sudo eyemole research " + args.research_command + ".")
             if args.research_command == "configure":
                 with update_lock():
-                    print(json.dumps(administration().configure_research(args.project, args.research_enable),
-                                     ensure_ascii=False))
+                    collection = None if args.agent_collection is None else args.agent_collection == "on"
+                    print(json.dumps(administration().configure_research(args.project, args.research_enable,
+                                                                         agent_collection=collection), ensure_ascii=False))
                 return 0
             return research_check(args.project, args.cve, args.distribution)
         if args.command == "rollback":
