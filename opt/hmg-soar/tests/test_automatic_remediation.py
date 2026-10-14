@@ -514,9 +514,9 @@ def test_windows_receiver_verifies_the_same_signature():
                f"$r=Confirm-Request '{good}' $p; Write-Output ('ok:' + $r.id + ':' + @($r.actions).Count); "
                f"foreach ($a in @('{tampered}','{injected}')) {{ try {{ Confirm-Request $a $p | Out-Null; 'accepted' }} "
                "catch { 'rejected:' + $_.Exception.Message } }")
-    output = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", command], capture_output=True, text=True,
-                            timeout=120).stdout.split()
-    assert output == ["ok:" + "a" * 32 + ":2", "rejected:signature", "rejected:parameters"]
+    done = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", command], capture_output=True, text=True,
+                          timeout=120)
+    assert done.stdout.split() == ["ok:" + "a" * 32 + ":2", "rejected:signature", "rejected:parameters"], done.stderr
 
 
 def test_windows_receiver_has_no_free_execution():

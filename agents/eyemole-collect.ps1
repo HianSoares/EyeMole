@@ -14,8 +14,6 @@
   Nothing is installed or changed.
 #>
 $ErrorActionPreference = 'Stop'
-$PolicyPath = Join-Path $env:ProgramData 'EyeMole\collector.json'
-$StateDir = Join-Path $env:ProgramData 'EyeMole\collector-state'
 
 function ConvertFrom-B64Url([string]$Text) {
     if ($Text -notmatch '^[A-Za-z0-9_-]{1,16000}$') { throw 'encoding' }
@@ -99,6 +97,8 @@ function Get-ActionKey($Item) {
 if ($MyInvocation.InvocationName -eq '.') { return }
 
 try {
+    $PolicyPath = Join-Path $env:ProgramData 'EyeMole\collector.json'
+    $StateDir = Join-Path $env:ProgramData 'EyeMole\collector-state'
     $policy = Get-Content -LiteralPath $PolicyPath -Raw | ConvertFrom-Json
     $message = [Console]::In.ReadLine() | ConvertFrom-Json
     if ($message.command -ne 'add') { exit 0 }
