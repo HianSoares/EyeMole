@@ -85,7 +85,7 @@ class Fetcher:
 
     HOSTS = {"security-tracker.debian.org", "ubuntu.com", "api.github.com"}
 
-    def __init__(self, settings=None, session=None, clock=_now):
+    def __init__(self, settings=None, session=None, clock=None):
         settings = settings or {}
         self.cache_dir = Path(settings.get("cache_dir") or DEFAULT_CACHE_DIR)
         self.ttl = dt.timedelta(hours=min(max(float(settings.get("cache_ttl_hours", 6)), 0.25), 168))
@@ -94,7 +94,7 @@ class Fetcher:
         self.timeout = min(max(int(settings.get("timeout_seconds", 20)), 5), 60)
         self.budget = min(max(int(settings.get("budget_seconds", 90)), 15), 300)
         self.session = session or new_session()
-        self.clock = clock
+        self.clock = clock or (lambda: _now())  # resolved at call time (controllable in tests)
         self.started = time.monotonic()
 
     def _path(self, url):
@@ -176,7 +176,8 @@ class Fetcher:
 
 def _evidence(source, publisher, fetched, eid, kind, excerpt, **scope):
     item = {"id": eid, "source": source, "publisher": publisher, "url": fetched["url"], "kind": kind,
-            "retrieved_at": fetched["retrieved_at"], "cached": bool(fetched.get("cached")),
+            "retrieved_at": fetched["retrieved_at"], "checked_at": fetched.get("checked_at") or fetched["retrieved_at"],
+            "cached": bool(fetched.get("cached")),
             "stale": bool(fetched.get("stale")), "content_sha256": fetched["content_sha256"],
             "excerpt": _text(excerpt)}
     item.update({k: v for k, v in scope.items() if v not in (None, "", [])})
@@ -395,7 +396,7 @@ SOURCES = {
 }
 
 
-def collect(cve, distribution, settings=None, session=None, clock=_now):
+def collect(cve, distribution, settings=None, session=None, clock=None):
     """Query the distribution's official tracker, then upstream advisories it references.
 
     Returns {"sources": [{source, available, found, url, error?...}], "evidence": [...]}.

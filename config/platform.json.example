@@ -31,7 +31,11 @@
           "max_stale_hours": 72,
           "timeout_seconds": 20,
           "budget_seconds": 90,
-          "refresh_inventory": true
+          "refresh_inventory": true,
+          "evidence_max_age_hours": 24,
+          "diagnostics_max_age_hours": 72,
+          "authorized_pockets": ["", "-security", "-updates"],
+          "extra_authorized_suites": []
         },
         "kiro": {
           "enabled": false,

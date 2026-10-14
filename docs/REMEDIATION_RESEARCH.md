@@ -18,7 +18,7 @@ ativo; a execução continua dependendo do fluxo de aprovação da campanha.
 
 | Categoria | Quando |
 |---|---|
-| Correção validada para a instalação | A distribuição publicou a versão corrigida para a release do ativo. O pacote fonte da instalação foi verificado. A Candidate observada no repositório do ativo é igual ou posterior à correção. Não há evidência conflitante nem servida de cache antigo. O comando vem de template. |
+| Correção validada para a instalação | A distribuição publicou a versão corrigida para a release do ativo. O pacote fonte da instalação foi verificado. A Candidate observada é igual ou posterior à correção **e vem só de suítes autorizadas da release** (ver abaixo). Diagnóstico válido (não expirado, sem conflito). Evidências não conflitantes, nem antigas, nem expiradas. O comando vem de template. |
 | Proposta que exige verificação ou revisão | Existe correção da distribuição, mas falta confirmar algo: Candidate não observada ou anterior à correção, associação binário→fonte não verificada, evidências divergentes ou antigas, ou a fonte diz que a release não é afetada. |
 | Mitigação temporária | Não há correção para a release, mas há mitigação publicada pela fonte oficial. |
 | Correção publicada pelo projeto original, sem confirmação para a distribuição | Correção upstream ou em outra release (ex.: sid/forky), sem pacote corrigido para a release do ativo. |
@@ -83,8 +83,56 @@ pelo EyeMole"):
 
 O analista cola a saída e informa a data da coleta. O backend:
 - interpreta a saída com parsers estritos (apt em inglês ou português);
-- recusa saída de outra versão ou arquitetura;
-- grava o resultado vinculado à instalação, com quem importou, quando e a confiança `imported_by_analyst`. A saída bruta fica só no servidor.
+- **recusa** dados que não são desta instalação ou estão incompletos:
+  - outro pacote, versão instalada ou arquitetura (no `dpkg-query` ou nas linhas de origem do `apt-cache policy`);
+  - `Installed: (none)`;
+  - campos Installed/Candidate ausentes;
+  - versão marcada com `***` diferente de Installed;
+  - Candidate fora da tabela de versões;
+  - `/etc/os-release` sem `ID` e versão;
+- **guarda como conflito**, sem usar para validar e mostrando na interface, um `/etc/os-release` de outra distribuição, release ou versão. Um conflito nunca redefine o contexto do ativo;
+- grava o resultado vinculado à instalação, com quem importou, quando e a confiança `imported_by_analyst`. A saída bruta fica só no servidor;
+- **expira** o diagnóstico após `diagnostics_max_age_hours` (padrão 72 h, contados de `collected_at`). Diagnósticos expirados ou em conflito são mantidos como histórico (`diagnostic_history` e auditoria `diagnostic.imported`), e a interface pede nova coleta.
+
+**Revalidação a cada uso.** O diagnóstico guardado é revalidado sem rede sempre que é usado (pesquisa, estado na
+interface, fatos da explicação). Os conflitos gravados servem só como histórico:
+- identidade: pacote, versão instalada e arquitetura comparados com a instalação atual;
+- estrutura: `apt-cache policy` com `***` coerente, Candidate na tabela e arquiteturas das origens;
+- coerência: `/etc/os-release` comparado com o contexto **atual** do ativo (inventário Wazuh ou versão do sistema).
+
+Estados: `valid`, `mismatch` (não é desta instalação), `conflict` (contexto do ativo mudou ou diverge),
+`insufficient` (registro antigo sem dados para revalidar, ex.: policy sem arquiteturas) e `expired`. Só `valid`
+alimenta release, pacote fonte, Candidate, classificação, comandos e fatos da explicação. Os demais ficam como
+histórico, com motivos na interface e pedido de nova coleta. Registros importados antes destas validações passam
+pelas mesmas regras; a ausência do campo `conflicts` não os torna válidos.
+
+### Origem da Candidate
+
+A versão sozinha nunca valida a correção. **Todas** as suítes que oferecem a
+Candidate precisam estar autorizadas para a release do ativo:
+
+| Escopo | Suítes autorizadas |
+|---|---|
+| Release (padrão) | `<release>` + `authorized_pockets` (padrão: `""`, `-security`, `-updates`, ex.: `trixie`, `trixie-security`, `trixie-updates`) |
+| Backports (pacote instalado de `<release>-backports` e correção publicada para o backports) | Somente `<release>-backports` |
+| Explícitas do administrador | `extra_authorized_suites` (ex.: nome de suíte de um mirror interno) |
+
+O resultado deixa de ser "correção validada" e o comando fixado não é gerado quando a Candidate vem de:
+- sid/unstable ou forky/testing;
+- outra release ou distribuição (ex.: `noble-security`);
+- pocket não autorizado (ex.: `-proposed-updates`);
+- backports fora do seu escopo;
+- origem desconhecida (sem suíte).
+
+Nesses casos o resultado é "proposta que exige verificação", e a pendência explica a origem. Repositórios configurados como `stable`/`testing`, sem o codinome, também não são autorizados, porque o nome muda com o tempo; use o codinome ou adicione a suíte em `extra_authorized_suites`.
+
+### Validade da classificação
+
+Cada resultado tem `valid_until`, que é o menor entre:
+- a última confirmação de cada evidência (`checked_at`) + `evidence_max_age_hours` (padrão 24 h);
+- a coleta do diagnóstico usado + `diagnostics_max_age_hours`.
+
+Passado esse instante, a API (sem acessar a rede) mostra a pesquisa como desatualizada, sem classificação atual, proposta, comando ou selo, e os fatos deixam de alimentar a explicação. A atualização é feita pelo worker numa nova pesquisa.
 
 O inventário Wazuh, quando a integração está habilitada, é atualizado (somente
 leitura) no início da pesquisa e passa a guardar o pacote fonte de cada binário.
@@ -172,8 +220,13 @@ Bloco em `/etc/hmg-soar/platform.json`:
 ```json
 "research": {"enabled": true, "sources": ["debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"],
              "cache_ttl_hours": 6, "max_stale_hours": 72, "timeout_seconds": 20, "budget_seconds": 90,
-             "refresh_inventory": true}
+             "refresh_inventory": true, "evidence_max_age_hours": 24, "diagnostics_max_age_hours": 72,
+             "authorized_pockets": ["", "-security", "-updates"], "extra_authorized_suites": []}
 ```
+
+O contrato da pesquisa está na versão 2: resultados classificados pelas regras
+anteriores aparecem como desatualizados (registro e auditoria preservados) até nova
+pesquisa. O contrato de fatos da explicação passou para a versão 4.
 
 A proposta por IA usa o provedor de `integrations.ai` (NVIDIA). Sem IA, a pesquisa
 entrega o resultado do motor e das fontes.

@@ -270,14 +270,14 @@ def research_finding(store, service, project, cfg, job, payload, secrets, sessio
         if row is None or str(row.get("agent_id")) != agent:
             raise OperationError("Instância não está mais no snapshot atual.", 409)
         plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        _, _, context = service.research_inputs(project, row, agent, finding_id, plan)
+        _, _, context = service.research_inputs(project, row, agent, finding_id, plan, cfg)
         return revision, row, context
 
     revision, row, context = state()
     if revision != payload["snapshot_revision"]:
         raise OperationError("Snapshot mudou desde o pedido; solicite a pesquisa novamente.", 409)
     collection = research_sources.collect(row.get("cve"), context["distribution"], research_cfg, session=session)
-    assessment = research.assess(context, collection)
+    assessment = research.assess(context, collection, research_cfg, research._now())
     proposal, ai_state = None, {"state": "disabled"}
     status = ai.public_status(cfg)
     if status.get("enabled") and status.get("provider") != "kiro":

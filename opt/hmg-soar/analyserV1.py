@@ -15148,8 +15148,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         'Versão corrigida upstream: ' + ((assessment.upstream_fixed_versions || []).map(u => u.version).join(', ') || 'não informada'),
         'Candidate no repositório do ativo: ' + (ctx.repository && ctx.repository.candidate_version
           ? ctx.repository.candidate_version + ' (' + researchOrigin(ctx.repository) + '; ' + (ctx.repository.candidate_suites || []).join(', ') + ')'
-          : 'não observada (importe o apt-cache policy)')
+          : 'não observada (importe o apt-cache policy)'),
+        'Origem da Candidate: ' + ({ authorized: 'autorizada para a release', unauthorized: 'NÃO autorizada para a release',
+          unknown: 'desconhecida' }[assessment.candidate_origin] || 'não avaliada')
+          + ((assessment.authorized_suites || []).length ? ' (suítes autorizadas: ' + assessment.authorized_suites.join(', ') + ')' : ''),
+        'Classificação válida até: ' + (r.valid_until || 'não informado')
       ];
+      if (ctx.diagnostic && !ctx.diagnostic.used) {
+        body.appendChild(researchEl('strong', 'Diagnóstico importado não usado (' + ctx.diagnostic.status + '): ' + (ctx.diagnostic.reasons || []).join(' '),
+          'color: #f87171;'));
+      }
       body.appendChild(researchList(facts));
       if ((assessment.notes || []).length) { body.appendChild(researchEl('span', 'Observações do motor:')); body.appendChild(researchList(assessment.notes)); }
       const labels = {};
@@ -15220,9 +15228,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       commands.replaceChildren();
       (data.available_diagnostics || []).forEach(d => commands.appendChild(researchEl('li', d.label + ': ' + d.script + ' (não executado pelo EyeMole)')));
       const diag = data.diagnostic;
-      document.getElementById('guidance-diag-status').textContent = diag
-        ? 'Diagnóstico importado por ' + diag.imported_by + ' (coletado em ' + diag.collected_at + '; confiança: importado pelo analista).'
-        : 'Nenhum diagnóstico importado: a Candidate e o pacote fonte não foram observados pelo EyeMole.';
+      const diagStatus = document.getElementById('guidance-diag-status');
+      diagStatus.replaceChildren();
+      if (diag) {
+        const validity = diag.validity || {};
+        const label = { valid: 'válido até ' + validity.expires_at, expired: 'EXPIRADO — mantido só como histórico',
+                        conflict: 'EM CONFLITO com o contexto atual do ativo — não usado para validar',
+                        mismatch: 'NÃO CORRESPONDE a esta instalação — mantido só como histórico',
+                        insufficient: 'DADOS INSUFICIENTES para revalidar — mantido só como histórico' }[validity.status] || 'estado desconhecido';
+        diagStatus.appendChild(researchEl('div', 'Diagnóstico importado por ' + diag.imported_by + ' (coletado em ' + diag.collected_at
+          + '; confiança: importado pelo analista; ' + label + ').',
+          validity.status === 'valid' ? '' : 'color: #f87171; font-weight: 600;'));
+        if ((validity.reasons || []).length) diagStatus.appendChild(researchList(validity.reasons));
+      } else {
+        diagStatus.textContent = 'Nenhum diagnóstico importado: a Candidate e o pacote fonte não foram observados pelo EyeMole.';
+      }
       if (!data.enabled) { state.textContent = 'Pesquisa de correção indisponível: ' + (data.reason || 'desabilitada.'); return; }
       if (data.state === 'queued' || data.state === 'running') {
         state.textContent = data.state === 'queued' ? 'Pesquisa na fila...' : 'Pesquisando fontes oficiais...';
