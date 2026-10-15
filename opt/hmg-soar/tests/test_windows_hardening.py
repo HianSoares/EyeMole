@@ -11,8 +11,10 @@ PowerShell tests run with simulated COM objects (Windows PowerShell or pwsh). Te
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -86,6 +88,110 @@ def test_dispatch_failure_marks_only_unanswered_requests(env, monkeypatch):
         collection.receive_upload("012", {"request_id": request_id, "agent_id": "012",
                                           "collected_at": "2026-10-14T10:00:00+00:00", "results": win_results()},
                                   store=service.store, config=cfg)
+
+
+def _agent_body(request_id, agent="012"):
+    return {"request_id": request_id, "agent_id": agent, "collected_at": "2026-10-14T10:00:00+00:00",
+            "results": win_results()}
+
+
+def test_upload_between_settle_and_public_state_sync_keeps_final_state(env, monkeypatch):
+    """Real SQLite, controlled interleaving: the upload arrives right after the dispatcher moved the request
+    to pending and before it synchronizes the public state (collection_pending)."""
+    service, cfg, ids = env
+    store, original_get, main = service.store, service.store.get, threading.current_thread()
+    fired, upload, seen = threading.Event(), {}, {}
+
+    def answer(request_id):
+        try:
+            upload["result"] = collection.receive_upload("012", _agent_body(request_id), store=store, config=cfg)
+        except Exception as exc:  # noqa: BLE001 - reported by the assertions
+            upload["result"] = exc
+
+    def get(project, kind, identifier, conn=None):
+        if (threading.current_thread() is main and kind == "collection_pending" and seen.get("request_id")
+                and not fired.is_set()):
+            # The dispatcher already moved the request to pending and now synchronizes the public state:
+            # the agent answers exactly here.
+            fired.set()
+            upload["thread"] = threading.Thread(target=answer, args=(seen["request_id"],))
+            upload["thread"].start()
+            upload["thread"].join(2)  # without serialization the upload completes here, before the sync
+        record = original_get(project, kind, identifier, conn)
+        if threading.current_thread() is main and kind == "collection_request" and record.get("state") == "pending":
+            seen["request_id"] = identifier
+        return record
+
+    monkeypatch.setattr(store, "get", get)
+    open_modal(service, ids["012"])
+    work(service, cfg, MSRC)
+    assert fired.is_set()
+    upload["thread"].join(30)
+    monkeypatch.setattr(store, "get", original_get)
+    assert isinstance(upload["result"], dict) and upload["result"]["status"] == "accepted", upload["result"]
+    request_id = json.loads(_payload(FakeWazuh.calls[-1][1]))["id"]
+    assert store.get("hmg", "collection_request", request_id)["state"] == "received"
+    pending = [r for r in store.list("hmg", "collection_pending") if r.get("request_id") == request_id]
+    assert [r["state"] for r in pending] == ["received"]  # never regressed to pending
+    assert service.research_state("hmg", ids["012"])["collection"]["state"] == "received"
+    diagnostic = [d for d in store.list("hmg", "diagnostic_import") if d.get("request_id") == request_id]
+    assert len(diagnostic) == 1
+
+
+def test_public_state_follows_the_canonical_request(env):
+    """Even a stale public record cannot show a final request as pending."""
+    service, cfg, ids = env
+    open_modal(service, ids["012"])
+    work(service, cfg, MSRC)
+    request_id = json.loads(_payload(FakeWazuh.calls[-1][1]))["id"]
+    stale = [r for r in service.store.list("hmg", "collection_pending") if r.get("request_id") == request_id][0]
+    assert collection.receive_upload("012", _agent_body(request_id), store=service.store, config=cfg)["status"] == "accepted"
+    service.store.put("hmg", "collection_pending", stale["id"], {k: v for k, v in stale.items() if k not in (
+        "id", "project", "version", "updated_at")}, "test", "test.stale")  # forced stale mirror
+    assert service.research_state("hmg", ids["012"])["collection"]["state"] == "received"
+
+
+def test_answer_to_replaced_request_does_not_take_over_the_newer_public_state(env):
+    service, cfg, ids = env
+    project_cfg = cfg["projects"]["hmg"]
+    installation = {"agent_id": "012", "finding_id": ids["012"], "distribution": "windows", "package": "Windows",
+                    "version": "10.0.17763.7919", "os_version": "10.0.17763.7919", "architecture": "x64"}
+    basic = [{"action": "windows_build"}, {"action": "windows_hotfixes"}]
+    first = collection.request(service.store, "hmg", project_cfg, SECRETS, installation, basic, "test")
+    second = collection.request(service.store, "hmg", project_cfg, SECRETS, installation, basic + [
+        {"action": "wu_updates", "cve": "CVE-2025-59287", "kbs": "KB5070883"}], "test")
+    assert first["request_id"] != second["request_id"] and second["state"] == "pending"
+    results = {k: v for k, v in win_results().items() if k in ("windows_build", "windows_hotfixes")}
+    body = dict(_agent_body(first["request_id"]), results=results)
+    assert collection.receive_upload("012", body, store=service.store, config=cfg)["status"] == "accepted"
+    public = collection.pending_state(service.store, "hmg", "012", ids["012"])
+    assert public["request_id"] == second["request_id"] and public["state"] == "pending"
+
+
+def test_diagnostic_and_request_completion_are_atomic(env, monkeypatch):
+    """A failure while persisting the diagnostic leaves the request open (no received request without diagnostic)."""
+    service, cfg, ids = env
+    open_modal(service, ids["012"])
+    work(service, cfg, MSRC)
+    request_id = json.loads(_payload(FakeWazuh.calls[-1][1]))["id"]
+    store, original_put = service.store, service.store.put
+
+    def put(project, kind, *args, **kwargs):
+        if kind == "diagnostic_history":
+            raise sqlite3.OperationalError("database or disk is full")
+        return original_put(project, kind, *args, **kwargs)
+
+    monkeypatch.setattr(store, "put", put)
+    with pytest.raises(sqlite3.OperationalError):
+        collection.receive_upload("012", _agent_body(request_id), store=store, config=cfg)
+    monkeypatch.setattr(store, "put", original_put)
+    assert store.get("hmg", "collection_request", request_id)["state"] == "pending"
+    assert not [d for d in store.list("hmg", "diagnostic_import") if d.get("request_id") == request_id]
+    assert service.research_state("hmg", ids["012"])["collection"]["state"] == "pending"
+    # The agent (or a retry) can still deliver; afterwards everything is final and consistent.
+    assert collection.receive_upload("012", _agent_body(request_id), store=store, config=cfg)["status"] == "accepted"
+    assert store.get("hmg", "collection_request", request_id)["state"] == "received"
+    assert [d["request_id"] for d in store.list("hmg", "diagnostic_import")] == [request_id]
 
 
 # ----------------------------------------------------------------------
@@ -173,6 +279,36 @@ def test_supersedence_cycle_is_uncertain():
 def test_true_conflict_between_unrelated_offered_updates():
     rows = [kb_row("KB5010001", "10.0.17763.7100"), kb_row("KB5050005", "10.0.17763.7400")]
     result = assess(rows, [wu("KB5010001", GUID["A"]), wu("KB5050005", GUID["F"])])
+    assert result.get("conflict") and result["classification"] == "requires_verification"
+    assert not any(a.get("validated") for a in result["alternatives"])
+
+
+MSRC_CHAIN = [kb_row("KB5010001", "10.0.17763.7100"),
+              kb_row("KB5020002", "10.0.17763.7200", supersedes="KB5010001"),
+              kb_row("KB5030003", "10.0.17763.7300", supersedes="KB5020002")]
+
+
+@pytest.mark.parametrize("offered", [
+    ["A", "C"], ["C", "A"],  # intermediate KB5020002 not offered by the channel
+    ["A", "B", "C"],         # whole chain offered
+])
+def test_msrc_transitive_supersedence_selects_the_latest_offered(offered):
+    kbs = {"A": "KB5010001", "B": "KB5020002", "C": "KB5030003"}
+    result = assess(MSRC_CHAIN, [wu(kbs[k], GUID[k]) for k in offered])
+    assert result["kb"] == "KB5030003" and not result.get("conflict"), result.get("pending")
+    assert result["classification"] == "validated_fix" and result["update_id"] == GUID["C"]
+    assert result["supersedence_chain"] == ["KB5030003", "KB5020002", "KB5010001"]
+    assert result["fixed_build"] == "10.0.17763.7300"
+
+
+def test_msrc_transitive_cycle_and_unrelated_update_stay_uncertain():
+    cycle = [kb_row("KB5010001", "10.0.17763.7100", supersedes="KB5030003"),
+             kb_row("KB5020002", "10.0.17763.7200", supersedes="KB5010001"),
+             kb_row("KB5030003", "10.0.17763.7300", supersedes="KB5020002")]
+    result = assess(cycle, [wu("KB5010001", GUID["A"]), wu("KB5030003", GUID["C"])])
+    assert result.get("conflict") and result["classification"] == "requires_verification"
+    unrelated = MSRC_CHAIN + [kb_row("KB5050005", "10.0.17763.7400")]  # no proven relation to the chain
+    result = assess(unrelated, [wu("KB5010001", GUID["A"]), wu("KB5030003", GUID["C"]), wu("KB5050005", GUID["F"])])
     assert result.get("conflict") and result["classification"] == "requires_verification"
     assert not any(a.get("validated") for a in result["alternatives"])
 

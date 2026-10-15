@@ -71,7 +71,7 @@ ativo. Sem atualização da distribuição, a recomendação é a mitigação of
 
 - **Produto:** casado pelo ramo de build (`10.0.<build>`), servidor ou cliente, arquitetura e Server Core quando conhecido (coleta > inventário > snapshot). Se a Microsoft não lista o produto ou a arquitetura do ativo, nada é recomendado e as notas indicam a incompatibilidade.
 - **KB e supersedência:** a atualização é escolhida por cadeia de supersedência **comprovada**, nunca pelo número da KB ou por ordem textual. Provas aceitas:
-  - a listagem da Microsoft para o produto e a CVE, com o campo `supercedence` entre KBs do mesmo produto;
+  - a listagem da Microsoft para o produto e a CVE, com o campo `supercedence` entre KBs do mesmo produto. A relação vale pela cadeia inteira (transitiva), mesmo quando o canal não oferece a KB intermediária. Exemplo: KB5030003 substitui KB5020002, que substitui KB5010001; o canal oferece KB5010001 e KB5030003; escolhe-se KB5030003, sem conflito;
   - os metadados do Windows Update do próprio ativo (`wu_updates`): `UpdateID`, KBs, `CveIDs` e `SupersededUpdateIDs`. Uma atualização oferecida que substitui (direta ou transitivamente) uma KB listada é sucessora comprovada.
 
   Regras de escolha:
@@ -127,11 +127,21 @@ do envio** (estado `dispatching`) pelo Wazuh Active Response (`!eyemole-collect`
 ou `!eyemole-collect-win`). Uma resposta que chega enquanto o envio ainda está em
 curso é aceita.
 
-As transições usam gravação condicional por versão:
+Cada transição roda numa única transação SQLite (`BEGIN IMMEDIATE`), relendo o
+pedido sob a trava de escrita:
 - o envio só muda `dispatching` para `pending` ou `failed`;
 - `received` e `rejected` são finais;
 - duas respostas para o mesmo pedido não são aceitas;
 - resposta para envio que falhou é recusada.
+
+A resposta do agente conclui o pedido e grava o diagnóstico (atual e histórico)
+na mesma transação: ou tudo é gravado, ou nada. Se a gravação falha, o pedido
+continua aberto e o agente pode reenviar dentro do prazo.
+
+O estado público (`collection_pending`) é só um ponteiro para o pedido. O estado
+mostrado é sempre derivado do registro canônico (`collection_request`); por isso
+uma sincronização atrasada não volta um pedido concluído para `pending`. A resposta
+a um pedido substituído por outro mais novo não muda o estado público do mais novo.
 
 Tudo fica auditado (`collection.requested/dispatched/dispatch_failed/received/rejected`).
 Pedidos repetidos para a mesma instalação e as mesmas ações são reaproveitados.
@@ -233,7 +243,11 @@ existentes. A saída HTTPS do servidor precisa alcançar `api.msrc.microsoft.com
 - instalação com falha, sucesso parcial e cancelamento;
 - licença com e sem aceite explícito.
 
-Também simulado: a verificação da assinatura do coletor.
+Também simulados:
+- a verificação da assinatura do coletor;
+- o Wazuh, inclusive a resposta do agente dentro de `collect()` e entre a transição do pedido e a sincronização do estado público. Este último caso usa SQLite real com intercalação controlada por threads;
+- falha de gravação do diagnóstico;
+- cadeias de supersedência sintéticas: transitiva com intermediária não oferecida, ciclo e conflito.
 
 **Testado em Windows real** (estação Windows 11 de 64 bits do desenvolvimento, sem chamar o Windows Update):
 - o `.cmd` chamado por um `cmd.exe` de 32 bits inicia o PowerShell de 64 bits (Sysnative);

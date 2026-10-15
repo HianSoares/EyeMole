@@ -146,7 +146,7 @@ def request(store, project, cfg, secrets, installation, actions, actor, now=None
     pending_key = hashlib.sha256(f"collect:{agent}:{finding_id}".encode()).hexdigest()
     wanted = sorted(action_key(a) for a in actions)
     try:
-        current = store.get(project, "collection_pending", pending_key)
+        current = _public_view(store, project, store.get(project, "collection_pending", pending_key))
     except OperationError:
         current = None
     if current and current.get("actions") == wanted and dt.datetime.fromisoformat(current["expires_at"]) > now:
@@ -184,8 +184,9 @@ def request(store, project, cfg, secrets, installation, actions, actor, now=None
     state.update(state="dispatching", request_id=request_id)
     record = dict(state, project=project, installation={k: installation.get(k) for k in (
         "package", "version", "architecture", "distribution", "release", "os_version")}, request_payload=payload)
-    store.put(project, "collection_request", request_id, record, actor, "collection.requested")
-    store.put(project, "collection_pending", pending_key, state, actor, "collection.requested")
+    with store.transaction() as conn:
+        store.put(project, "collection_request", request_id, record, actor, "collection.requested", conn=conn)
+        store.put(project, "collection_pending", pending_key, state, actor, "collection.requested", conn=conn)
     try:
         client = wazuh((cfg.get("integrations") or {})["wazuh"], secrets)
         client.login()
@@ -196,31 +197,43 @@ def request(store, project, cfg, secrets, installation, actions, actor, now=None
     return _settle(store, project, request_id, pending_key, outcome, actor)
 
 
-def _settle(store, project, request_id, pending_key, outcome, actor):
-    """dispatching → pending/failed, unless the agent already answered (received/rejected are final)."""
-    for _ in range(5):
-        current = store.get(project, "collection_request", request_id)
-        if current.get("state") != "dispatching":
-            break  # the answer arrived during dispatch: keep it
-        updated = {k: v for k, v in current.items() if k not in ("id", "project", "version", "updated_at")}
-        updated.update(outcome, project=project)
-        try:
-            store.put(project, "collection_request", request_id, updated, actor,
-                      "collection.dispatched" if outcome["state"] == "pending" else "collection.dispatch_failed",
-                      current["version"])
-            break
-        except OperationError:
-            continue  # concurrent change (the answer): re-read and decide again
-    final = store.get(project, "collection_request", request_id)
-    pending = {k: final.get(k) for k in ("agent_id", "finding_id", "actions", "requested_at", "expires_at", "missing",
-                                         "request_id", "state", "reason", "received_at")}
+PUBLIC = ("agent_id", "finding_id", "actions", "requested_at", "expires_at", "missing", "request_id", "state", "reason",
+          "received_at")
+FINAL = ("received", "rejected", "failed")
+
+
+def _data(record):
+    return {k: v for k, v in record.items() if k not in ("id", "project", "version", "updated_at")}
+
+
+def _sync_public(store, project, pending_key, record, actor, conn):
+    """Mirror the canonical request into collection_pending, inside the caller's transaction (write lock held).
+
+    The mirror is rewritten from the request just re-read under the same lock, so it can never
+    regress a final state; a newer request for the same finding is left untouched."""
+    public = {k: record.get(k) for k in PUBLIC}
     try:
-        current_pending = store.get(project, "collection_pending", pending_key)
-        if current_pending.get("request_id") == request_id and current_pending.get("state") != final.get("state"):
-            store.put(project, "collection_pending", pending_key, pending, actor, "collection." + final["state"])
+        mirror = store.get(project, "collection_pending", pending_key, conn)
     except OperationError:
-        store.put(project, "collection_pending", pending_key, pending, actor, "collection." + final["state"])
-    return {k: v for k, v in pending.items() if v is not None}
+        mirror = None
+    if mirror is None or (mirror.get("request_id") == record["id"] and
+                          {k: mirror.get(k) for k in PUBLIC} != public):
+        store.put(project, "collection_pending", pending_key, public, actor, "collection." + record["state"], conn=conn)
+    return {k: v for k, v in public.items() if v is not None}
+
+
+def _settle(store, project, request_id, pending_key, outcome, actor):
+    """dispatching → pending/failed, unless the agent already answered (received/rejected are final).
+
+    Re-read, transition and public synchronization run in one SQLite transaction (BEGIN IMMEDIATE):
+    an upload either completes before (and is kept) or waits until this one commits."""
+    with store.transaction() as conn:
+        current = store.get(project, "collection_request", request_id, conn)
+        if current.get("state") == "dispatching":
+            current = store.put(project, "collection_request", request_id, dict(_data(current), **outcome, project=project),
+                                actor, "collection.dispatched" if outcome["state"] == "pending"
+                                else "collection.dispatch_failed", current["version"], conn)
+        return _sync_public(store, project, pending_key, current, actor, conn)
 
 
 def _output(results, key):
@@ -305,13 +318,7 @@ def receive(store, project, agent_id, body, now=None):
         request_record = store.get(project, "collection_request", body["request_id"])
     except OperationError:
         raise OperationError("Pedido de coleta desconhecido.", 404)
-    if request_record.get("agent_id") != agent_id or request_record.get("project") != project:
-        raise OperationError("Pedido de coleta de outro agente ou projeto.", 403)
-    if request_record.get("state") not in ("pending", "dispatching"):
-        # received/rejected/failed: single use (replay protection); a failed dispatch is not trusted later.
-        raise OperationError("Pedido de coleta já concluído ou não enviado.", 409)
-    if now > dt.datetime.fromisoformat(request_record["expires_at"]):
-        raise OperationError("Pedido de coleta expirado.", 409)
+    _check_open(request_record, agent_id, project, now)
     results = body["results"]
     if not isinstance(results, dict) or not set(results) <= set(request_record["actions"]):
         raise OperationError("O agente enviou ações não solicitadas.", 400)
@@ -330,37 +337,44 @@ def receive(store, project, agent_id, body, now=None):
             record = diagnostics.build_import(outputs, installation, f"agent:{agent_id}", now)
             record.update(origin="agent", confidence="collected_by_agent")
     except (ValueError, OperationError) as exc:
-        _claim(store, project, request_record, f"agent:{agent_id}", "collection.rejected",
-               state="rejected", reason=f"Coleta recebida, mas recusada: {exc}")
-        raise OperationError(f"Coleta recusada: {exc}", 409)
-    # Single use, even with concurrent uploads or a dispatcher finishing: compare-and-set on the request.
-    _claim(store, project, request_record, f"agent:{agent_id}", "collection.received",
-           state="received", received_at=now.isoformat(timespec="seconds"))
-    request_record = store.get(project, "collection_request", body["request_id"])
-    record["request_id"] = body["request_id"]
-    key = hashlib.sha256(f"diag:{agent_id}:{installation['finding_id']}".encode()).hexdigest()
-    store.put(project, "diagnostic_import", key, record, f"agent:{agent_id}", "diagnostic.collected")
-    store.put(project, "diagnostic_history",
-              hashlib.sha256(f"diag:{record['revision']}:{record['imported_at']}:{agent_id}:{installation['finding_id']}".encode()).hexdigest(),
-              record, f"agent:{agent_id}", "diagnostic.archived")
+        record, refusal = None, exc
+    else:
+        refusal = None
+    actor = f"agent:{agent_id}"
     pending_key = hashlib.sha256(f"collect:{agent_id}:{installation['finding_id']}".encode()).hexdigest()
-    store.put(project, "collection_pending", pending_key, {k: request_record.get(k) for k in (
-        "agent_id", "finding_id", "actions", "requested_at", "expires_at", "missing", "request_id")} | {
-        "state": "received", "received_at": request_record["received_at"]}, f"agent:{agent_id}", "collection.received")
+    # Single use and all-or-nothing: under the write lock, re-check the request, conclude it, persist the
+    # diagnostic and mirror the public state in one transaction. A failure leaves the request open.
+    with store.transaction() as conn:
+        current = store.get(project, "collection_request", body["request_id"], conn)
+        _check_open(current, agent_id, project, now)
+        if refusal is None:
+            current = store.put(project, "collection_request", current["id"], dict(
+                _data(current), state="received", received_at=now.isoformat(timespec="seconds"), project=project),
+                actor, "collection.received", current["version"], conn)
+            record["request_id"] = body["request_id"]
+            key = hashlib.sha256(f"diag:{agent_id}:{installation['finding_id']}".encode()).hexdigest()
+            store.put(project, "diagnostic_import", key, record, actor, "diagnostic.collected", conn=conn)
+            store.put(project, "diagnostic_history", hashlib.sha256(
+                f"diag:{record['revision']}:{record['imported_at']}:{agent_id}:{installation['finding_id']}".encode()
+            ).hexdigest(), record, actor, "diagnostic.archived", conn=conn)
+        else:
+            current = store.put(project, "collection_request", current["id"], dict(
+                _data(current), state="rejected", reason=f"Coleta recebida, mas recusada: {refusal}", project=project),
+                actor, "collection.rejected", current["version"], conn)
+        _sync_public(store, project, pending_key, current, actor, conn)
+    if refusal is not None:
+        raise OperationError(f"Coleta recusada: {refusal}", 409)
     return {"status": "accepted", "request_id": body["request_id"]}
 
 
-def _claim(store, project, record, actor, action, **changes):
-    """Move a pending/dispatching request to a final state exactly once."""
-    data = {k: v for k, v in record.items() if k not in ("id", "project", "version", "updated_at")}
-    data.update(changes, project=project)
-    try:
-        store.put(project, "collection_request", record["id"], data, actor, action, record["version"])
-    except OperationError:
-        current = store.get(project, "collection_request", record["id"])
-        if current.get("state") not in ("pending", "dispatching"):
-            raise OperationError("Pedido de coleta já concluído.", 409)
-        return _claim(store, project, current, actor, action, **changes)
+def _check_open(request_record, agent_id, project, now):
+    if request_record.get("agent_id") != agent_id or request_record.get("project") != project:
+        raise OperationError("Pedido de coleta de outro agente ou projeto.", 403)
+    if request_record.get("state") not in ("pending", "dispatching"):
+        # received/rejected/failed: single use (replay protection); a failed dispatch is not trusted later.
+        raise OperationError("Pedido de coleta já concluído ou não enviado.", 409)
+    if now > dt.datetime.fromisoformat(request_record["expires_at"]):
+        raise OperationError("Pedido de coleta expirado.", 409)
 
 
 def receive_upload(agent_id, body, store=None, config=None, now=None):
@@ -381,14 +395,29 @@ def receive_upload(agent_id, body, store=None, config=None, now=None):
     raise OperationError("Pedido de coleta desconhecido.", 404)
 
 
+def _public_view(store, project, mirror):
+    """Public state derived from the canonical request (collection_request); the mirror only points to it."""
+    state = dict(mirror)
+    if state.get("request_id"):
+        try:
+            canonical = store.get(project, "collection_request", state["request_id"])
+        except OperationError:
+            return state
+        for k in PUBLIC:
+            if canonical.get(k) is None:
+                state.pop(k, None)
+            else:
+                state[k] = canonical[k]
+    return state
+
+
 def pending_state(store, project, agent, finding_id, now=None):
     now = now or _now()
     key = hashlib.sha256(f"collect:{agent}:{finding_id}".encode()).hexdigest()
     try:
-        state = store.get(project, "collection_pending", key)
+        state = _public_view(store, project, store.get(project, "collection_pending", key))
     except OperationError:
         return None
-    state = dict(state)
     if state.get("state") in ("pending", "dispatching") and now > dt.datetime.fromisoformat(state["expires_at"]):
         state.update(state="expired", reason="O agente não respondeu dentro do prazo (coleta automática indisponível?).")
     return state

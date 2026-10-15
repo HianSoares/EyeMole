@@ -127,6 +127,20 @@ def _has_cycle(edges):
     return any(visit(n) for n in list(edges))
 
 
+def _reach(edges):
+    """Transitive closure: node → every node it supersedes directly or through intermediates (acyclic graph)."""
+    memo = {}
+
+    def visit(node):
+        if node not in memo:
+            memo[node] = set()
+            for nxt in edges.get(node, ()):
+                memo[node] |= {nxt} | visit(nxt)
+        return memo[node]
+
+    return {node: visit(node) for node in list(edges)}
+
+
 def _chain(kb, edges):
     out, seen = [kb], {kb}
     while edges.get(out[-1]):
@@ -188,12 +202,14 @@ def select_update(matched, context):
                                   "atualização é validada.")
         else:
             candidates = sorted(covered)
-            # MSRC succession also orders the offered candidates (both listed for the CVE and product).
-            newer_by_msrc = {uid for uid in candidates for other in candidates if other != uid and any(
-                k2 in edges.get(k1, set()) for k1 in kb_of[other] for k2 in kb_of[uid])}
-            channel_heads = [uid for uid in candidates
-                             if not any(uid in channel_edges.get(o, set()) for o in candidates if o != uid)
-                             and uid not in newer_by_msrc]
+            # MSRC succession also orders the offered candidates (both listed for the CVE and product), through
+            # the whole chain: an intermediate KB proves the relation even when the channel does not offer it.
+            # (Channel metadata needs no closure: every update on a path between covered updates is covered.)
+            msrc_reach = _reach(edges) if not out["conflict"] else {}
+            superseded = {uid for uid in candidates for other in candidates if other != uid and (
+                uid in channel_edges.get(other, set()) or
+                any(k2 in msrc_reach.get(k1, set()) for k1 in kb_of[other] for k2 in kb_of[uid]))}
+            channel_heads = [uid for uid in candidates if uid not in superseded]
             if len(channel_heads) == 1:
                 uid = channel_heads[0]
                 listed = [k for k in kb_of[uid] if k in listed_rows]
