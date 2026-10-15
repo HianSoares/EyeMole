@@ -149,6 +149,11 @@ class Store:
             conn.execute("UPDATE jobs SET state='running',started_at=? WHERE id=?", (now(), row["id"]))
             return dict(row)
 
+    def progress(self, job_id, stage):
+        """Current stage of a running job (shown in the UI); the final result replaces it."""
+        with self.transaction() as conn:
+            conn.execute("UPDATE jobs SET result=? WHERE id=? AND state='running'", (encode({"progress": stage}), job_id))
+
     def finish(self, job_id, result=None, error=None):
         with self.transaction() as conn:
             job = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -165,7 +170,7 @@ class Store:
     def job_for(self, project, kind, identifier):
         """Latest job for one object (no payload): used to show AI generation state."""
         with self.connect() as conn:
-            row = conn.execute("SELECT id,kind,object_id,state,created_at,started_at,finished_at,error FROM jobs "
+            row = conn.execute("SELECT id,kind,object_id,state,created_at,started_at,finished_at,error,result FROM jobs "
                                "WHERE project=? AND kind=? AND object_id=?", (project, kind, identifier)).fetchone()
             return dict(row) if row else None
 

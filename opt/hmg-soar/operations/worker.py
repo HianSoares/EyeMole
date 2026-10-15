@@ -16,7 +16,7 @@ from pathlib import Path
 
 from remediation.versioning import ecosystem_for_package_manager
 from .connectors import GLPI, QRadar, VisionOne, Wazuh, vendor_evidence
-from . import ai, ai_facts, research, research_sources
+from . import ai, ai_facts, collection as collection_support, requirements, research, research_sources
 from .kiro import explain
 from .planning import engine_for, source_revision
 from .security import load_config, project_config, principal, OperationError
@@ -246,16 +246,20 @@ def explain_finding(store, service, project, cfg, job, payload, secrets):
 
 
 def research_finding(store, service, project, cfg, job, payload, secrets, session=None, ai_session=None, sleep=None):
-    """"Pesquisar correção": backend collects evidence, AI proposes, engine verifies and classifies.
+    """Automatic remediation analysis ("Ver correção"): context, official sources, AI proposal, engine validation.
 
     Never changes the asset. The Wazuh inventory (read-only) is refreshed when
-    that integration is enabled; AI failures keep the deterministic result.
+    that integration is enabled; missing indispensable data triggers a fixed
+    read-only collection through the agent; AI or source failures keep a
+    useful deterministic result.
     """
     finding_id, agent = payload["finding_id"], payload["agent_id"]
     service.user.require("write", project, [agent])
     research_cfg = research_settings(cfg)
     if not research_cfg:
         raise OperationError("Pesquisa de correção desabilitada pelo administrador.", 503)
+    progress = (lambda stage: store.progress(job["id"], stage)) if job.get("id") else (lambda stage: None)
+    progress("inventory")
     if cfg.get("integrations", {}).get("wazuh", {}).get("enabled") and research_cfg.get("refresh_inventory", True):
         try:
             client = Wazuh(settings(cfg, "wazuh"), secrets)
@@ -270,19 +274,35 @@ def research_finding(store, service, project, cfg, job, payload, secrets, sessio
         if row is None or str(row.get("agent_id")) != agent:
             raise OperationError("Instância não está mais no snapshot atual.", 409)
         plan = engine_for(cfg).generate_guidance(finding_id).to_dict()
-        _, _, context = service.research_inputs(project, row, agent, finding_id, plan, cfg)
-        return revision, row, context
+        inventory, _, context = service.research_inputs(project, row, agent, finding_id, plan, cfg)
+        return revision, row, context, plan, inventory
 
-    revision, row, context = state()
+    revision, row, context, plan, inventory = state()
     if revision != payload["snapshot_revision"]:
         raise OperationError("Snapshot mudou desde o pedido; solicite a pesquisa novamente.", 409)
+    progress("sources")
     collection = research_sources.collect(row.get("cve"), context["distribution"], research_cfg, session=session)
+    progress("analysis")
     assessment = research.assess(context, collection, research_cfg, research._now())
+    found_requirements = requirements.from_catalog(
+        row.get("cve"), context.get("product_name") or context.get("binary_package"),
+        context.get("os_build") if context["distribution"] == "windows" else None, context.get("features"),
+        Path(cfg["evidence_path"]) if cfg.get("evidence_path") else None)
+    # Indispensable data still missing: fixed read-only collection through the authorized agent.
+    actions = collection_support.plan_actions(context, assessment, requirements.pending_checks(found_requirements))
+    installation = dict(research.installation_for(row, plan, inventory), finding_id=finding_id, agent_id=agent)
+    if actions:
+        progress("collection")
+        collection_state = collection_support.request(store, project, cfg, secrets, installation, actions, job["actor"],
+                                                      research._now())
+    else:
+        collection_state = collection_support.pending_state(store, project, agent, finding_id, research._now())
     proposal, ai_state = None, {"state": "disabled"}
     status = ai.public_status(cfg)
     if status.get("enabled") and status.get("provider") != "kiro":
         _, ai_settings = ai.selection(cfg)
         labels = {"provider": status["provider"], "provider_label": status["provider_label"], "model": status["model"]}
+        progress("ai")
         try:
             proposal = research.ai_proposal(context, assessment, collection["evidence"], ai_settings,
                                             secrets.get(ai_settings.spec.secret, ""), session=ai_session, sleep=sleep)
@@ -292,8 +312,13 @@ def research_finding(store, service, project, cfg, job, payload, secrets, sessio
             ai_state = dict(labels, state="failed", error=str(exc), code=getattr(exc, "code", None))
     elif status.get("enabled"):
         ai_state = {"state": "not_supported", "error": "Kiro (legado) não gera propostas de pesquisa."}
-    result = research.build_result(context, collection, assessment, proposal, ai_state)
-    after_revision, _, after_context = state()
+    progress("validation")
+    if proposal:
+        found_requirements += requirements.from_ai(proposal.get("exploitation_requirements"),
+                                                   {e["id"] for e in collection["evidence"]})
+    result = research.build_result(context, collection, assessment, proposal, ai_state, requirements=found_requirements,
+                                   collection_state=collection_state)
+    after_revision, _, after_context, _, _ = state()
     if after_revision != revision or after_context["revision"] != context["revision"]:
         raise OperationError("Dados da instalação mudaram durante a pesquisa; resultado descartado.", 409)
     result.update(finding_id=finding_id, agent_ids=[agent], cve=row.get("cve"), snapshot_revision=revision,

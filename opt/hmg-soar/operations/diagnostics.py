@@ -171,6 +171,14 @@ def identity_problems(record, installation):
         mismatches.append(f"O diagnóstico registra a versão {record.get('installed_version')}; a instalação está em {version}.")
     if arch and record.get("architecture") and record["architecture"] != arch:
         mismatches.append(f"O diagnóstico é da arquitetura {record['architecture']}; a instalação é {arch}.")
+    windows = parsed.get("windows")
+    if windows is not None:
+        branch = ".".join(version.split(".")[:3]) if version and version.count(".") == 3 else None
+        collected = f"10.0.{windows.get('current_build')}" if isinstance(windows, dict) else None
+        if not branch or not collected:
+            gaps.append("Coleta do Windows sem build verificável.")
+        elif collected != branch:
+            mismatches.append(f"O Windows coletado está no build {collected}; a instalação registrada é {branch}.")
     dpkg = parsed.get("dpkg")
     if dpkg is not None:
         if not isinstance(dpkg, dict) or dpkg.get("binary_package") != package:
@@ -251,6 +259,31 @@ def public(record, settings=None, now=None, installation=None):
     out["validity"] = evaluate(record, settings, now, installation)
     out["conflicts"] = out["validity"]["conflicts"]  # recomputed now; the stored list is history only
     return out
+
+
+def build_collected(parsed, installation, collected_at, now=None):
+    """Record for data collected by the agent on Windows (parsed by collection.receive)."""
+    now = now or _now()
+    try:
+        collected = dt.datetime.fromisoformat(str(collected_at).replace("Z", "+00:00"))
+    except ValueError:
+        raise OperationError("collected_at inválido na coleta do agente.")
+    if collected.tzinfo is None or collected > now + dt.timedelta(minutes=5):
+        raise OperationError("collected_at sem fuso horário ou no futuro.")
+    if not parsed:
+        raise OperationError("A coleta do agente não trouxe dados utilizáveis.")
+    collected_at = collected.astimezone(dt.timezone.utc).isoformat(timespec="seconds")
+    record = {"finding_id": installation["finding_id"], "agent_ids": [str(installation["agent_id"])],
+              "package": installation["package"], "installed_version": installation["version"],
+              "architecture": installation.get("architecture"), "collected_at": collected_at,
+              "imported_at": now.isoformat(timespec="seconds"), "imported_by": f"agent:{installation['agent_id']}",
+              "origin": "agent", "confidence": "collected_by_agent", "parsed": parsed, "raw": {}, "schema": 2,
+              "conflicts": []}
+    record["revision"] = hashlib.sha256(json.dumps([collected_at, parsed], sort_keys=True).encode()).hexdigest()
+    mismatches, gaps = identity_problems(record, installation)
+    if mismatches:
+        raise OperationError(" ".join(mismatches), 409)
+    return record
 
 
 def build_import(body, installation, user, now=None):

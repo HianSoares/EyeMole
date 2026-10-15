@@ -205,6 +205,7 @@ CONTEXT_AUDIT_LOG = CONTEXT_AUDIT_DIR / "audit_actions.jsonl"
 # Limites e listas de validação (defesa em profundidade).
 MAX_BODY_BYTES = 16 * 1024          # 16 KB
 MAX_SBOM_BYTES = 20 * 1024 * 1024   # 20 MB
+MAX_AGENT_CONTEXT_BYTES = 256 * 1024  # read-only collection outputs (bounded per action)
 MAX_TEXT_LEN = 256                  # donos técnico/negócio
 MAX_NOTES_LEN = 1000               # observações
 MAX_AGENT_ID_LEN = 64
@@ -747,6 +748,12 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             if path.startswith(prefix):
                 raw_agent_id = unquote(path[len(prefix):])
                 self._handle_upload_sbom(raw_agent_id)
+                return
+
+        # POST /agent-context/<agent_id>: read-only collection requested by the worker (agent token)
+        for prefix in ("/agent-context/", "/soar-api/agent-context/"):
+            if path.startswith(prefix):
+                self._handle_agent_context(unquote(path[len(prefix):]))
                 return
 
         # POST /assets-context/<agent_id>  (ou /context/assets/<agent_id>)
@@ -1372,6 +1379,60 @@ class SoarAPIHandler(BaseHTTPRequestHandler):
             "message": "SBOM recebido para processamento.",
             "agent_id": agent_id,
         })
+
+    def _handle_agent_context(self, raw_agent_id: str) -> None:
+        """Agent upload of a fixed read-only collection. Same credential as the SBOM upload (Bearer token)."""
+        from operations.collection import receive_upload
+        from operations.security import OperationError
+        client_ip = self._get_client_ip()
+        agent_id = raw_agent_id.strip()
+
+        def fail(http_status: int, message: str) -> None:
+            _context_audit_log(client_ip, f"agent:{agent_id or 'unknown'}", agent_id[:MAX_AGENT_ID_LEN],
+                               ["agent_context"], "failure", message)
+            self._send_json(http_status, {"status": "error", "message": message})
+
+        if not AGENT_ID_RE.match(agent_id):
+            fail(400, "agent_id inválido.")
+            return
+        rate_key = f"agent-context:{agent_id}:{client_ip}"
+        if _sbom_rate_limiter is None or not _sbom_rate_limiter.is_allowed(rate_key):
+            fail(429, "Limite de requisições excedido.")
+            return
+        token = _parse_bearer_token(self.headers.get("Authorization", ""))
+        try:
+            data = _load_assets_context_unlocked()
+        except (json.JSONDecodeError, OSError, ValueError):
+            fail(500, "Falha ao validar credenciais do agente.")
+            return
+        agents = data.get("agents", {})
+        agent = agents.get(agent_id) if isinstance(agents, dict) else None
+        if not isinstance(agent, dict) or not _agent_token_is_valid(agent, token):
+            fail(401, "Unauthorized")
+            return
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+            fail(415, "Content-Type deve ser application/json.")
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            fail(400, "Content-Length inválido.")
+            return
+        if not 0 < content_length <= MAX_AGENT_CONTEXT_BYTES:
+            fail(413, "Tamanho do envio inválido.")
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            fail(400, "JSON do corpo inválido.")
+            return
+        try:
+            result = receive_upload(agent_id, payload)
+        except OperationError as exc:
+            fail(exc.status, str(exc))
+            return
+        _context_audit_log(client_ip, f"agent:{agent_id}", agent_id, ["agent_context"], "success", "Coleta recebida.")
+        self._send_json(202, result)
 
     def _handle_exposure_context(self) -> None:
         exposure_context_path = WEB_DIR / "data" / "exposure_context_summary.json"

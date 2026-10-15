@@ -1,4 +1,8 @@
-# Pesquisa e proposta de remediação ("Pesquisar correção")
+# Pesquisa e proposta de remediação
+
+> A pesquisa agora é iniciada automaticamente ao abrir **Ver correção**, inclui Windows (MSRC), requisitos de
+> exploração e coleta somente leitura pelo agente. Veja [AUTOMATIC_REMEDIATION.md](AUTOMATIC_REMEDIATION.md);
+> as regras de Linux, evidências e diagnósticos descritas aqui continuam valendo.
 
 Ao abrir uma instalação em **Ver correção**, o analista pode pedir a pesquisa de
 correção. A ausência de `fixed_version` no Wazuh **inicia** a pesquisa, em vez de

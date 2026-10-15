@@ -22,13 +22,14 @@ import re
 
 from remediation.versioning import compare_versions
 
-from . import diagnostics, llm, research_sources
+from . import diagnostics, llm, research_sources, windows_fix
 from .ai_contract import AIContractError
 from .security import OperationError
 
-# 2: candidate origin authorization, diagnostic validity/conflicts and evidence expiry (results of
-# version 1 stop being current; records and audit entries are kept).
-RESEARCH_VERSION = 2
+# 2: candidate origin authorization, diagnostic validity/conflicts and evidence expiry.
+# 3: unified automatic analysis (Windows/MSRC, agent collection, exploitation requirements, command metadata).
+# Results of previous versions stop being current; records and audit entries are kept.
+RESEARCH_VERSION = 3
 
 CATEGORIES = {
     "validated_fix": "Correção validada para a instalação",
@@ -76,7 +77,7 @@ def _cmp(left, right):
 
 def _family(plan, row):
     text = " ".join(str(v or "") for v in (plan.get("operating_system"), row.get("operating_system"))).lower()
-    for family in ("ubuntu", "debian"):
+    for family in ("ubuntu", "debian", "windows"):
         if family in text:
             return family
     return None
@@ -122,11 +123,24 @@ def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, n
     validity = diagnostics.evaluate(diagnostic, settings, now or _now(), installation)
     usable = diagnostic if validity and validity["status"] == "valid" else None
     parsed = (usable or {}).get("parsed", {})
-    diag_origin = {"origin": "imported_by_analyst", "observed_at": (diagnostic or {}).get("collected_at")}
+    diag_origin = {"origin": "collected_by_agent" if (diagnostic or {}).get("origin") == "agent" else "imported_by_analyst",
+                   "observed_at": (diagnostic or {}).get("collected_at")}
     inv_origin = {"origin": "wazuh_syscollector", "observed_at": (inventory or {}).get("observed_at")}
     context = {"distribution": distribution, "binary_package": binary, "installed_version": installed,
                "architecture": architecture, "cve": row.get("cve"), "package_manager": plan.get("package_manager"),
                "missing": [], "origins": {}}
+    if distribution == "windows":
+        # Windows OS: product/build/architecture/hotfixes/channel with origin (collection > inventory > snapshot).
+        context.update(windows_fix.resolve_windows(row, plan, inventory, parsed, diag_origin))
+        context.update(package_manager="windows_update", release=None, source_package=None, repository=None,
+                       package_origin="windows_update")
+        _attach_diagnostic(context, diagnostic, validity, usable)
+        context["revision"] = digest({k: context.get(k) for k in (
+            "distribution", "binary_package", "installed_version", "product_name", "os_build", "architecture",
+            "installation_type", "hotfixes", "channel", "channel_updates", "features")} | {
+            "guidance": plan.get("snapshot_revision"), "diagnostic": (diagnostic or {}).get("revision"),
+            "diagnostic_status": (validity or {}).get("status")})
+        return context
 
     release = None
     if parsed.get("os_release", {}).get("version_codename"):
@@ -174,19 +188,24 @@ def resolve_context(row, plan, inventory=None, diagnostic=None, settings=None, n
         context["repository"] = None
         context["package_origin"] = "unknown"
         context["missing"].append("repository_candidate")
-    if diagnostic:
-        context["diagnostic"] = {"collected_at": diagnostic.get("collected_at"), "imported_by": diagnostic.get("imported_by"),
-                                 "confidence": diagnostic.get("confidence"), "revision": diagnostic.get("revision"),
-                                 "status": validity["status"], "expires_at": validity["expires_at"],
-                                 "reasons": validity["reasons"], "used": usable is not None}
-        if usable is None:
-            context["missing"].append("diagnostic_" + validity["status"])
+    _attach_diagnostic(context, diagnostic, validity, usable)
     context["revision"] = digest({k: context.get(k) for k in (
         "distribution", "binary_package", "installed_version", "architecture", "release", "source_package",
         "repository", "package_origin")} | {"guidance": plan.get("snapshot_revision"),
                                             "diagnostic": (diagnostic or {}).get("revision"),
                                             "diagnostic_status": (validity or {}).get("status")})
     return context
+
+
+def _attach_diagnostic(context, diagnostic, validity, usable):
+    if diagnostic:
+        context["diagnostic"] = {"collected_at": diagnostic.get("collected_at"), "imported_by": diagnostic.get("imported_by"),
+                                 "origin": diagnostic.get("origin"), "confidence": diagnostic.get("confidence"),
+                                 "revision": diagnostic.get("revision"), "status": validity["status"],
+                                 "expires_at": validity["expires_at"], "reasons": validity["reasons"],
+                                 "used": usable is not None}
+        if usable is None:
+            context["missing"].append("diagnostic_" + validity["status"])
 
 
 def _suite(label):
@@ -228,6 +247,8 @@ def _apt_commands(binary, candidate, fixed, installed, validated, release=None):
         return None
     target = f"{binary}={candidate}" if validated else binary
     return {
+        "terminal": "Terminal Linux (bash)", "shell": "bash", "privilege": "root (via sudo)",
+        "reboot": "não exige reinício do sistema; reinicie os serviços que usam o pacote (ex.: needrestart)",
         "command": f"sudo apt-get install --only-upgrade -- {target}",
         "simulation": f"apt-get install --only-upgrade -s -- {target}",
         "prerequisites": ["sudo apt-get update"] + ([] if validated else [
@@ -277,6 +298,13 @@ def assess(context, collection, settings=None, now=None):
     if diagnostic and not diagnostic.get("used"):
         pending.extend(diagnostic.get("reasons") or [])
 
+    if distribution == "windows":
+        expired = any(evidence_expires(e, settings) and evidence_expires(e, settings) <= now for e in evidence
+                      if e.get("kind") == "windows_kb")
+        result = windows_fix.assess(context, collection, expired)
+        result["pending"] = pending + result["pending"]
+        result["valid_until"] = out["valid_until"]
+        return result
     distro_sources = [s for s in sources if s.get("source") in ("debian_security_tracker", "ubuntu_cve_tracker")]
     if distribution not in research_sources.SOURCES:
         out["classification"] = "insufficient_data"
@@ -450,7 +478,11 @@ PROPOSAL_PROMPT = (
     "Responda SOMENTE com um objeto JSON: {\"summary\": string, \"recommended\": inteiro (índice em alternatives), "
     "\"alternatives\": [{\"kind\": string, \"package\": string|null, \"target_version\": string|null, "
     "\"evidence_ids\": [string], \"rationale\": string, \"impact\": string, \"prerequisites\": [string], "
-    "\"verification\": [string], \"rollback\": string|null, \"manual_steps\": [string]}], \"open_questions\": [string]}. "
+    "\"verification\": [string], \"rollback\": string|null, \"manual_steps\": [string]}], \"open_questions\": [string], "
+    "\"exploitation_requirements\": [{\"description\": string, \"evidence_ids\": [string]}]}. "
+    "Em exploitation_requirements liste apenas requisitos de exploração (componente habilitado, recurso compilado, "
+    "papel instalado) citados nas evidências; ausência de requisito não significa pacote atualizado. "
+    "No Windows, use somente KBs e builds presentes nas evidências da Microsoft para o produto do ativo. "
     f"kind ∈ {list(KINDS)}. "
     "A avaliação do motor (assessment) é autoritativa sobre aplicabilidade; não a contradiga. "
     "Use apenas evidence_ids fornecidos; versões, pacotes, KBs e fatos só podem vir das evidências ou do contexto. "
@@ -475,6 +507,18 @@ def _evidence_for_model(evidence):
 
 def proposal_messages(context, assessment, evidence):
     """Minimal context: no host, agent, IP or repository URLs (suites only)."""
+    if context["distribution"] == "windows":
+        facts = {"cve": context.get("cve"), "distribution": "windows", "product": context.get("product_name"),
+                 "os_build": context.get("os_build"), "architecture": context.get("architecture"),
+                 "installation_type": context.get("installation_type"),
+                 "installed_kbs": (context.get("hotfixes") or [])[:200] if context.get("hotfixes") is not None else "not_collected",
+                 "channel_offers": context.get("channel") or "not_observed",
+                 "features": context.get("features") or "not_collected"}
+        summary = {k: assessment.get(k) for k in ("classification", "kb", "fixed_build", "installed", "repository_status",
+                                                  "matched_products", "notes", "pending")}
+        user = json.dumps({"context": facts, "assessment": summary, "evidence": _evidence_for_model(evidence)},
+                          ensure_ascii=False)
+        return [{"role": "system", "content": PROPOSAL_PROMPT}, {"role": "user", "content": user}]
     facts = {
         "cve": context.get("cve"), "distribution": context["distribution"], "release": context["release"],
         "binary_package": context["binary_package"], "source_package": context["source_package"],
@@ -518,7 +562,7 @@ def allowed_versions(context, evidence):
     values.add(repo.get("candidate_version"))
     values.update(v.get("version") for v in repo.get("available_versions", []))
     for e in evidence:
-        values.update((e.get("version"), e.get("fixed_version")))
+        values.update((e.get("version"), e.get("fixed_version"), e.get("fixed_build"), e.get("kb")))
         values.update(m.group(1) for m in _VERSION_TOKEN.finditer(e.get("excerpt") or ""))
     return {v for v in values if v}
 
@@ -541,7 +585,8 @@ def _check_prose(text, versions, urls, kbs, label):
 
 def validate_proposal(data, context, assessment, evidence):
     """Contract and evidence checks of the AI proposal. Raises AIContractError; returns normalized alternatives."""
-    if not isinstance(data, dict) or set(data) != {"summary", "recommended", "alternatives", "open_questions"}:
+    if not isinstance(data, dict) or set(data) != {"summary", "recommended", "alternatives", "open_questions",
+                                                   "exploitation_requirements"}:
         raise AIContractError("IA: proposta fora do contrato.")
     ids = {e["id"] for e in evidence}
     urls = {e["url"] for e in evidence if e.get("url")}
@@ -594,7 +639,19 @@ def validate_proposal(data, context, assessment, evidence):
     questions = _strings(data["open_questions"], 10, 400, "questões")
     for text in questions:
         _check_prose(text, versions, urls, kbs, "questões")
-    return summary, normalized, recommended, questions
+    requirements = data["exploitation_requirements"]
+    if not isinstance(requirements, list) or len(requirements) > 8:
+        raise AIContractError("IA: requisitos de exploração inválidos.")
+    normalized_requirements = []
+    for item in requirements:
+        if not isinstance(item, dict) or set(item) != {"description", "evidence_ids"}:
+            raise AIContractError("IA: requisito de exploração fora do contrato.")
+        if not isinstance(item["evidence_ids"], list) or not item["evidence_ids"] or any(i not in ids for i in item["evidence_ids"]):
+            raise AIContractError("IA citou evidência inexistente em requisito de exploração.", "unknown_reference")
+        text = _text_field(item["description"], 300, "requisito")
+        _check_prose(text, versions, urls, kbs, "requisito")
+        normalized_requirements.append({"description": text, "evidence_ids": list(dict.fromkeys(item["evidence_ids"]))})
+    return summary, normalized, recommended, questions, normalized_requirements
 
 
 RANK = {("update_package", "validated_fix"): 0, ("update_package", "requires_verification"): 1, ("mitigation", "mitigation"): 2}
@@ -655,16 +712,37 @@ def ai_proposal(context, assessment, evidence, ai_settings, api_key, session=Non
         data = json.loads(fenced.group(1) if fenced else text)
     except ValueError:
         raise AIContractError("IA retornou JSON inválido.", "invalid_json")
-    summary, alternatives, recommended, questions = validate_proposal(data, context, assessment, evidence)
+    summary, alternatives, recommended, questions, requirements = validate_proposal(data, context, assessment, evidence)
     return {"summary": summary, "alternatives": alternatives, "recommended": recommended, "open_questions": questions,
-            "served_model": served}
+            "exploitation_requirements": requirements, "served_model": served}
 
 
 # ----------------------------------------------------------------------
 # Result
 # ----------------------------------------------------------------------
 
-def build_result(context, collection, assessment, ai=None, ai_state=None, provider=None):
+def primary(result):
+    """First useful information of the modal: action, target, command, terminal, privilege, reboot, reason, sources."""
+    alternatives, index = result["alternatives"], result.get("recommended")
+    if index is None or not alternatives:
+        return {"available": False, "classification": result["classification"],
+                "classification_label": result["classification_label"],
+                "impediment": (result["pending_verifications"] or [result["classification_label"]])[0]}
+    alt = alternatives[index]
+    sources = {e["id"]: e for e in result.get("evidence", [])}
+    cited = [sources[i] for i in alt.get("evidence_ids", []) if i in sources]
+    return {"available": True, "kind": alt["kind"], "kind_label": alt.get("kind_label"),
+            "category": alt["category"], "category_label": alt.get("category_label"), "validated": bool(alt.get("validated")),
+            "target": alt.get("target_version"), "fixed_build": alt.get("fixed_build"), "command": alt.get("command"),
+            "shell": alt.get("shell"), "terminal": alt.get("terminal"), "privilege": alt.get("privilege"),
+            "reboot": alt.get("reboot"), "reason": alt.get("rationale"),
+            "supersedence_chain": alt.get("supersedence_chain"), "proof": alt.get("proof"), "update_id": alt.get("update_id"),
+            "sources": [{"publisher": e.get("publisher"), "url": e.get("article_url") or e.get("url"),
+                         "retrieved_at": e.get("retrieved_at")} for e in cited][:5]}
+
+
+def build_result(context, collection, assessment, ai=None, ai_state=None, provider=None, requirements=None,
+                 collection_state=None):
     alternatives, recommended, note = list(assessment["alternatives"]), None, None
     summary = None
     if ai:
@@ -673,10 +751,15 @@ def build_result(context, collection, assessment, ai=None, ai_state=None, provid
     elif alternatives:
         recommended = min(range(len(alternatives)), key=lambda i: (_rank(alternatives[i]), i))
     for alt in alternatives:
-        alt["kind_label"] = KIND_LABELS.get(alt["kind"], alt["kind"])
+        alt["kind_label"] = alt.get("kind_label") or KIND_LABELS.get(alt["kind"], alt["kind"])
         alt["category_label"] = CATEGORIES.get(alt["category"], "Proposta para revisão manual (sem validação)")
     pending = list(dict.fromkeys(assessment["pending"] + ([note] if note else [])))
-    return {
+    requirements = list(requirements or [])
+    for item in requirements:
+        if item["status"] in ("unknown", "absent"):
+            pending.append(f"Requisito de exploração {item['status_label']}: {item['description']}. {item['effect']}")
+    pending = list(dict.fromkeys(pending))
+    result = {
         "research_version": RESEARCH_VERSION, "generated_at": _now().isoformat(timespec="seconds"),
         # After this instant (evidence or diagnostic expiry) the classification is no longer current.
         "valid_until": assessment["valid_until"],
@@ -691,7 +774,11 @@ def build_result(context, collection, assessment, ai=None, ai_state=None, provid
         "evidence_index": sorted({(e["url"], e["content_sha256"]) for e in collection.get("evidence", [])}),
         "ai": dict(ai_state or {"state": "disabled"}, **({"served_model": ai.get("served_model")} if ai else {})),
         "provider": provider,
+        "exploitation_requirements": requirements,
+        "collection": collection_state,
     }
+    result["primary"] = primary(result)
+    return result
 
 
 def engine_summary(context, assessment):

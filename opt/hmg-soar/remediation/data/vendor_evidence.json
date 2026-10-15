@@ -41,7 +41,17 @@
           "kind": "vendor_advisory"
         }
       ],
-      "verified_at": "2026-10-08"
+      "verified_at": "2026-10-08",
+      "requirements": [
+        {
+          "id": "wsus-role",
+          "description": "Papel Windows Server Update Services (UpdateServices) instalado no servidor",
+          "check": {
+            "action": "windows_feature",
+            "name": "UpdateServices"
+          }
+        }
+      ]
     }
   ]
 }

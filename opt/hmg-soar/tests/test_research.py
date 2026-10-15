@@ -351,7 +351,8 @@ def test_cve_unknown_to_sources_is_not_found_not_inexistent(platform):
 # ----------------------------------------------------------------------
 
 def proposal(alternatives, recommended=0, summary="Análise das alternativas para vim-tiny no Debian 13."):
-    return {"summary": summary, "recommended": recommended, "alternatives": alternatives, "open_questions": []}
+    return {"summary": summary, "recommended": recommended, "alternatives": alternatives, "open_questions": [],
+            "exploitation_requirements": []}
 
 
 def alt(kind, evidence, **fields):
@@ -567,7 +568,7 @@ def test_explanation_compares_with_research_facts(platform):
 def test_interface_research_flow_and_wording():
     import analyserV1
     tpl = analyserV1.HTML_TEMPLATE
-    assert "'Pesquisar correção'" in tpl and 'id="guidance-research-section"' in tpl
+    assert "'Pesquisar correção'" not in tpl and 'id="guidance-research-section"' in tpl  # analysis starts on open
     block = tpl[tpl.index("function researchEl"):tpl.index("function resetGuidanceExtras")]
     assert "innerHTML" not in block and "Validado pelo EyeMole (template controlado)" in block
     assert "(não executado pelo EyeMole)" in block and "não validados, não executados" in block

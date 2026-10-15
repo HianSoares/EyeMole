@@ -83,7 +83,7 @@ def cached_entry(url, settings=None):
 class Fetcher:
     """HTTP GET on allowlisted hosts with a validity-bound disk cache."""
 
-    HOSTS = {"security-tracker.debian.org", "ubuntu.com", "api.github.com"}
+    HOSTS = {"security-tracker.debian.org", "ubuntu.com", "api.github.com", "api.msrc.microsoft.com"}
 
     def __init__(self, settings=None, session=None, clock=None):
         settings = settings or {}
@@ -390,10 +390,74 @@ def github_advisory(link, cve, fetcher):
             "evidence": evidence}
 
 
+# ----------------------------------------------------------------------
+# Microsoft Security Update Guide (CVE → affected products → KB articles)
+# ----------------------------------------------------------------------
+
+MSRC_BASE = "https://api.msrc.microsoft.com/sug/v2.0/en-US/affectedProduct"
+_KB_NUMBER = re.compile(r"\d{6,8}")
+_WIN_BUILD = re.compile(r"\d{1,2}\.\d{1,2}\.\d{4,6}\.\d{1,6}")
+
+
+def msrc_sug(cve, fetcher, max_pages=5):
+    """Evidence per (product, KB) from api.msrc.microsoft.com (documented SUG v2 OData API)."""
+    url = MSRC_BASE + "?%24filter=cveNumber%20eq%20%27" + cve + "%27"
+    publisher = "Microsoft Security Response Center (Security Update Guide)"
+    evidence, first = [], None
+    for page in range(max_pages):
+        fetched = fetcher.get(url, 4 * 1024 * 1024)
+        first = first or fetched
+        if fetched.get("not_found"):
+            break
+        try:
+            data = json.loads(fetched["content"])
+        except ValueError:
+            raise SourceUnavailable("Formato inesperado no Security Update Guide.", "unexpected_format")
+        if not isinstance(data, dict) or not isinstance(data.get("value"), list):
+            raise SourceUnavailable("Formato inesperado no Security Update Guide.", "unexpected_format")
+        for index, row in enumerate(data["value"]):
+            if not isinstance(row, dict) or row.get("cveNumber") != cve:
+                continue
+            product = _text(row.get("product"), 160)
+            for kb in row.get("kbArticles") or []:
+                number = str((kb or {}).get("articleName") or "")
+                if not _KB_NUMBER.fullmatch(number):
+                    continue
+                fixed = str(kb.get("fixedBuildNumber") or "")
+                supersedes = str(kb.get("supercedence") or "")
+                evidence.append(_evidence(
+                    "msrc_security_update_guide", publisher, fetched, f"msrc:{cve}:{page}:{index}:KB{number}", "windows_kb",
+                    f"{product}: KB{number} ({kb.get('downloadName')}), build corrigida {fixed or 'não informada'}, "
+                    f"reinício {kb.get('rebootRequired') or 'não informado'}"
+                    + (f", substitui KB{supersedes}" if _KB_NUMBER.fullmatch(supersedes) else ""),
+                    distribution="windows", product=product, architecture=_text(row.get("architecture"), 20),
+                    base_version=_text(row.get("baseProductVersion"), 40), kb=f"KB{number}",
+                    fixed_build=fixed if _WIN_BUILD.fullmatch(fixed) else None,
+                    download_name=_text(kb.get("downloadName"), 60),
+                    reboot=_text(kb.get("rebootRequired"), 10),
+                    supersedes=f"KB{supersedes}" if _KB_NUMBER.fullmatch(supersedes) else None,
+                    article_url=kb.get("articleUrl") if str(kb.get("articleUrl", "")).startswith("https://support.microsoft.com/") else None,
+                    catalog_url=kb.get("downloadUrl") if str(kb.get("downloadUrl", "")).startswith(
+                        "https://catalog.update.microsoft.com/") else None,
+                    release=_text(row.get("releaseNumber"), 20), status="fixed"))
+        following = data.get("@odata.nextLink")
+        if not following:
+            break
+        # Pagination stays on the same documented endpoint.
+        if not isinstance(following, str) or not following.startswith(MSRC_BASE + "?"):
+            raise SourceUnavailable("Paginação do Security Update Guide fora do endpoint esperado.", "destination_refused")
+        url = following
+    return {"source": "msrc_security_update_guide", "available": True, "found": bool(evidence),
+            "url": first["url"] if first else url, "retrieved_at": (first or {}).get("retrieved_at"),
+            "cached": (first or {}).get("cached"), "stale": (first or {}).get("stale"), "evidence": evidence, "links": []}
+
+
 SOURCES = {
     "debian": [("debian_security_tracker", debian_tracker)],
     "ubuntu": [("ubuntu_cve_tracker", ubuntu_cve)],
+    "windows": [("msrc_security_update_guide", msrc_sug)],
 }
+DEFAULT_SOURCES = ("debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory", "msrc_security_update_guide")
 
 
 def collect(cve, distribution, settings=None, session=None, clock=None):
@@ -405,7 +469,7 @@ def collect(cve, distribution, settings=None, session=None, clock=None):
     if not CVE.fullmatch(str(cve or "")):
         raise OperationError("CVE inválida para pesquisa.")
     settings = settings or {}
-    enabled = set(settings.get("sources") or ("debian_security_tracker", "ubuntu_cve_tracker", "upstream_advisory"))
+    enabled = set(settings.get("sources") or DEFAULT_SOURCES)
     fetcher = Fetcher(settings, session=session, clock=clock)
     sources, evidence, links = [], [], []
     for name, connector in SOURCES.get(distribution, []):

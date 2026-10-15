@@ -300,7 +300,7 @@ def test_interface_has_no_this_command_message_without_correction_command():
     render = tpl[tpl.index("function renderGuidanceContent"):tpl.index("const GUIDANCE_KIND_LABELS")]
     assert "showsCorrection\n        ? 'O EyeMole não executa este comando." in render
     assert "Nenhum comando de correção validado para esta instalação." in render
-    block = tpl[tpl.index("function renderGuidanceAiFacts"):tpl.index("async function loadGuidanceAi")]
-    assert "innerHTML" not in block and "guidanceAiSubject(r)" in block
+    block = tpl[tpl.index("function renderResearchResult"):tpl.index("async function submitGuidanceDiagnostics")]
+    assert "innerHTML" not in block and "Sem selo de validação" in block
     js = (Path(__file__).resolve().parent.parent / "assets" / "operations.js").read_text(encoding="utf-8")
     assert "Instância: " not in js and "e.invalidated" in js and "Fatos do motor" in js

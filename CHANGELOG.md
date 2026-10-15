@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Remediação automática (Windows e Linux)
+
+- Revisão do PR #19:
+  - pedido de coleta gravado antes do envio, com transições condicionais (resposta durante o envio aceita; received/rejected finais);
+  - KB escolhida por cadeia de supersedência comprovada (MSRC e metadados `wu_updates` do canal do ativo: UpdateID, CveIDs, SupersededUpdateIDs), com ciclo e conflito como incerteza;
+  - comando PowerShell reforçado: Administrador, reinício pendente, instalador ocupado, interação, licença com aceite explícito, download e instalação por ResultCode/HResult, sem reinício automático;
+  - wrapper com Sysnative e arquitetura nativa do sistema no coletor;
+  - transições da coleta, diagnóstico e estado público numa única transação SQLite, com o estado público derivado do pedido canônico (sem regressão de received/rejected);
+  - supersedência transitiva da MSRC (KB intermediária não oferecida não gera conflito falso).
+- "Ver correção" inicia ou reutiliza a análise da instalação (`POST /platform/findings/<id>/analysis`, idempotente), com progresso por etapa e atualização automática; sem botões separados de pesquisa e explicação por IA no modal.
+- Primeira informação do modal: ação, versão/KB alvo, comando com Copiar, terminal, privilégio, reinício, motivo e fontes.
+- Windows: Microsoft Security Update Guide API v2 (por CVE); produto por build/arquitetura/servidor-cliente; KB e build corrigida; já instalada, build posterior, substituída e incompatível; comando PowerShell (Windows Update Agent API) por template, instalando só se o canal do ativo oferecer a KB; selo apenas com coleta da oferta.
+- Requisitos de exploração (catálogo curado com verificação fixa e IA com evidência): presente, ausente (não encerra o achado) ou desconhecido.
+- Coleta automática somente leitura pelo agente: ações fixas assinadas (HMAC) via Wazuh Active Response, receptores `agents/eyemole-collect.py` e `.ps1`, retorno autenticado em `/soar-api/agent-context/<agent>`; indisponibilidade mostra o dado ausente e o diagnóstico manual.
+- Inventário Wazuh passa a incluir hotfixes; contrato da pesquisa v3.
+
 ### Pesquisa de remediação: condições do selo de validação
 
 - A Candidate só valida a correção se todas as suítes que a oferecem forem autorizadas para a release do ativo (release, -security, -updates; backports só no seu escopo; extras explícitas do administrador). sid, forky, outra distribuição/release, pocket não autorizado ou origem desconhecida nunca validam pela versão; sem comando fixado.

@@ -207,9 +207,30 @@ class Wazuh:
                 result["packages_complete"] = True
                 break
         result.setdefault("packages_complete", False)
+        # Installed Windows hotfixes (KB IDs); the list counts only when every page was read.
+        hotfixes, read = [], 0
+        for page in range(20):
+            data = self.client.call("GET", f"/syscollector/{agent}/hotfixes?limit=500&offset={page * 500}")
+            items = data.get("data", {}).get("affected_items", [])
+            read += len(items)
+            hotfixes += [str(i.get("hotfix")).upper() for i in items
+                         if isinstance(i, dict) and re.fullmatch(r"KB\d{6,8}", str(i.get("hotfix", "")).upper())]
+            if read >= data.get("data", {}).get("total_affected_items", read):
+                result["hotfixes_complete"] = True
+                break
+        result["hotfixes"] = sorted(set(hotfixes))
+        result.setdefault("hotfixes_complete", False)
         # Retrieval time is not inventory scan time. Missing coverage blocks confirmation.
         result["observed_at"] = min(observed) if observed and result["packages_complete"] else None
         return result
+
+    def collect(self, agent, argument, windows=False):
+        """Read-only collection request (fixed actions verified by the agent receiver)."""
+        if not re.fullmatch(r"[0-9]{3,8}", agent) or int(agent) == 0:
+            raise OperationError("ID Wazuh inválido; manager não é alvo.")
+        command = "!eyemole-collect-win" if windows else "!eyemole-collect"
+        return self.client.call("PUT", "/active-response?" + urlencode({"agents_list": agent, "wait_for_complete": "true"}),
+                                {"command": command, "custom": True, "arguments": [argument], "alert": {}})
 
     def dispatch(self, agent, argument):
         return self.client.call("PUT", "/active-response?" + urlencode({"agents_list": agent, "wait_for_complete": "true"}),

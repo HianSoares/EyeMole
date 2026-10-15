@@ -727,7 +727,7 @@ def test_interface_uses_ai_terms_and_safe_rendering():
     assert "escapeText(e.summary)" in js and "escapeText(r.explanation)" in js
     import analyserV1
     tpl = analyserV1.HTML_TEMPLATE
-    assert 'id="guidance-ai-section"' in tpl and "loadGuidanceAi(record.finding_id, activeGuidanceRequestId);" in tpl
-    block = tpl[tpl.index("async function refreshGuidanceAi"):tpl.index("async function loadGuidanceAi")]
-    assert "innerHTML" not in block and "textContent = data.summary" in block
-    assert "Não substitui a orientação determinística" in tpl
+    # "Ver correção" has no separate AI button: the automatic analysis includes the AI proposal.
+    assert 'id="guidance-ai-section"' not in tpl and "loadGuidanceAi(" not in tpl
+    block = tpl[tpl.index("function renderGuidancePrimary"):tpl.index("function scheduleGuidanceAnalysis")]
+    assert "innerHTML" not in block and "researchEl('p', 'Motivo: ' + p.reason)" in block
